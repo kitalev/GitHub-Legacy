@@ -59,6 +59,4 @@ signing in too, within GitHub's anonymous rate limit.
 
 Issues and PRs welcome, especially reports from real old devices.
 
-## License
 
-Not yet chosen — all rights reserved until one is added.
