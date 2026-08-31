@@ -1,0 +1,6 @@
+#!/bin/bash
+if [ -e /usr/bin/uicache ]; then
+    su -c "/usr/bin/uicache" mobile
+fi
+
+exit 0

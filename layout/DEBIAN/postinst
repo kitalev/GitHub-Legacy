@@ -1,0 +1,6 @@
+#!/bin/bash
+if [ -e /usr/bin/uicache ]; then
+    su -c "/usr/bin/uicache -p /Applications/GitHubLegacy.app" mobile
+fi
+
+exit 0
