@@ -7,44 +7,44 @@ include $(THEOS)/makefiles/common.mk
 APPLICATION_NAME = GitHubLegacy
 
 GitHubLegacy_FILES = main.m AppDelegate.m \
-	GHTrendingClient.m \
-	ExploreViewController.m \
-	RepoSearchViewController.m \
-	RepoOverviewViewController.m \
-	RepoDetailViewController.m \
-	ReleaseDetailViewController.m \
-	StarredReposViewController.m \
-	ProfileViewController.m \
-	CommitHistoryViewController.m \
-	CommitDetailViewController.m \
-	ReadmeViewController.m \
-	IssueListViewController.m \
-	GHIssueCell.m \
-	IssueDetailViewController.m \
-	PullRequestListViewController.m \
-	PullRequestDetailViewController.m \
-	GHPullRequestCell.m \
-	ForkListViewController.m \
-	RepoFilesViewController.m \
-	GHAPIClient.m \
-	GHAuthManager.m \
-	GHMarkdownRenderer.m \
-	DownloadManager.m \
-	SettingsViewController.m \
-	GHAvatarLoader.m \
-	GHThemeManager.m \
-	GHIconRenderer.m \
-	ProfileRepoListViewController.m \
-	GHUserListViewController.m \
-	GHStarredRepoCell.m \
-	GHExploreFeedCell.m \
-	PublicProfileViewController.m \
-	TokenLoginViewController.m \
-	GHLocalization.m \
-	LanguageViewController.m
+	Core/GHTrendingClient.m \
+	Controllers/ExploreViewController.m \
+	Controllers/RepoSearchViewController.m \
+	Controllers/RepoOverviewViewController.m \
+	Controllers/RepoDetailViewController.m \
+	Controllers/ReleaseDetailViewController.m \
+	Controllers/StarredReposViewController.m \
+	Controllers/ProfileViewController.m \
+	Controllers/CommitHistoryViewController.m \
+	Controllers/CommitDetailViewController.m \
+	Controllers/ReadmeViewController.m \
+	Controllers/IssueListViewController.m \
+	Cells/GHIssueCell.m \
+	Controllers/IssueDetailViewController.m \
+	Controllers/PullRequestListViewController.m \
+	Controllers/PullRequestDetailViewController.m \
+	Cells/GHPullRequestCell.m \
+	Controllers/ForkListViewController.m \
+	Controllers/RepoFilesViewController.m \
+	Core/GHAPIClient.m \
+	Core/GHAuthManager.m \
+	Core/GHMarkdownRenderer.m \
+	Core/DownloadManager.m \
+	Controllers/SettingsViewController.m \
+	Core/GHAvatarLoader.m \
+	Core/GHThemeManager.m \
+	Core/GHIconRenderer.m \
+	Controllers/ProfileRepoListViewController.m \
+	Controllers/GHUserListViewController.m \
+	Cells/GHStarredRepoCell.m \
+	Cells/GHExploreFeedCell.m \
+	Controllers/PublicProfileViewController.m \
+	Controllers/TokenLoginViewController.m \
+	Core/GHLocalization.m \
+	Controllers/LanguageViewController.m
 
 GitHubLegacy_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore
-GitHubLegacy_CFLAGS = -fobjc-arc -Iinclude
+GitHubLegacy_CFLAGS = -fobjc-arc -Iinclude -IControllers -ICells -ICore
 
 include $(THEOS_MAKE_PATH)/application.mk
 
