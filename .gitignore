@@ -4,3 +4,7 @@ packages/
 *.ipa
 *.dSYM
 .DS_Store
+*.patch
+apply_fix.py
+reorganize_files.py
+fix_author_and_reaction_locale.py
