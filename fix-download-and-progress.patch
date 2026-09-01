@@ -1,0 +1,72 @@
+--- a/DownloadManager.m
++++ b/DownloadManager.m
+@@ -38,7 +38,13 @@
+ 
+ - (NSString *)documentsDirectory {
+ 
+-    NSString *downloadsPath = @"/private/var/mobile/Media/Downloads";
++    // /private/var/mobile/Media/Downloads is only writable from an
++    // unsandboxed (jailbreak/.deb) install. A regular .ipa runs inside its
++    // own App Container and gets Cocoa error 513 (permission denied) trying
++    // to write there. Save inside the app's own Documents directory instead,
++    // which is writable in both cases.
++    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
++    NSString *downloadsPath = [paths firstObject];
+ 
+     NSFileManager *fm = [NSFileManager defaultManager];
+     BOOL isDirectory = NO;
+--- a/ReleaseDetailViewController.m
++++ b/ReleaseDetailViewController.m
+@@ -40,6 +40,7 @@
+ @property (nonatomic, copy) NSString *fileName;
+ @property (nonatomic, copy) NSString *downloadURLString;
+ @property (nonatomic, assign) long long sizeBytes;
++@property (nonatomic, assign) float downloadProgress;
+ @end
+ 
+ @implementation GHDownloadItem
+@@ -913,7 +914,19 @@
+     cell.detailTextLabel.textColor = GHSecondaryTextColor();
+     cell.accessoryType = UITableViewCellAccessoryNone;
+ 
+-    cell.accessoryView = nil;
++    // A dequeued cell can be reused for a row that is mid-download, so
++    // rebuild the progress view from the model instead of always clearing
++    // it - otherwise scrolling the active row offscreen and back loses it.
++    if ([indexPath isEqual:self.downloadingIndexPath]) {
++        cell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"Скачивание: %.0f%%"), item.downloadProgress * 100];
++
++        UIProgressView *progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
++        progressView.frame = CGRectMake(0, 0, 80, progressView.frame.size.height);
++        progressView.progress = item.downloadProgress;
++        cell.accessoryView = progressView;
++    } else {
++        cell.accessoryView = nil;
++    }
+ 
+     return cell;
+ }
+@@ -954,6 +967,7 @@
+     NSURL *url = [NSURL URLWithString:item.downloadURLString];
+ 
+     self.downloadingIndexPath = indexPath;
++    item.downloadProgress = 0.0;
+ 
+     UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
+     cell.detailTextLabel.text = GHL(@"Скачивание: 0%");
+@@ -968,6 +982,7 @@
+                                                 fileName:item.fileName
+                                                 progress:^(float progress) {
+         __strong typeof(weakSelf) strongSelf = weakSelf;
++        item.downloadProgress = progress;
+         UITableViewCell *progressCell = [strongSelf.tableView cellForRowAtIndexPath:indexPath];
+         progressCell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"Скачивание: %.0f%%"), progress * 100];
+         UIProgressView *pv = (UIProgressView *)progressCell.accessoryView;
+@@ -977,6 +992,7 @@
+     } completion:^(NSString *filePath, NSError *error) {
+         __strong typeof(weakSelf) strongSelf = weakSelf;
+         strongSelf.downloadingIndexPath = nil;
++        item.downloadProgress = 0.0;
+ 
+         UITableViewCell *doneCell = [strongSelf.tableView cellForRowAtIndexPath:indexPath];
+         doneCell.accessoryView = nil;

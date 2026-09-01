@@ -237,6 +237,9 @@ static NSDictionary *GHTranslations(void) {
             @"За выбранный период форков не найдено — попробуйте расширить период": @"No forks found for the selected period — try widening it",
 
             @"Назад": @"Back",
+
+            @"Нужен вход": @"Sign-in required",
+            @"Чтобы оставить реакцию, войдите в аккаунт в настройках.": @"Sign in from Settings to leave a reaction.",
         };
     });
     return translations;

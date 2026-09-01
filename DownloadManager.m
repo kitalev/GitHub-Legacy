@@ -38,11 +38,28 @@
 
 - (NSString *)documentsDirectory {
 
-    NSString *downloadsPath = @"/private/var/mobile/Media/Downloads";
-
+    NSString *standardPath = @"/var/mobile/Media/Downloads";
     NSFileManager *fm = [NSFileManager defaultManager];
+
     BOOL isDirectory = NO;
-    BOOL exists = [fm fileExistsAtPath:downloadsPath isDirectory:&isDirectory];
+    BOOL exists = [fm fileExistsAtPath:standardPath isDirectory:&isDirectory];
+    if (!exists) {
+        NSError *createError = nil;
+        [fm createDirectoryAtPath:standardPath
+       withIntermediateDirectories:YES
+                        attributes:nil
+                             error:&createError];
+        exists = [fm fileExistsAtPath:standardPath isDirectory:&isDirectory];
+    }
+
+    if (exists && isDirectory && [fm isWritableFileAtPath:standardPath]) {
+        return standardPath;
+    }
+
+    NSString *downloadsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+
+    isDirectory = NO;
+    exists = [fm fileExistsAtPath:downloadsPath isDirectory:&isDirectory];
 
     if (!exists) {
         NSError *createError = nil;

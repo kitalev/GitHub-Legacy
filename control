@@ -3,8 +3,8 @@ Name: GitHub Legacy
 Version: 1.0
 Architecture: iphoneos-arm
 Description: A lightweight GitHub client for iOS 6+ devices - browse repositories, read READMEs, and download releases.
-Maintainer: You
-Author: You
+Maintainer: kitalev
+Author: kitalev
 Section: Applications
 Depends: firmware (>= 6.0)
 Icon: file:///Applications/GitHubLegacy.app/Icon-72@2x.png
