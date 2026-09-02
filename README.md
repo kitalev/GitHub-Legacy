@@ -7,6 +7,7 @@
 ![Build](https://img.shields.io/badge/build-Theos-orange)
 [![Release](https://img.shields.io/github/v/release/kitalev/GitHub-Legacy?label=release)](https://github.com/kitalev/GitHub-Legacy/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Telegram](https://img.shields.io/badge/Telegram-kitalev-26A5E4?logo=telegram&logoColor=white)](https://t.me/kitalev)
 
 **English** · [Русский](README.ru.md)
 
