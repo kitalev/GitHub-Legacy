@@ -50,3 +50,22 @@ include $(THEOS_MAKE_PATH)/application.mk
 
 after-install::
 	install.exec "killall -9 SpringBoard"
+
+STAGED_APP  = $(THEOS_STAGING_DIR)/Applications/$(APPLICATION_NAME).app
+STAGED_INFO = $(STAGED_APP)/Info.plist
+
+after-stage::
+	@if command -v plistutil >/dev/null 2>&1; then \
+		plistutil -i "$(STAGED_INFO)" -o "$(STAGED_INFO).bin" >/dev/null 2>&1 && \
+		mv -f "$(STAGED_INFO).bin" "$(STAGED_INFO)" && echo "[*] Info.plist -> binary"; \
+	else \
+		echo "[!] plistutil missing: sudo apt install libplist-utils"; \
+	fi
+	@find "$(THEOS_STAGING_DIR)" \( -name ".DS_Store" -o -name "._*" -o -name "Thumbs.db" \) -delete 2>/dev/null || true
+
+ipa: package
+	@rm -rf .theos/ipa && mkdir -p .theos/ipa/Payload
+	@cp -a "$(STAGED_APP)" .theos/ipa/Payload/
+	@rm -f "$(CURDIR)/$(APPLICATION_NAME).ipa"
+	@cd .theos/ipa && zip -qr9 -X "$(CURDIR)/$(APPLICATION_NAME).ipa" Payload -x "*.DS_Store" "*__MACOSX*"
+	@echo "[*] IPA: $(CURDIR)/$(APPLICATION_NAME).ipa"
