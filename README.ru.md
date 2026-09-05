@@ -28,7 +28,7 @@
 
 1. Скачайте `.deb` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest).
 2. Поместите файл `.deb` на устройство (например, в `/var/mobile/`).
-3. В iFile найдите `.deb`, нажмите на него и выберите `Install`.
+3. В iFile или Filza найдите `.deb`, нажмите на него и выберите `Install`.
 
 Либо через терминал:
 
@@ -40,6 +40,8 @@ dpkg -i com.githublegacy.app_iphoneos-arm.deb
 
 Скачайте `.ipa` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest) и установите любым инструментом сайдлоада (AltStore, Sideloadly и т.д.). Джейлбрейк не требуется.
 
+> **Примечание:** на некоторых устройствах с iOS 10.x Filza может крашиться при установке `.ipa`. В этом случае поставьте `.deb` (см. выше), либо используйте для `.ipa` другой инструмент сайдлоада.
+
 ## Сборка
 
 Нужен **Theos**, с переменной `THEOS`, указывающей на его путь:
@@ -48,10 +50,10 @@ dpkg -i com.githublegacy.app_iphoneos-arm.deb
 export THEOS=/opt/theos
 ```
 
-Также понадобится Clang-toolchain с таргетингом на iOS (например, `$THEOS/toolchain/linux/iphone/bin`) и iOS SDK ≥ 6.0 в `$THEOS/sdks/`. Готовые официальные SDK 6.1 давно не распространяются отдельно от Xcode; подойдёт и более новый SDK, так как `MinimumOSVersion` в `Info.plist` уже ограничивает приложение устройствами с iOS 6+ во время выполнения.
+Также понадобится Clang-toolchain с таргетингом на iOS (например, `$THEOS/toolchain/linux/iphone/bin`) и iOS SDK ≥ 6.0 в `$THEOS/sdks/`. Подойдёт любой SDK начиная с 6.0, так как `MinimumOSVersion` в `Info.plist` уже ограничивает приложение устройствами с iOS 6+ во время выполнения.
 
 ```bash
-# .deb (несандбоксная сборка, для джейлбрейк-устройств через Cydia/Sileo)
+# .deb (несандбоксная сборка, для джейлбрейк-устройств через Cydia)
 make clean
 make package FINALPACKAGE=1
 
@@ -64,7 +66,7 @@ make package FINALPACKAGE=1 PACKAGE_FORMAT=ipa
 
 ## Удаление
 
-### Через Cydia/Sileo
+### Через Cydia
 
 Удаляется как обычный пакет.
 

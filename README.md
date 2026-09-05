@@ -29,7 +29,7 @@ A lightweight native GitHub client for iOS 6–10: repositories, READMEs, issues
 
 1. Download `.deb` from the [latest release](https://github.com/kitalev/GitHub-Legacy/releases/latest).
 2. Put the `.deb` file on your device (for example: `/var/mobile/`).
-3. In iFile, find the `.deb`, tap it, and press `Install`.
+3. In iFile or Filza, find the `.deb`, tap it, and press `Install`.
 
 Or via terminal:
 
@@ -41,6 +41,8 @@ dpkg -i com.githublegacy.app_iphoneos-arm.deb
 
 Download `.ipa` from the [latest release](https://github.com/kitalev/GitHub-Legacy/releases/latest) and sideload it with your tool of choice (AltStore, Sideloadly, etc.). No jailbreak required.
 
+> **Note:** on some iOS 10.x devices, Filza can crash while installing the `.ipa`. If that happens, install the `.deb` instead (see above), or use another sideloading tool for the `.ipa`.
+
 ## Build
 
 Requires **Theos**, with `THEOS` pointing to its install path:
@@ -49,10 +51,10 @@ Requires **Theos**, with `THEOS` pointing to its install path:
 export THEOS=/opt/theos
 ```
 
-You'll also need a Clang toolchain targeting iOS (e.g. `$THEOS/toolchain/linux/iphone/bin`) and an iOS SDK ≥ 6.0 under `$THEOS/sdks/`. iOS 6.1 SDKs aren't distributed separately from Xcode anymore; a newer SDK works too, since `MinimumOSVersion` in `Info.plist` already restricts the app to iOS 6+ at runtime.
+You'll also need a Clang toolchain targeting iOS (e.g. `$THEOS/toolchain/linux/iphone/bin`) and an iOS SDK ≥ 6.0 under `$THEOS/sdks/`. Any SDK from 6.0 up works, since `MinimumOSVersion` in `Info.plist` already restricts the app to iOS 6+ at runtime.
 
 ```bash
-# .deb (unsandboxed, for jailbroken devices via Cydia/Sileo)
+# .deb (unsandboxed, for jailbroken devices via Cydia)
 make clean
 make package FINALPACKAGE=1
 
@@ -65,7 +67,7 @@ Built packages land in `packages/`.
 
 ## Uninstall
 
-### Via Cydia/Sileo
+### Via Cydia
 
 Just remove it like any other package.
 
