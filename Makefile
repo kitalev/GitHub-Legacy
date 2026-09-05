@@ -59,9 +59,10 @@ after-stage::
 		plistutil -i "$(STAGED_INFO)" -o "$(STAGED_INFO).bin" >/dev/null 2>&1 && \
 		mv -f "$(STAGED_INFO).bin" "$(STAGED_INFO)" && echo "[*] Info.plist -> binary"; \
 	else \
-		echo "[!] plistutil missing: sudo apt install libplist-utils"; \
+		echo "[!] plistutil not found: sudo apt install libplist-utils"; \
 	fi
-	@find "$(THEOS_STAGING_DIR)" \( -name ".DS_Store" -o -name "._*" -o -name "Thumbs.db" \) -delete 2>/dev/null || true
+	@find "$(THEOS_STAGING_DIR)" \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' \) -delete 2>/dev/null || true
+	@chmod -R go-w "$(STAGED_APP)"
 
 ipa: package
 	@rm -rf .theos/ipa && mkdir -p .theos/ipa/Payload
