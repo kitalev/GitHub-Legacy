@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
+#import "GHProfileBaseViewController.h"
 
-@interface PublicProfileViewController : UITableViewController
+@interface PublicProfileViewController : GHProfileBaseViewController
 
 @property (nonatomic, copy) NSString *login;
 

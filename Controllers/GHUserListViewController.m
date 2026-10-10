@@ -84,7 +84,9 @@ static NSString * const kUserCellID = @"UserCell";
         [strongSelf.tableView reloadData];
     };
 
-    if (self.showingFollowers) {
+    if (self.showingOrganizations) {
+        [[GHAPIClient sharedClient] organizationsForUser:self.login completion:completion];
+    } else if (self.showingFollowers) {
         [[GHAPIClient sharedClient] followersForUser:self.login completion:completion];
     } else {
         [[GHAPIClient sharedClient] followingForUser:self.login completion:completion];
@@ -104,7 +106,7 @@ static NSString * const kUserCellID = @"UserCell";
 
     if (self.users.count == 0) {
         cell.textLabel.text = self.loadAttempted
-            ? (self.showingFollowers ? GHL(@"Подписчиков нет") : GHL(@"Подписок нет"))
+            ? (self.showingOrganizations ? GHL(@"Организаций нет") : (self.showingFollowers ? GHL(@"Подписчиков нет") : GHL(@"Подписок нет")))
             : GHL(@"Загрузка…");
         cell.textLabel.textColor = GHSecondaryTextColor();
         cell.imageView.image = nil;

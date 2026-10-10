@@ -6,4 +6,6 @@
 
 @property (nonatomic, assign) BOOL showingFollowers;
 
+@property (nonatomic, assign) BOOL showingOrganizations;
+
 @end

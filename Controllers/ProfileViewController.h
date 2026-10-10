@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
+#import "GHProfileBaseViewController.h"
 
-@interface ProfileViewController : UITableViewController
+@interface ProfileViewController : GHProfileBaseViewController
 
 @end
