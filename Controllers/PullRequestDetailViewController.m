@@ -6,6 +6,7 @@
 #import "GHMarkdownRenderer.h"
 #import "GHIconRenderer.h"
 #import "GHLocalization.h"
+#import "GHTimelineRenderer.h"
 #import "CommitDetailViewController.h"
 #import "IssueDetailViewController.h"
 #import "IssueListViewController.h"
@@ -94,18 +95,6 @@
     return mergedAt != nil && ![mergedAt isKindOfClass:[NSNull class]];
 }
 
-- (NSString *)displayDateFromISOString:(NSString *)isoString {
-    if (isoString.length == 0) return nil;
-
-    NSDateFormatter *isoFormatter = GHISODateFormatter();
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
-    if (!date) return nil;
-
-    NSDateFormatter *displayFormatter = GHMediumShortDateFormatter();
-    return [displayFormatter stringFromDate:date];
-}
-
 - (NSURL *)contentBaseURL {
     if (self.ownerLogin.length == 0 || self.repoName.length == 0) return nil;
     NSString *urlString = [NSString stringWithFormat:@"https://github.com/%@/%@/pull/", self.ownerLogin, self.repoName];
@@ -139,10 +128,9 @@
     [self.spinner startAnimating];
 
     if (self.ownerLogin.length > 0 && self.repoName.length > 0) {
-        [self loadCommentsThenRender];
+        [self loadDetailsThenRender];
     } else {
-        self.lastLoadedHTML = [self buildHTMLWithComments:nil commentsError:nil];
-        [self.webView loadHTMLString:self.lastLoadedHTML baseURL:[self contentBaseURL]];
+        [self renderWithTimeline:nil checkRuns:nil loadError:nil];
     }
 }
 
@@ -184,141 +172,293 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (void)loadCommentsThenRender {
-    NSNumber *number = [self safeNumberForKey:@"number" inDict:self.pullRequest];
-
-    __weak typeof(self) weakSelf = self;
-    [[GHAPIClient sharedClient] commentsForOwner:self.ownerLogin
-                                              repo:self.repoName
-                                            number:number.integerValue
-                                        completion:^(id jsonObject, NSError *error) {
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) return;
-
-        NSArray *comments = [jsonObject isKindOfClass:[NSArray class]] ? jsonObject : nil;
-        NSString *errorText = (!comments && error) ? GHL(@"Не удалось загрузить комментарии.") : nil;
-        strongSelf.lastLoadedHTML = [strongSelf buildHTMLWithComments:comments commentsError:errorText];
-        [strongSelf.webView loadHTMLString:strongSelf.lastLoadedHTML baseURL:[strongSelf contentBaseURL]];
-    }];
-}
-
-- (NSString *)pullRequestLabelsHTML {
-    NSArray *labels = [self.pullRequest[@"labels"] isKindOfClass:[NSArray class]] ? self.pullRequest[@"labels"] : nil;
-    if (labels.count == 0) return @"";
-
-    NSMutableString *html = [NSMutableString stringWithString:@"<span class=\"issue-labels\">"];
-    for (NSDictionary *label in labels) {
-        if (![label isKindOfClass:[NSDictionary class]]) continue;
-        NSString *name = [self safeStringForKey:@"name" inDict:label];
-        if (name.length == 0) continue;
-
-        NSString *colorHex = [self safeStringForKey:@"color" inDict:label];
-        UIColor *parsedColor = [GHIconRenderer colorFromHexString:colorHex];
-        NSString *safeColorHex = parsedColor ? colorHex : @"ededed";
-        UIColor *backgroundColor = parsedColor ?: [UIColor colorWithWhite:0.93 alpha:1.0];
-        BOOL wantsBlackText = [[GHIconRenderer readableTextColorOverColor:backgroundColor] isEqual:[UIColor blackColor]];
-
-        [html appendFormat:
-            @"<span class=\"issue-label\" style=\"background:#%@;color:%@;\">%@</span>",
-            safeColorHex, wantsBlackText ? @"#000000" : @"#ffffff", [GHMarkdownRenderer escapeHTML:name]];
+- (NSString *)pluralForCount:(NSInteger)count ruOne:(NSString *)ruOne ruFew:(NSString *)ruFew ruMany:(NSString *)ruMany
+                       enOne:(NSString *)enOne enMany:(NSString *)enMany {
+    if (![[GHLocalization sharedManager].languageCode isEqualToString:@"ru"]) {
+        return count == 1 ? enOne : enMany;
     }
-    [html appendString:@"</span>"];
-    return html;
+    NSInteger mod10 = count % 10;
+    NSInteger mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) return ruOne;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return ruFew;
+    return ruMany;
 }
 
-- (NSString *)buildHTMLWithComments:(NSArray *)comments commentsError:(NSString *)commentsError {
-    NSString *title = [self safeStringForKey:@"title" inDict:self.pullRequest];
+- (BOOL)isDraft {
+    id draft = self.pullRequest[@"draft"];
+    return [draft respondsToSelector:@selector(boolValue)] && [draft boolValue];
+}
+
+- (NSString *)reviewsRowHTMLWithRenderer:(GHTimelineRenderer *)renderer timeline:(NSArray *)timeline {
+    NSMutableDictionary *latestByUser = [NSMutableDictionary dictionary];
+    for (NSDictionary *item in timeline) {
+        if (![item isKindOfClass:[NSDictionary class]]) continue;
+        if (![[self safeStringForKey:@"event" inDict:item] isEqualToString:@"reviewed"]) continue;
+        NSString *state = [[self safeStringForKey:@"state" inDict:item] lowercaseString];
+        NSString *login = [self safeStringForKey:@"login" inDict:[self safeDictForKey:@"user" inDict:item]];
+        if (login.length == 0 || state.length == 0) continue;
+        if ([state isEqualToString:@"commented"]) continue;
+        [latestByUser setObject:state forKey:login];
+    }
+
+    NSInteger approvals = 0;
+    NSInteger changes = 0;
+    for (NSString *state in latestByUser.allValues) {
+        if ([state isEqualToString:@"approved"]) approvals++;
+        if ([state isEqualToString:@"changes_requested"]) changes++;
+    }
+
+    if (changes > 0) {
+        return [renderer rowHTMLWithGlyph:@"±" glyphColor:@"#fff" glyphBackground:@"#cf222e"
+                                titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Запрошены изменения")]
+                             subtitleHTML:nil trailingHTML:nil];
+    }
+    if (approvals > 0) {
+        NSString *subtitle = [NSString stringWithFormat:@"%ld %@", (long)approvals,
+            [self pluralForCount:approvals ruOne:@"одобрение" ruFew:@"одобрения" ruMany:@"одобрений" enOne:@"approval" enMany:@"approvals"]];
+        return [renderer rowHTMLWithGlyph:@"✓" glyphColor:@"#fff" glyphBackground:@"#1f883d"
+                                titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Изменения одобрены")]
+                             subtitleHTML:[GHMarkdownRenderer escapeHTML:subtitle] trailingHTML:nil];
+    }
+    return [renderer rowHTMLWithGlyph:@"○" glyphColor:nil glyphBackground:nil
+                            titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Ревью")]
+                         subtitleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Пока никто не оставил отзыв")] trailingHTML:nil];
+}
+
+- (NSString *)checksRowHTMLWithRenderer:(GHTimelineRenderer *)renderer checkRuns:(NSDictionary *)checkRuns {
+    NSArray *runs = [checkRuns[@"check_runs"] isKindOfClass:[NSArray class]] ? checkRuns[@"check_runs"] : nil;
+    if (runs.count == 0) return @"";
+
+    NSInteger failed = 0, pending = 0, passed = 0;
+    NSSet *failing = [NSSet setWithObjects:@"failure", @"timed_out", @"cancelled", @"action_required", @"startup_failure", nil];
+    for (NSDictionary *run in runs) {
+        if (![run isKindOfClass:[NSDictionary class]]) continue;
+        NSString *status = [self safeStringForKey:@"status" inDict:run];
+        NSString *conclusion = [self safeStringForKey:@"conclusion" inDict:run];
+        if (![status isEqualToString:@"completed"]) pending++;
+        else if ([failing containsObject:conclusion]) failed++;
+        else passed++;
+    }
+
+    NSMutableArray *parts = [NSMutableArray array];
+    if (passed > 0) [parts addObject:[NSString stringWithFormat:GHL(@"%ld успешно"), (long)passed]];
+    if (failed > 0) [parts addObject:[NSString stringWithFormat:GHL(@"%ld с ошибкой"), (long)failed]];
+    if (pending > 0) [parts addObject:[NSString stringWithFormat:GHL(@"%ld выполняется"), (long)pending]];
+    NSString *subtitle = [GHMarkdownRenderer escapeHTML:[parts componentsJoinedByString:@", "]];
+
+    if (failed > 0) {
+        return [renderer rowHTMLWithGlyph:@"✕" glyphColor:@"#fff" glyphBackground:@"#cf222e"
+                                titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Некоторые проверки не прошли")]
+                             subtitleHTML:subtitle trailingHTML:nil];
+    }
+    if (pending > 0) {
+        return [renderer rowHTMLWithGlyph:@"●" glyphColor:@"#fff" glyphBackground:@"#bf8700"
+                                titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Проверки выполняются")]
+                             subtitleHTML:subtitle trailingHTML:nil];
+    }
+    return [renderer rowHTMLWithGlyph:@"✓" glyphColor:@"#fff" glyphBackground:@"#1f883d"
+                            titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Все проверки пройдены")]
+                         subtitleHTML:subtitle trailingHTML:nil];
+}
+
+- (NSString *)mergeRowHTMLWithRenderer:(GHTimelineRenderer *)renderer {
+    NSString *baseRef = [self safeStringForKey:@"ref" inDict:[self safeDictForKey:@"base" inDict:self.pullRequest]];
+    NSString *escapedBase = [GHMarkdownRenderer escapeHTML:baseRef ?: @""];
+
+    if ([self isMerged]) {
+        NSString *subtitle = baseRef.length > 0 ? [NSString stringWithFormat:GHL(@"Изменения влиты в %@"), escapedBase] : nil;
+        return [renderer rowHTMLWithGlyph:@"⑂" glyphColor:@"#fff" glyphBackground:@"#8250df"
+                                titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Слит")]
+                             subtitleHTML:subtitle trailingHTML:nil];
+    }
+    if ([[self safeStringForKey:@"state" inDict:self.pullRequest] isEqualToString:@"closed"]) {
+        return [renderer rowHTMLWithGlyph:@"✕" glyphColor:@"#fff" glyphBackground:@"#cf222e"
+                                titleHTML:[GHMarkdownRenderer escapeHTML:GHL(@"Закрыт без слияния")]
+                             subtitleHTML:nil trailingHTML:nil];
+    }
+
+    NSString *mergeableState = [self safeStringForKey:@"mergeable_state" inDict:self.pullRequest];
+    NSString *glyph = nil, *color = nil, *background = nil, *title = nil, *subtitle = nil;
+    if ([mergeableState isEqualToString:@"clean"] || [mergeableState isEqualToString:@"has_hooks"]) {
+        glyph = @"✓"; color = @"#fff"; background = @"#1f883d";
+        title = GHL(@"Можно слить"); subtitle = GHL(@"Конфликтов с базовой веткой нет");
+    } else if ([mergeableState isEqualToString:@"unstable"]) {
+        glyph = @"!"; color = @"#fff"; background = @"#bf8700";
+        title = GHL(@"Можно слить"); subtitle = GHL(@"Но некоторые проверки не прошли");
+    } else if ([mergeableState isEqualToString:@"dirty"]) {
+        glyph = @"✕"; color = @"#fff"; background = @"#cf222e";
+        title = GHL(@"Есть конфликты"); subtitle = GHL(@"Их нужно разрешить перед слиянием");
+    } else if ([mergeableState isEqualToString:@"blocked"]) {
+        glyph = @"✕"; color = @"#fff"; background = @"#cf222e";
+        title = GHL(@"Слияние заблокировано"); subtitle = GHL(@"Не выполнены обязательные условия");
+    } else if ([mergeableState isEqualToString:@"behind"]) {
+        glyph = @"!"; color = @"#fff"; background = @"#bf8700";
+        title = GHL(@"Ветка отстаёт"); subtitle = [NSString stringWithFormat:GHL(@"Нужно обновить её от %@"), baseRef ?: @""];
+    } else if ([mergeableState isEqualToString:@"draft"]) {
+        glyph = @"○";
+        title = GHL(@"Черновик"); subtitle = GHL(@"Слияние недоступно, пока пул-реквест в черновике");
+    } else {
+        return @"";
+    }
+    return [renderer rowHTMLWithGlyph:glyph glyphColor:color glyphBackground:background
+                            titleHTML:[GHMarkdownRenderer escapeHTML:title]
+                         subtitleHTML:[GHMarkdownRenderer escapeHTML:subtitle] trailingHTML:nil];
+}
+
+- (NSString *)buildHTMLWithTimeline:(NSArray *)timeline checkRuns:(NSDictionary *)checkRuns loadError:(NSString *)loadError {
+    GHTimelineRenderer *renderer = [[GHTimelineRenderer alloc] initWithOwnerLogin:self.ownerLogin repoName:self.repoName];
+    renderer.isPullRequest = YES;
+
     NSString *state = [self safeStringForKey:@"state" inDict:self.pullRequest];
-    NSString *body = [self safeStringForKey:@"body" inDict:self.pullRequest];
-    NSDictionary *user = [self safeDictForKey:@"user" inDict:self.pullRequest];
-    NSString *authorLogin = [self safeStringForKey:@"login" inDict:user];
-    NSString *authorAvatarURL = [self safeStringForKey:@"avatar_url" inDict:user];
-    NSString *createdAt = [self displayDateFromISOString:[self safeStringForKey:@"created_at" inDict:self.pullRequest]];
+    NSString *stateLabel;
+    NSString *stateColor;
+    if ([self isMerged]) {
+        stateLabel = GHL(@"⑂ Слит");
+        stateColor = @"#8250df";
+    } else if ([state isEqualToString:@"closed"]) {
+        stateLabel = GHL(@"✕ Закрыт");
+        stateColor = @"#cf222e";
+    } else if ([self isDraft]) {
+        stateLabel = GHL(@"Черновик");
+        stateColor = @"#59636e";
+    } else {
+        stateLabel = GHL(@"● Открыт");
+        stateColor = @"#1f883d";
+    }
 
     NSDictionary *head = [self safeDictForKey:@"head" inDict:self.pullRequest];
-    NSDictionary *base = [self safeDictForKey:@"base" inDict:self.pullRequest];
     NSString *headLabel = [self safeStringForKey:@"label" inDict:head] ?: [self safeStringForKey:@"ref" inDict:head];
-    NSString *baseLabel = [self safeStringForKey:@"label" inDict:base] ?: [self safeStringForKey:@"ref" inDict:base];
+    NSString *extra = [[renderer branchHTML:headLabel] stringByAppendingString:[renderer labelsHTML:self.pullRequest[@"labels"]]];
 
-    BOOL isOpen = [state isEqualToString:@"open"];
-    BOOL merged = [self isMerged];
-    NSString *stateLabel = merged ? GHL(@"⑂ Слит") : (isOpen ? GHL(@"● Открыт") : GHL(@"✕ Закрыт без слияния"));
-    NSString *stateColor = merged ? @"#6f42c1" : (isOpen ? @"#28a745" : @"#cb2431");
+    NSMutableString *html = [NSMutableString stringWithString:[renderer styleCSS]];
+    [html appendString:[renderer repoLineHTMLWithNumber:[self safeNumberForKey:@"number" inDict:self.pullRequest]]];
+    [html appendString:[renderer titleHTML:[self safeStringForKey:@"title" inDict:self.pullRequest]]];
+    [html appendString:[renderer stateRowHTMLWithLabel:stateLabel color:stateColor extraHTML:extra]];
+    [html appendString:[renderer postHTMLWithUser:[self safeDictForKey:@"user" inDict:self.pullRequest]
+                                         createdAt:[self safeStringForKey:@"created_at" inDict:self.pullRequest]
+                                       association:[self safeStringForKey:@"author_association" inDict:self.pullRequest]
+                                              body:[self safeStringForKey:@"body" inDict:self.pullRequest]]];
 
-    NSMutableString *meta = [NSMutableString string];
-    if (authorAvatarURL.length > 0) {
-        [meta appendFormat:@"<img class=\"avatar\" src=\"%@\"/>", [GHMarkdownRenderer escapeHTMLAttribute:authorAvatarURL]];
+    id changedFilesValue = self.pullRequest[@"changed_files"];
+    id commitsValue = self.pullRequest[@"commits"];
+    if ([changedFilesValue isKindOfClass:[NSNumber class]] || [commitsValue isKindOfClass:[NSNumber class]]) {
+        [html appendString:[renderer sectionHeaderHTML:GHL(@"Изменения")]];
+        if ([changedFilesValue isKindOfClass:[NSNumber class]]) {
+            NSInteger files = [changedFilesValue integerValue];
+            NSString *title = [NSString stringWithFormat:@"%ld %@", (long)files,
+                [self pluralForCount:files ruOne:@"файл изменён" ruFew:@"файла изменено" ruMany:@"файлов изменено"
+                               enOne:@"file changed" enMany:@"files changed"]];
+            NSString *trailing = [renderer additionsHTML:[[self safeNumberForKey:@"additions" inDict:self.pullRequest] integerValue]
+                                               deletions:[[self safeNumberForKey:@"deletions" inDict:self.pullRequest] integerValue]];
+            [html appendString:[renderer rowHTMLWithGlyph:@"±" glyphColor:nil glyphBackground:nil
+                                                titleHTML:[GHMarkdownRenderer escapeHTML:title]
+                                             subtitleHTML:nil trailingHTML:trailing]];
+        }
+        if ([commitsValue isKindOfClass:[NSNumber class]]) {
+            NSInteger commits = [commitsValue integerValue];
+            NSString *title = [NSString stringWithFormat:@"%ld %@", (long)commits,
+                [self pluralForCount:commits ruOne:@"коммит" ruFew:@"коммита" ruMany:@"коммитов" enOne:@"commit" enMany:@"commits"]];
+            NSString *lastCommitDate = nil;
+            for (NSDictionary *item in timeline) {
+                if (![item isKindOfClass:[NSDictionary class]]) continue;
+                if (![[self safeStringForKey:@"event" inDict:item] isEqualToString:@"committed"]) continue;
+                lastCommitDate = [self safeStringForKey:@"date" inDict:[self safeDictForKey:@"committer" inDict:item]] ?: lastCommitDate;
+            }
+            NSString *when = [renderer relativeTimeFromISOString:lastCommitDate];
+            [html appendString:[renderer rowHTMLWithGlyph:@"◦" glyphColor:nil glyphBackground:nil
+                                                titleHTML:[GHMarkdownRenderer escapeHTML:title]
+                                             subtitleHTML:nil
+                                             trailingHTML:[GHMarkdownRenderer escapeHTML:when]]];
+        }
     }
-    if (authorLogin.length > 0) [meta appendString:[GHMarkdownRenderer escapeHTML:authorLogin]];
-    if (createdAt.length > 0) {
-        if (meta.length > 0) [meta appendString:@" · "];
-        [meta appendString:[GHMarkdownRenderer escapeHTML:createdAt]];
+
+    NSString *reviewsRow = [self reviewsRowHTMLWithRenderer:renderer timeline:timeline];
+    NSString *checksRow = [self checksRowHTMLWithRenderer:renderer checkRuns:checkRuns];
+    NSString *mergeRow = [self mergeRowHTMLWithRenderer:renderer];
+    if (checksRow.length > 0 || mergeRow.length > 0 || timeline.count > 0) {
+        [html appendString:[renderer sectionHeaderHTML:GHL(@"Статус")]];
+        [html appendString:reviewsRow];
+        [html appendString:checksRow];
+        [html appendString:mergeRow];
     }
 
-    NSString *branches = @"";
-    if (headLabel.length > 0 && baseLabel.length > 0) {
-        branches = [NSString stringWithFormat:@"<div class=\"pr-branches\">%@ → %@</div>",
-                    [GHMarkdownRenderer escapeHTML:headLabel], [GHMarkdownRenderer escapeHTML:baseLabel]];
+    NSMutableString *conversation = [NSMutableString string];
+    for (NSDictionary *item in timeline) {
+        [conversation appendString:[renderer timelineItemHTML:item]];
     }
+    if (conversation.length > 0) {
+        [html appendString:[renderer sectionHeaderHTML:GHL(@"Обсуждение")]];
+        [html appendString:conversation];
+    }
+    [html appendString:[renderer errorHTML:loadError]];
 
-    NSString *bodyHTML = body.length > 0
-        ? [GHMarkdownRenderer bodyHTMLFromMarkdown:body repoOwner:self.ownerLogin repoName:self.repoName]
-        : @"<p style=\"color:#888;\">Без описания.</p>";
-
-    NSString *header = [NSString stringWithFormat:
-        @"<div class=\"issue-header\">"
-         "<div class=\"issue-state\" style=\"color:%@;\">%@</div>"
-         "<h1 class=\"issue-title\">%@%@</h1>"
-         "<div class=\"issue-meta\">%@</div>"
-         "%@"
-         "</div><hr/>",
-        stateColor, stateLabel, [GHMarkdownRenderer escapeHTML:title ?: @""], [self pullRequestLabelsHTML], meta, branches];
-
-    return [GHMarkdownRenderer htmlDocumentWrappingBody:
-        [[header stringByAppendingString:bodyHTML] stringByAppendingString:[self commentsHTML:comments error:commentsError]]];
+    return [GHMarkdownRenderer htmlDocumentWrappingBody:html];
 }
 
-- (NSString *)commentsHTML:(NSArray *)comments error:(NSString *)errorText {
-    if (errorText.length > 0) {
-        return [NSString stringWithFormat:
-            @"<div class=\"comments-error\">%@</div>", [GHMarkdownRenderer escapeHTML:errorText]];
-    }
-    if (comments.count == 0) return @"";
+- (void)renderWithTimeline:(NSArray *)timeline checkRuns:(NSDictionary *)checkRuns loadError:(NSString *)loadError {
+    self.lastLoadedHTML = [self buildHTMLWithTimeline:timeline checkRuns:checkRuns loadError:loadError];
+    [self.webView loadHTMLString:self.lastLoadedHTML baseURL:[self contentBaseURL]];
+}
 
-    NSMutableString *html = [NSMutableString stringWithFormat:
-        @"<div class=\"comments-heading\">Комментарии (%lu)</div>", (unsigned long)comments.count];
+- (void)loadDetailsThenRender {
+    NSInteger number = [[self safeNumberForKey:@"number" inDict:self.pullRequest] integerValue];
+    NSString *owner = self.ownerLogin;
+    NSString *repo = self.repoName;
 
-    for (NSDictionary *comment in comments) {
-        if (![comment isKindOfClass:[NSDictionary class]]) continue;
+    __block NSArray *timeline = nil;
+    __block NSDictionary *checkRuns = nil;
+    __block NSString *loadError = nil;
+    __block NSInteger pending = 3;
 
-        NSDictionary *commentUser = [self safeDictForKey:@"user" inDict:comment];
-        NSString *login = [self safeStringForKey:@"login" inDict:commentUser];
-        NSString *avatarURL = [self safeStringForKey:@"avatar_url" inDict:commentUser];
-        NSString *createdAt = [self displayDateFromISOString:[self safeStringForKey:@"created_at" inDict:comment]];
-        NSString *commentBody = [self safeStringForKey:@"body" inDict:comment];
+    __weak typeof(self) weakSelf = self;
+    void (^finishOne)(void) = ^{
+        pending--;
+        if (pending > 0) return;
+        [weakSelf renderWithTimeline:timeline checkRuns:checkRuns loadError:loadError];
+    };
 
-        NSMutableString *commentMeta = [NSMutableString string];
-        if (avatarURL.length > 0) {
-            [commentMeta appendFormat:@"<img class=\"avatar\" src=\"%@\"/>", [GHMarkdownRenderer escapeHTMLAttribute:avatarURL]];
+    void (^loadChecks)(NSString *) = ^(NSString *sha) {
+        if (sha.length == 0) {
+            finishOne();
+            return;
         }
-        if (login.length > 0) [commentMeta appendString:[GHMarkdownRenderer escapeHTML:login]];
-        if (createdAt.length > 0) {
-            if (commentMeta.length > 0) [commentMeta appendString:@" · "];
-            [commentMeta appendString:[GHMarkdownRenderer escapeHTML:createdAt]];
-        }
+        [[GHAPIClient sharedClient] checkRunsForOwner:owner repo:repo ref:sha completion:^(id jsonObject, NSError *error) {
+            if ([jsonObject isKindOfClass:[NSDictionary class]]) checkRuns = jsonObject;
+            finishOne();
+        }];
+    };
 
-        NSString *commentBodyHTML = commentBody.length > 0
-            ? [GHMarkdownRenderer bodyHTMLFromMarkdown:commentBody repoOwner:self.ownerLogin repoName:self.repoName]
-            : @"<p style=\"color:#888;\">Без текста.</p>";
-
-        [html appendFormat:
-            @"<div class=\"comment\">"
-             "<div class=\"comment-meta\">%@</div>"
-             "<div class=\"comment-body\">%@</div>"
-             "</div>",
-            commentMeta, commentBodyHTML];
+    BOOL hasFullDetails = [self.pullRequest[@"changed_files"] isKindOfClass:[NSNumber class]];
+    if (hasFullDetails) {
+        finishOne();
+        loadChecks([self safeStringForKey:@"sha" inDict:[self safeDictForKey:@"head" inDict:self.pullRequest]]);
+    } else {
+        [[GHAPIClient sharedClient] pullRequestForOwner:owner repo:repo number:number completion:^(id jsonObject, NSError *error) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (strongSelf && [jsonObject isKindOfClass:[NSDictionary class]]) strongSelf.pullRequest = jsonObject;
+            NSDictionary *source = strongSelf ? strongSelf.pullRequest : nil;
+            NSDictionary *headDict = [source[@"head"] isKindOfClass:[NSDictionary class]] ? source[@"head"] : nil;
+            NSString *sha = [headDict[@"sha"] isKindOfClass:[NSString class]] ? headDict[@"sha"] : nil;
+            finishOne();
+            loadChecks(sha);
+        }];
     }
-    return html;
+
+    [[GHAPIClient sharedClient] timelineForOwner:owner repo:repo number:number completion:^(id jsonObject, NSError *error) {
+        if ([jsonObject isKindOfClass:[NSArray class]]) {
+            timeline = jsonObject;
+            finishOne();
+            return;
+        }
+        [[GHAPIClient sharedClient] commentsForOwner:owner repo:repo number:number completion:^(id commentsObject, NSError *commentsError) {
+            if ([commentsObject isKindOfClass:[NSArray class]]) {
+                timeline = commentsObject;
+            } else {
+                loadError = GHL(@"Не удалось загрузить комментарии.");
+            }
+            finishOne();
+        }];
+    }];
 }
 
 #pragma mark - UIWebViewDelegate

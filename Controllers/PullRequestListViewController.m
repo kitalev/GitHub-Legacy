@@ -7,6 +7,7 @@
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
 #import "GHPullRequestCell.h"
+#import <QuartzCore/QuartzCore.h>
 
 static NSString * const kPullRequestCellID = @"PullRequestCell";
 
@@ -25,7 +26,9 @@ static NSString * const kPullRequestCellID = @"PullRequestCell";
 @property (nonatomic, assign) BOOL openLoadingMore;
 @property (nonatomic, assign) BOOL closedLoadingMore;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
-@property (nonatomic, strong) UISegmentedControl *segmentedControl;
+@property (nonatomic, strong) UIButton *openChip;
+@property (nonatomic, strong) UIButton *closedChip;
+@property (nonatomic, assign) BOOL showingClosed;
 @property (nonatomic, strong) UISearchBar *searchBar;
 @property (nonatomic, copy) NSString *searchQuery;
 @property (nonatomic, strong) NSMutableArray *searchResults;
@@ -70,21 +73,22 @@ static NSString * const kPullRequestCellID = @"PullRequestCell";
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.segmentedControl = [[UISegmentedControl alloc] initWithItems:@[GHL(@"Открытые"), GHL(@"Закрытые")]];
-    self.segmentedControl.selectedSegmentIndex = 0;
-    self.segmentedControl.frame = CGRectMake(10, 8, self.view.bounds.size.width - 20, 30);
-    self.segmentedControl.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.segmentedControl addTarget:self action:@selector(segmentChanged) forControlEvents:UIControlEventValueChanged];
+    self.openChip = [self makeFilterChip];
+    [self.openChip addTarget:self action:@selector(openChipTapped) forControlEvents:UIControlEventTouchUpInside];
+    self.closedChip = [self makeFilterChip];
+    [self.closedChip addTarget:self action:@selector(closedChipTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self updateFilterChipTitles];
 
-    self.searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 46, self.view.bounds.size.width, 44)];
+    self.searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 52, self.view.bounds.size.width, 44)];
     self.searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     self.searchBar.placeholder = GHL(@"Поиск по pull request'ам");
     self.searchBar.delegate = self;
 
-    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 90)];
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 96)];
     headerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    headerView.backgroundColor = [UIColor colorWithWhite:0.94 alpha:1.0];
-    [headerView addSubview:self.segmentedControl];
+    headerView.backgroundColor = GHBackgroundColor();
+    [headerView addSubview:self.openChip];
+    [headerView addSubview:self.closedChip];
     [headerView addSubview:self.searchBar];
     self.tableView.tableHeaderView = headerView;
 
@@ -121,7 +125,8 @@ static NSString * const kPullRequestCellID = @"PullRequestCell";
     self.tableView.backgroundView = nil;
     self.tableView.separatorColor = GHSeparatorColor();
     self.spinner.activityIndicatorViewStyle = GHSpinnerStyle();
-    self.headerView.backgroundColor = dark ? [UIColor colorWithWhite:0.13 alpha:1.0] : [UIColor colorWithWhite:0.94 alpha:1.0];
+    self.headerView.backgroundColor = GHBackgroundColor();
+    [self updateFilterChipAppearance];
 
     self.searchBar.barStyle = dark ? UIBarStyleBlack : UIBarStyleDefault;
     self.searchBar.backgroundImage = [self solidColorImage:self.headerView.backgroundColor];
@@ -169,7 +174,58 @@ static NSString * const kPullRequestCellID = @"PullRequestCell";
 }
 
 - (BOOL)isOpenTabSelected {
-    return self.segmentedControl.selectedSegmentIndex == 0;
+    return !self.showingClosed;
+}
+
+- (UIButton *)makeFilterChip {
+    UIButton *chip = [UIButton buttonWithType:UIButtonTypeCustom];
+    chip.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    chip.layer.cornerRadius = 16;
+    chip.layer.masksToBounds = YES;
+    chip.layer.borderWidth = 1;
+    chip.contentEdgeInsets = UIEdgeInsetsMake(0, 16, 0, 16);
+    return chip;
+}
+
+- (void)updateFilterChipTitles {
+    [self.openChip setTitle:GHL(@"Открытые") forState:UIControlStateNormal];
+    [self.closedChip setTitle:GHL(@"Закрытые") forState:UIControlStateNormal];
+    CGFloat x = 12;
+    for (UIButton *chip in @[self.openChip, self.closedChip]) {
+        [chip sizeToFit];
+        CGFloat width = MAX(chip.bounds.size.width, 64);
+        chip.frame = CGRectMake(x, 12, width, 32);
+        x += width + 8;
+    }
+}
+
+- (void)updateFilterChipAppearance {
+    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+    UIColor *activeColor = [UIColor colorWithRed:0.03 green:0.41 blue:0.85 alpha:1.0];
+    UIColor *inactiveBackground = dark ? [UIColor colorWithWhite:1.0 alpha:0.08] : [UIColor colorWithWhite:0.0 alpha:0.05];
+    NSArray *chips = @[self.openChip, self.closedChip];
+    for (NSUInteger i = 0; i < chips.count; i++) {
+        UIButton *chip = chips[i];
+        BOOL active = (i == 1) == self.showingClosed;
+        chip.backgroundColor = active ? activeColor : inactiveBackground;
+        chip.layer.borderColor = (active ? activeColor : GHSeparatorColor()).CGColor;
+        [chip setTitleColor:(active ? [UIColor whiteColor] : GHPrimaryTextColor()) forState:UIControlStateNormal];
+        [chip setTitleColor:(active ? [UIColor colorWithWhite:1.0 alpha:0.6] : GHSecondaryTextColor()) forState:UIControlStateHighlighted];
+    }
+}
+
+- (void)openChipTapped {
+    if (!self.showingClosed) return;
+    self.showingClosed = NO;
+    [self updateFilterChipAppearance];
+    [self segmentChanged];
+}
+
+- (void)closedChipTapped {
+    if (self.showingClosed) return;
+    self.showingClosed = YES;
+    [self updateFilterChipAppearance];
+    [self segmentChanged];
 }
 
 #pragma mark - UISearchBarDelegate
