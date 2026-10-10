@@ -11,7 +11,7 @@ static const CGFloat kNameRowHeight = 24;
 static const CGFloat kStatsRowHeight = 20;
 static const CGFloat kRowSpacing = 6;
 
-static UIColor *GHColorForLanguage(NSString *language) {
+UIColor *GHColorForLanguage(NSString *language) {
     NSDictionary *colors = @{
         @"JavaScript": [UIColor colorWithRed:0.94 green:0.84 blue:0.20 alpha:1.0],
         @"TypeScript": [UIColor colorWithRed:0.18 green:0.47 blue:0.78 alpha:1.0],

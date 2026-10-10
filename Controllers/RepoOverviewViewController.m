@@ -20,15 +20,55 @@
 #import "GHAvatarLoader.h"
 #import "GHIconRenderer.h"
 #import "GHLocalization.h"
+#import "GHRepoHeaderView.h"
+#import "ReleaseDetailViewController.h"
+#import "GHURLRouter.h"
 #import <QuartzCore/QuartzCore.h>
 #import <string.h>
 
 static const NSInteger kSectionActions = 0;
-static const NSInteger kSectionDescription = 1;
+static const NSInteger kSectionCode = 1;
 static const NSInteger kSectionReadme = 2;
 static const NSInteger kSectionCount = 3;
 
-static const NSInteger kMoreSectionsRowCount = 2;
+typedef NS_ENUM(NSInteger, GHRepoRowKind) {
+    GHRepoRowKindIssues,
+    GHRepoRowKindPullRequests,
+    GHRepoRowKindReleases,
+    GHRepoRowKindLatestRelease,
+    GHRepoRowKindMore,
+    GHRepoRowKindForks,
+    GHRepoRowKindLicense,
+    GHRepoRowKindBranch,
+    GHRepoRowKindFiles,
+    GHRepoRowKindCommits
+};
+
+static NSString *GHRepoRelativeDate(NSString *isoString) {
+    if (isoString.length == 0) return @"";
+    static NSDateFormatter *formatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        formatter = [[NSDateFormatter alloc] init];
+        formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+        formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
+        formatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    });
+    NSDate *date = [formatter dateFromString:isoString];
+    if (!date) return @"";
+
+    NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);
+    NSInteger minutes = (NSInteger)(seconds / 60);
+    NSInteger hours = minutes / 60;
+    NSInteger days = hours / 24;
+    BOOL russian = [[GHLocalization sharedManager].languageCode isEqualToString:@"ru"];
+    if (minutes < 1) return russian ? @"сейчас" : @"now";
+    if (minutes < 60) return [NSString stringWithFormat:russian ? @"%ld мин" : @"%ldm", (long)minutes];
+    if (hours < 24) return [NSString stringWithFormat:russian ? @"%ld ч" : @"%ldh", (long)hours];
+    if (days < 30) return [NSString stringWithFormat:russian ? @"%ld д" : @"%ldd", (long)days];
+    if (days < 365) return [NSString stringWithFormat:russian ? @"%ld мес" : @"%ldmo", (long)(days / 30)];
+    return [NSString stringWithFormat:russian ? @"%ld г" : @"%ldy", (long)(days / 365)];
+}
 
 @interface RepoOverviewViewController ()
 @property (nonatomic, assign) BOOL readmeLoading;
@@ -52,6 +92,10 @@ static const NSInteger kMoreSectionsRowCount = 2;
 @property (nonatomic, assign) CGFloat readmeRenderedWidth;
 
 @property (nonatomic, assign) BOOL readmeWebViewUnloadedForBackground;
+
+@property (nonatomic, strong) GHRepoHeaderView *headerView;
+@property (nonatomic, strong) NSDictionary *latestRelease;
+@property (nonatomic, copy) NSString *readmeFileName;
 @end
 
 @implementation RepoOverviewViewController
@@ -139,9 +183,26 @@ static const NSInteger kMoreSectionsRowCount = 2;
     [self.tableView gh_registerCellClass:[UITableViewCell class] forCellReuseIdentifier:@"Cell"];
 
     [self.tableView gh_registerCellClass:[UITableViewCell class] forCellReuseIdentifier:@"ReadmeCell"];
+
+    self.headerView = [[GHRepoHeaderView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 10)];
+    __weak typeof(self) weakHeaderSelf = self;
+    self.headerView.onOwnerTapped = ^{
+        [weakHeaderSelf openOwnerProfile];
+    };
+    self.headerView.onHomepageTapped = ^(NSURL *url) {
+        [weakHeaderSelf openExternalURL:url];
+    };
+    self.headerView.onForksTapped = ^{
+        [weakHeaderSelf openForks];
+    };
+    self.headerView.onStarButtonTapped = ^{
+        [weakHeaderSelf toggleStar];
+    };
+
     [self fetchRepoDetailIfNeeded];
     [self fetchReadme];
     [self fetchStarStatusIfNeeded];
+    [self fetchLatestRelease];
 
     if (GHPullToRefreshAvailable()) {
         self.refreshControl = [[UIRefreshControl alloc] init];
@@ -216,6 +277,7 @@ static const NSInteger kMoreSectionsRowCount = 2;
 }
 
 - (void)handleLanguageDidChange {
+    [self refreshHeader];
     [self.tableView reloadData];
 }
 
@@ -231,6 +293,8 @@ static const NSInteger kMoreSectionsRowCount = 2;
         [self.readmeWebView stringByEvaluatingJavaScriptFromString:js];
     }
 
+    [self.headerView applyTheme];
+    [self refreshHeader];
     [self.tableView reloadData];
 }
 
@@ -245,13 +309,8 @@ static const NSInteger kMoreSectionsRowCount = 2;
         if (!strongSelf || error || ![jsonObject isKindOfClass:[NSDictionary class]]) return;
 
         strongSelf.repo = jsonObject;
-
-        if (![strongSelf shouldShowOwnerRow]) return;
-        NSIndexPath *ownerIndexPath = [NSIndexPath indexPathForRow:[strongSelf actionRowForOwner]
-                                                            inSection:kSectionActions];
-        if (![strongSelf.tableView.indexPathsForVisibleRows containsObject:ownerIndexPath]) return;
-        [strongSelf.tableView reloadRowsAtIndexPaths:@[ownerIndexPath]
-                                     withRowAnimation:UITableViewRowAnimationNone];
+        [strongSelf refreshHeader];
+        [strongSelf.tableView reloadData];
     }];
 }
 
@@ -271,11 +330,13 @@ static const NSInteger kMoreSectionsRowCount = 2;
 
         if (!error && [jsonObject isKindOfClass:[NSDictionary class]]) {
             strongSelf.repo = jsonObject;
+            [strongSelf refreshHeader];
             [strongSelf.tableView reloadData];
         }
 
         [strongSelf fetchReadme];
         [strongSelf fetchStarStatusIfNeeded];
+        [strongSelf fetchLatestRelease];
     }];
 }
 
@@ -297,6 +358,8 @@ static const NSInteger kMoreSectionsRowCount = 2;
 
         NSDictionary *readmeDict = [jsonObject isKindOfClass:[NSDictionary class]] ? jsonObject : nil;
         NSString *base64Content = [strongSelf safeStringForKey:@"content" inDict:readmeDict];
+        NSString *readmeName = [strongSelf safeStringForKey:@"name" inDict:readmeDict];
+        if (readmeName.length > 0) strongSelf.readmeFileName = readmeName;
 
         if (!error && base64Content.length > 0) {
 
@@ -786,10 +849,7 @@ static const NSInteger kMoreSectionsRowCount = 2;
 }
 
 - (void)reloadStarRow {
-    if (![self shouldShowStarButton]) return;
-    NSIndexPath *starIndexPath = [NSIndexPath indexPathForRow:[self actionRowForStar] inSection:kSectionActions];
-    if (![self.tableView.indexPathsForVisibleRows containsObject:starIndexPath]) return;
-    [self.tableView reloadRowsAtIndexPaths:@[starIndexPath] withRowAnimation:UITableViewRowAnimationNone];
+    [self refreshHeader];
 }
 
 - (void)toggleStar {
@@ -917,66 +977,110 @@ static const NSInteger kMoreSectionsRowCount = 2;
     return [value boolValue];
 }
 
-- (BOOL)shouldShowOwnerRow {
-    return [self ownerLogin].length > 0;
+- (NSString *)licenseName {
+    NSDictionary *license = [self safeDictForKey:@"license" inDict:self.repo];
+    NSString *spdx = [self safeStringForKey:@"spdx_id" inDict:license];
+    if (spdx.length > 0 && ![spdx isEqualToString:@"NOASSERTION"]) return spdx;
+    NSString *name = [self safeStringForKey:@"name" inDict:license];
+    return name.length > 0 ? name : nil;
 }
 
-- (NSInteger)actionRowForOwner {
-    if (![self shouldShowOwnerRow]) return NSNotFound;
-    return 0;
+#pragma mark - Header
+
+- (GHRepoStarState)currentStarState {
+    if (![self shouldShowStarButton]) return GHRepoStarStateHidden;
+    if (self.starActionInProgress) return GHRepoStarStateBusy;
+    if (self.starCheckErrorMessage.length > 0) return GHRepoStarStateError;
+    if (!self.starStatusKnown) return GHRepoStarStateChecking;
+    return self.isStarred ? GHRepoStarStateStarred : GHRepoStarStateNotStarred;
 }
 
-- (NSInteger)actionRowForStar {
-    if (![self shouldShowStarButton]) return NSNotFound;
-    return [self shouldShowOwnerRow] ? 1 : 0;
+- (void)refreshHeader {
+    if (!self.headerView) return;
+    CGFloat width = self.tableView.bounds.size.width > 0 ? self.tableView.bounds.size.width : 320;
+    [self.headerView configureWithRepo:self.repo];
+    [self.headerView setStarState:[self currentStarState]];
+    CGFloat height = [self.headerView heightForWidth:width];
+    self.headerView.frame = CGRectMake(0, 0, width, height);
+    [self.headerView setNeedsLayout];
+    self.tableView.tableHeaderView = self.headerView;
 }
 
-- (NSInteger)actionRowForReleases {
-    NSInteger row = 0;
-    if ([self shouldShowOwnerRow]) row++;
-    if ([self shouldShowStarButton]) row++;
-    return row;
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    if (!self.headerView) return;
+    if (self.tableView.tableHeaderView != self.headerView ||
+        fabs(self.headerView.frame.size.width - self.tableView.bounds.size.width) > 0.5) {
+        [self refreshHeader];
+    }
 }
 
-- (NSInteger)actionRowForPullRequests {
-    return [self actionRowForReleases] + 1;
+#pragma mark - Latest release
+
+- (void)fetchLatestRelease {
+    NSString *ownerLogin = [self ownerLogin];
+    NSString *repoName = [self repoName];
+    if (ownerLogin.length == 0 || repoName.length == 0) return;
+
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] latestReleaseForOwner:ownerLogin repo:repoName completion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSDictionary *release = (!error && [jsonObject isKindOfClass:[NSDictionary class]]) ? jsonObject : nil;
+        if (release && [strongSelf safeStringForKey:@"tag_name" inDict:release].length == 0) release = nil;
+        if (release == strongSelf.latestRelease) return;
+        strongSelf.latestRelease = release;
+        [strongSelf.tableView reloadData];
+    }];
 }
 
-- (NSInteger)actionRowForIssues {
-    return [self actionRowForPullRequests] + 1;
+#pragma mark - Rows
+
+- (NSArray *)actionRowKinds {
+    NSMutableArray *rows = [NSMutableArray arrayWithObjects:@(GHRepoRowKindIssues), @(GHRepoRowKindPullRequests), @(GHRepoRowKindReleases), nil];
+    if (self.latestRelease) [rows addObject:@(GHRepoRowKindLatestRelease)];
+    [rows addObject:@(GHRepoRowKindMore)];
+    if (self.sectionsExpanded) [rows addObjectsFromArray:[self expandedRowKinds]];
+    return rows;
 }
 
-- (NSInteger)actionRowForCommits {
-    return [self actionRowForIssues] + 1;
+- (NSArray *)expandedRowKinds {
+    NSMutableArray *rows = [NSMutableArray arrayWithObject:@(GHRepoRowKindForks)];
+    if ([self licenseName]) [rows addObject:@(GHRepoRowKindLicense)];
+    return rows;
 }
 
-- (NSInteger)actionRowForMore {
-    return [self actionRowForCommits] + 1;
+- (NSArray *)codeRowKinds {
+    NSMutableArray *rows = [NSMutableArray array];
+    if ([self safeStringForKey:@"default_branch" inDict:self.repo].length > 0) [rows addObject:@(GHRepoRowKindBranch)];
+    [rows addObject:@(GHRepoRowKindFiles)];
+    [rows addObject:@(GHRepoRowKindCommits)];
+    return rows;
 }
 
-- (NSInteger)actionRowForFiles {
-    if (!self.sectionsExpanded) return NSNotFound;
-    return [self actionRowForMore] + 1;
+- (NSArray *)rowKindsForSection:(NSInteger)section {
+    if (section == kSectionActions) return [self actionRowKinds];
+    if (section == kSectionCode) return [self codeRowKinds];
+    return @[];
 }
 
-- (NSInteger)actionRowForForks {
-    if (!self.sectionsExpanded) return NSNotFound;
-    return [self actionRowForFiles] + 1;
-}
-
-- (NSInteger)actionRowCount {
-    NSInteger count = [self actionRowForMore] + 1;
-    if (self.sectionsExpanded) count += kMoreSectionsRowCount;
-    return count;
+- (GHRepoRowKind)rowKindAtIndexPath:(NSIndexPath *)indexPath {
+    NSArray *rows = [self rowKindsForSection:indexPath.section];
+    if (indexPath.row < 0 || indexPath.row >= (NSInteger)rows.count) return GHRepoRowKindMore;
+    return (GHRepoRowKind)[[rows objectAtIndex:indexPath.row] integerValue];
 }
 
 - (void)toggleSectionsExpanded {
-    NSInteger firstExtraRow = [self actionRowForMore] + 1;
+    NSArray *rowsBefore = [self actionRowKinds];
+    NSInteger moreIndex = [rowsBefore indexOfObject:@(GHRepoRowKindMore)];
+    if (moreIndex == NSNotFound) return;
+
+    NSInteger extraCount = [self expandedRowKinds].count;
     NSMutableArray *extraIndexPaths = [NSMutableArray array];
-    for (NSInteger i = 0; i < kMoreSectionsRowCount; i++) {
-        [extraIndexPaths addObject:[NSIndexPath indexPathForRow:firstExtraRow + i inSection:kSectionActions]];
+    for (NSInteger i = 0; i < extraCount; i++) {
+        [extraIndexPaths addObject:[NSIndexPath indexPathForRow:moreIndex + 1 + i inSection:kSectionActions]];
     }
-    NSIndexPath *moreIndexPath = [NSIndexPath indexPathForRow:[self actionRowForMore] inSection:kSectionActions];
+    NSIndexPath *moreIndexPath = [NSIndexPath indexPathForRow:moreIndex inSection:kSectionActions];
 
     self.sectionsExpanded = !self.sectionsExpanded;
 
@@ -1005,269 +1109,306 @@ static const NSInteger kMoreSectionsRowCount = 2;
     return MAX(size.height, 20);
 }
 
+#pragma mark - Icons
+
+- (UIImage *)tileForIcon:(UIImage *)icon color:(UIColor *)color {
+    return [GHIconRenderer tileWithIcon:icon backgroundColor:color size:30];
+}
+
+- (UIColor *)neutralTileColor {
+    return [UIColor colorWithRed:0.33 green:0.36 blue:0.40 alpha:1.0];
+}
+
+- (UIImage *)tileImageForRowKind:(GHRepoRowKind)kind {
+    UIColor *white = [UIColor whiteColor];
+    switch (kind) {
+        case GHRepoRowKindIssues:
+            return [self tileForIcon:[GHIconRenderer issueOpenIconWithColor:white size:18]
+                               color:[UIColor colorWithRed:0.18 green:0.64 blue:0.31 alpha:1.0]];
+        case GHRepoRowKindPullRequests:
+            return [self tileForIcon:[GHIconRenderer pullRequestIconWithColor:white size:18]
+                               color:[UIColor colorWithRed:0.12 green:0.44 blue:0.95 alpha:1.0]];
+        case GHRepoRowKindReleases:
+            return [self tileForIcon:[GHIconRenderer tagIconWithColor:white size:18] color:[self neutralTileColor]];
+        case GHRepoRowKindMore:
+            return [self tileForIcon:[GHIconRenderer moreIconWithColor:white size:18] color:[self neutralTileColor]];
+        case GHRepoRowKindForks:
+            return [self tileForIcon:[GHIconRenderer forkIconWithColor:white size:18]
+                               color:[UIColor colorWithRed:0.94 green:0.51 blue:0.24 alpha:1.0]];
+        case GHRepoRowKindLicense:
+            return [self tileForIcon:[GHIconRenderer lawIconWithColor:white size:18]
+                               color:[UIColor colorWithRed:0.85 green:0.24 blue:0.28 alpha:1.0]];
+        case GHRepoRowKindBranch:
+            return [GHIconRenderer tileWithIcon:[GHIconRenderer branchIconWithColor:GHSecondaryTextColor() size:20]
+                                backgroundColor:[UIColor clearColor]
+                                           size:30];
+        case GHRepoRowKindFiles:
+            return [self tileForIcon:[GHIconRenderer codeIconWithColor:white size:18] color:[self neutralTileColor]];
+        case GHRepoRowKindCommits:
+            return [self tileForIcon:[GHIconRenderer commitIconWithColor:white size:18] color:[self neutralTileColor]];
+        default:
+            return nil;
+    }
+}
+
+- (UIView *)moreChevronAccessory {
+    static UIImage *chevronImage = nil;
+    static dispatch_once_t chevronOnceToken;
+    dispatch_once(&chevronOnceToken, ^{
+        chevronImage = [GHIconRenderer disclosureChevronWithColor:[UIColor colorWithWhite:0.62 alpha:1.0]
+                                                               size:CGSizeMake(12, 20)];
+    });
+    CGFloat chevronSide = MAX(chevronImage.size.width, chevronImage.size.height);
+    UIView *chevronContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, chevronSide, chevronSide)];
+    chevronContainer.backgroundColor = [UIColor clearColor];
+    UIImageView *chevronImageView = [[UIImageView alloc] initWithImage:chevronImage];
+    chevronImageView.center = CGPointMake(chevronSide / 2.0, chevronSide / 2.0);
+    [chevronContainer addSubview:chevronImageView];
+    return chevronContainer;
+}
+
 #pragma mark - UITableViewDataSource
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     return kSectionCount;
 }
 
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if (section == kSectionDescription) return GHL(@"Описание");
-    if (section == kSectionReadme) return @"README";
-    return nil;
+- (UIView *)readmeSectionHeaderView {
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 44)];
+    container.backgroundColor = [UIColor clearColor];
+    container.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+
+    UIImageView *icon = [[UIImageView alloc] initWithImage:[GHIconRenderer infoIconWithColor:GHSecondaryTextColor() size:18]];
+    icon.frame = CGRectMake(16, 16, 18, 18);
+    [container addSubview:icon];
+
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(16 + 18 + 10, 12, container.bounds.size.width - 60, 26)];
+    label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    label.backgroundColor = [UIColor clearColor];
+    label.font = [UIFont fontWithName:@"Menlo-Regular" size:15] ?: [UIFont fontWithName:@"Courier" size:16] ?: [UIFont systemFontOfSize:15];
+    label.textColor = GHSecondaryTextColor();
+    label.text = self.readmeFileName.length > 0 ? self.readmeFileName : @"README";
+    [container addSubview:label];
+    return container;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-    return GHThemedSectionHeaderView([self tableView:tableView titleForHeaderInSection:section]);
+    if (section == kSectionReadme) return [self readmeSectionHeaderView];
+    return GHThemedSectionHeaderView(nil);
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return GHThemedSectionHeaderHeight([self tableView:tableView titleForHeaderInSection:section]);
+    if (section == kSectionReadme) return 44;
+    return GHThemedSectionHeaderHeight(nil);
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == kSectionActions) return [self actionRowCount];
-    if (section == kSectionDescription) return 1;
     if (section == kSectionReadme) return 1;
-    return 0;
+    return [self rowKindsForSection:section].count;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    CGFloat width = tableView.bounds.size.width - 40;
-
-    if (indexPath.section == kSectionActions && indexPath.row == [self actionRowForStar] && self.starCheckErrorMessage.length > 0) {
-        NSString *text = [NSString stringWithFormat:GHL(@"Ошибка: %@"), self.starCheckErrorMessage];
-        return [self heightForText:text width:width] + 24;
-    }
-    if (indexPath.section == kSectionDescription) {
-        NSString *description = [self safeStringForKey:@"description" inDict:self.repo];
-        NSString *text = description.length > 0 ? description : GHL(@"Нет описания");
-        return [self heightForText:text width:width] + 24;
-    }
     if (indexPath.section == kSectionReadme) {
         if (self.readmeHTMLReady) {
             return self.readmeWebViewHeight;
         }
+        CGFloat width = tableView.bounds.size.width - 40;
         return [self heightForText:[self readmePlaceholderText] width:width] + 24;
     }
-    return 44;
+
+    GHRepoRowKind kind = [self rowKindAtIndexPath:indexPath];
+    if (kind == GHRepoRowKindLatestRelease || kind == GHRepoRowKindBranch) return 58;
+    return 50;
+}
+
+- (UITableViewCell *)menuCellForTableView:(UITableView *)tableView style:(UITableViewCellStyle)style identifier:(NSString *)identifier {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:style reuseIdentifier:identifier];
+        cell.textLabel.backgroundColor = [UIColor clearColor];
+        cell.detailTextLabel.backgroundColor = [UIColor clearColor];
+    }
+    cell.backgroundColor = GHCellBackgroundColor();
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = nil;
+    cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+    cell.indentationLevel = 0;
+    cell.textLabel.textColor = GHPrimaryTextColor();
+    cell.detailTextLabel.textColor = GHSecondaryTextColor();
+    return cell;
+}
+
+- (UITableViewCell *)readmeCellForTableView:(UITableView *)tableView indexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [tableView gh_dequeueCellWithIdentifier:@"ReadmeCell" forIndexPath:indexPath];
+    cell.backgroundColor = GHCellBackgroundColor();
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = nil;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.imageView.image = nil;
+
+    if (self.readmeHTMLReady && self.readmeWebView) {
+        cell.textLabel.text = nil;
+
+        if (self.readmeWebView.superview != cell.contentView) {
+            [self.readmeWebView removeFromSuperview];
+            CGRect frame = self.readmeWebView.frame;
+            frame.origin = CGPointZero;
+            self.readmeWebView.frame = frame;
+            [cell.contentView addSubview:self.readmeWebView];
+        }
+        return cell;
+    }
+
+    cell.textLabel.text = [self readmePlaceholderText];
+    cell.textLabel.textColor = GHSecondaryTextColor();
+    cell.textLabel.numberOfLines = 0;
+    cell.textLabel.font = [UIFont systemFontOfSize:15];
+    return cell;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    NSString *identifier = (indexPath.section == kSectionReadme) ? @"ReadmeCell" : @"Cell";
-    UITableViewCell *cell = [tableView gh_dequeueCellWithIdentifier:identifier forIndexPath:indexPath];
-    cell.backgroundColor = GHCellBackgroundColor();
-    cell.accessoryType = UITableViewCellAccessoryNone;
+    if (indexPath.section == kSectionReadme) {
+        return [self readmeCellForTableView:tableView indexPath:indexPath];
+    }
 
-    cell.accessoryView = nil;
-    cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    cell.textLabel.textColor = GHPrimaryTextColor();
-    cell.detailTextLabel.textColor = GHSecondaryTextColor();
-    cell.textLabel.numberOfLines = 1;
+    GHRepoRowKind kind = [self rowKindAtIndexPath:indexPath];
+
+    if (kind == GHRepoRowKindLatestRelease) {
+        UITableViewCell *cell = [self menuCellForTableView:tableView style:UITableViewCellStyleSubtitle identifier:@"RepoReleaseCell"];
+        cell.indentationWidth = 46;
+        cell.indentationLevel = 1;
+        NSString *name = [self safeStringForKey:@"name" inDict:self.latestRelease];
+        NSString *tag = [self safeStringForKey:@"tag_name" inDict:self.latestRelease];
+        cell.textLabel.text = name.length > 0 ? name : tag;
+        cell.textLabel.font = [UIFont boldSystemFontOfSize:16];
+
+        NSString *when = GHRepoRelativeDate([self safeStringForKey:@"published_at" inDict:self.latestRelease]);
+        NSString *latest = GHL(@"Последний");
+        NSString *detail = when.length > 0 ? [NSString stringWithFormat:@"%@ · %@", when, latest] : latest;
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:14];
+        cell.detailTextLabel.text = detail;
+        if ([cell.detailTextLabel respondsToSelector:@selector(setAttributedText:)]) {
+            NSMutableAttributedString *attributed = [[NSMutableAttributedString alloc] initWithString:detail];
+            [attributed addAttribute:GHForegroundColorAttributeName() value:GHSecondaryTextColor() range:NSMakeRange(0, detail.length)];
+            [attributed addAttribute:GHForegroundColorAttributeName()
+                               value:[UIColor colorWithRed:0.18 green:0.64 blue:0.31 alpha:1.0]
+                               range:NSMakeRange(detail.length - latest.length, latest.length)];
+            cell.detailTextLabel.attributedText = attributed;
+        }
+        cell.imageView.image = nil;
+        GHApplyDisclosureIndicator(cell);
+        return cell;
+    }
+
+    if (kind == GHRepoRowKindBranch) {
+        UITableViewCell *cell = [self menuCellForTableView:tableView style:UITableViewCellStyleSubtitle identifier:@"RepoBranchCell"];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.textLabel.text = GHL(@"Текущая ветка");
+        cell.textLabel.font = [UIFont systemFontOfSize:13];
+        cell.textLabel.textColor = GHSecondaryTextColor();
+        cell.detailTextLabel.text = [self repoDefaultBranch];
+        cell.detailTextLabel.font = [UIFont fontWithName:@"Menlo-Regular" size:16] ?: [UIFont fontWithName:@"Courier" size:17] ?: [UIFont systemFontOfSize:16];
+        cell.detailTextLabel.textColor = GHPrimaryTextColor();
+        cell.imageView.image = [self tileImageForRowKind:kind];
+        return cell;
+    }
+
+    UITableViewCell *cell = [self menuCellForTableView:tableView style:UITableViewCellStyleValue1 identifier:@"RepoMenuCell"];
+    cell.textLabel.font = [UIFont systemFontOfSize:17];
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:17];
     cell.detailTextLabel.text = nil;
-    cell.imageView.image = nil;
+    cell.imageView.image = [self tileImageForRowKind:kind];
 
-    if (indexPath.section == kSectionActions) {
-        if (indexPath.row == [self actionRowForOwner]) {
-            cell.textLabel.text = [self ownerLogin];
-            cell.textLabel.textColor = GHPrimaryTextColor();
-            GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-
-            NSDictionary *owner = [self safeDictForKey:@"owner" inDict:self.repo];
-            NSString *avatarURL = [self safeStringForKey:@"avatar_url" inDict:owner];
-
-            __weak typeof(self) weakSelf = self;
-            [[GHAvatarLoader sharedLoader] loadAvatarWithURLString:avatarURL
-                                                       intoImageView:cell.imageView
-                                                          completion:^{
-
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    __strong typeof(weakSelf) strongSelf = weakSelf;
-                    if (!strongSelf || ![strongSelf shouldShowOwnerRow]) return;
-                    NSIndexPath *ownerIndexPath = [NSIndexPath indexPathForRow:[strongSelf actionRowForOwner]
-                                                                        inSection:kSectionActions];
-                    if (![strongSelf.tableView.indexPathsForVisibleRows containsObject:ownerIndexPath]) return;
-                    [strongSelf.tableView reloadRowsAtIndexPaths:@[ownerIndexPath]
-                                                 withRowAnimation:UITableViewRowAnimationNone];
-                });
-            }];
-            return cell;
-        }
-        if (indexPath.row == [self actionRowForStar]) {
-            if (self.starActionInProgress) {
-                cell.textLabel.text = @"…";
-                cell.textLabel.textColor = GHSecondaryTextColor();
-            } else if (self.starCheckErrorMessage.length > 0) {
-                cell.textLabel.text = [NSString stringWithFormat:GHL(@"Ошибка: %@"), self.starCheckErrorMessage];
-                cell.textLabel.textColor = [UIColor redColor];
-                cell.textLabel.numberOfLines = 0;
-            } else if (!self.starStatusKnown) {
-                cell.textLabel.text = GHL(@"★ Проверка…");
-                cell.textLabel.textColor = GHSecondaryTextColor();
-            } else if (self.isStarred) {
-                cell.textLabel.text = GHL(@"★ В избранном (убрать)");
-                cell.textLabel.textColor = GHPrimaryTextColor();
+    switch (kind) {
+        case GHRepoRowKindIssues: {
+            cell.textLabel.text = GHL(@"Задачи");
+            if ([self repoHasIssues]) {
+                NSNumber *openIssuesCount = [self safeNumberForKey:@"open_issues_count" inDict:self.repo];
+                cell.detailTextLabel.text = [openIssuesCount stringValue];
             } else {
-                cell.textLabel.text = GHL(@"☆ Добавить в избранное");
-                cell.textLabel.textColor = GHPrimaryTextColor();
+                cell.detailTextLabel.text = GHL(@"скрыты");
             }
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
+            GHApplyDisclosureIndicator(cell);
+            break;
         }
-        if (indexPath.row == [self actionRowForMore]) {
+        case GHRepoRowKindPullRequests:
+            cell.textLabel.text = GHL(@"Пул-реквесты");
+            GHApplyDisclosureIndicator(cell);
+            break;
+        case GHRepoRowKindReleases:
+            cell.textLabel.text = GHL(@"Релизы");
+            GHApplyDisclosureIndicator(cell);
+            break;
+        case GHRepoRowKindMore: {
             cell.textLabel.text = GHL(@"Ещё");
-            cell.textLabel.textColor = GHPrimaryTextColor();
-
-            static UIImage *chevronImage = nil;
-            static dispatch_once_t chevronOnceToken;
-            dispatch_once(&chevronOnceToken, ^{
-                chevronImage = [GHIconRenderer disclosureChevronWithColor:[UIColor colorWithWhite:0.62 alpha:1.0]
-                                                                       size:CGSizeMake(12, 20)];
-            });
-            CGFloat chevronSide = MAX(chevronImage.size.width, chevronImage.size.height);
-            UIView *chevronContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, chevronSide, chevronSide)];
-            chevronContainer.backgroundColor = [UIColor clearColor];
-            UIImageView *chevronImageView = [[UIImageView alloc] initWithImage:chevronImage];
-            chevronImageView.center = CGPointMake(chevronSide / 2.0, chevronSide / 2.0);
-            [chevronContainer addSubview:chevronImageView];
-
-            cell.accessoryType = UITableViewCellAccessoryNone;
-            cell.accessoryView = chevronContainer;
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-
+            UIView *chevron = [self moreChevronAccessory];
+            cell.accessoryView = chevron;
             BOOL expandedNow = self.sectionsExpanded;
             dispatch_async(dispatch_get_main_queue(), ^{
-                chevronContainer.transform = expandedNow ? CGAffineTransformMakeRotation((CGFloat)M_PI_2) : CGAffineTransformIdentity;
+                chevron.transform = expandedNow ? CGAffineTransformMakeRotation((CGFloat)M_PI_2) : CGAffineTransformIdentity;
             });
-            return cell;
+            break;
         }
-        if (indexPath.row == [self actionRowForReleases]) {
-            cell.textLabel.text = GHL(@"Смотреть релизы");
-            cell.textLabel.textColor = GHPrimaryTextColor();
+        case GHRepoRowKindForks: {
+            cell.textLabel.text = GHL(@"Форки");
+            cell.detailTextLabel.text = [[self safeNumberForKey:@"forks_count" inDict:self.repo] stringValue];
             GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
+            break;
         }
-        if (indexPath.row == [self actionRowForPullRequests]) {
-            cell.textLabel.text = GHL(@"Пул-реквесты");
-            cell.textLabel.textColor = GHPrimaryTextColor();
+        case GHRepoRowKindLicense:
+            cell.textLabel.text = GHL(@"Лицензия");
+            cell.detailTextLabel.text = [self licenseName];
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            break;
+        case GHRepoRowKindFiles:
+            cell.textLabel.text = GHL(@"Код");
             GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
-        }
-        if (indexPath.row == [self actionRowForIssues]) {
-            if (![self repoHasIssues]) {
-                cell.textLabel.text = GHL(@"Задачи (скрыто)");
-                cell.textLabel.textColor = GHSecondaryTextColor();
-                cell.accessoryType = UITableViewCellAccessoryNone;
-                cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-                return cell;
-            }
-            NSNumber *openIssuesCount = [self safeNumberForKey:@"open_issues_count" inDict:self.repo];
-            cell.textLabel.text = openIssuesCount.integerValue > 0
-                ? [NSString stringWithFormat:GHL(@"Задачи (%@)"), openIssuesCount]
-                : GHL(@"Задачи");
-            cell.textLabel.textColor = GHPrimaryTextColor();
+            break;
+        case GHRepoRowKindCommits:
+            cell.textLabel.text = GHL(@"Коммиты");
             GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
-        }
-        if (indexPath.row == [self actionRowForCommits]) {
-            cell.textLabel.text = GHL(@"История коммитов");
-            cell.textLabel.textColor = GHPrimaryTextColor();
-            GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
-        }
-        if (indexPath.row == [self actionRowForFiles]) {
-            cell.textLabel.text = GHL(@"Файлы");
-            cell.textLabel.textColor = GHPrimaryTextColor();
-            GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
-        }
-        if (indexPath.row == [self actionRowForForks]) {
-            NSNumber *forksCount = [self safeNumberForKey:@"forks_count" inDict:self.repo];
-            cell.textLabel.text = forksCount.integerValue > 0
-                ? [NSString stringWithFormat:GHL(@"Форки (%@)"), forksCount]
-                : GHL(@"Форки");
-            cell.textLabel.textColor = GHPrimaryTextColor();
-            GHApplyDisclosureIndicator(cell);
-            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-            return cell;
-        }
+            break;
+        default:
+            break;
     }
-
-    if (indexPath.section == kSectionDescription) {
-        NSString *description = [self safeStringForKey:@"description" inDict:self.repo];
-        cell.textLabel.text = description.length > 0 ? description : GHL(@"Нет описания");
-        cell.textLabel.textColor = description.length > 0 ? GHPrimaryTextColor() : GHSecondaryTextColor();
-        cell.textLabel.numberOfLines = 0;
-        return cell;
-    }
-
-    if (indexPath.section == kSectionReadme) {
-        if (self.readmeHTMLReady && self.readmeWebView) {
-            cell.textLabel.text = nil;
-
-            if (self.readmeWebView.superview != cell.contentView) {
-                [self.readmeWebView removeFromSuperview];
-                CGRect frame = self.readmeWebView.frame;
-                frame.origin = CGPointZero;
-                self.readmeWebView.frame = frame;
-                [cell.contentView addSubview:self.readmeWebView];
-            }
-            return cell;
-        }
-
-        cell.textLabel.text = [self readmePlaceholderText];
-        cell.textLabel.textColor = GHSecondaryTextColor();
-        cell.textLabel.numberOfLines = 0;
-        cell.textLabel.font = [UIFont systemFontOfSize:15];
-        return cell;
-    }
-
     return cell;
+}
+
+#pragma mark - Navigation
+
+- (void)openOwnerProfile {
+    NSString *ownerLogin = [self ownerLogin];
+    if (ownerLogin.length == 0) return;
+    PublicProfileViewController *profileVC = [[PublicProfileViewController alloc] init];
+    profileVC.login = ownerLogin;
+    [self.navigationController pushViewController:profileVC animated:YES];
+}
+
+- (void)openExternalURL:(NSURL *)url {
+    if (!url) return;
+    NSString *host = url.host.lowercaseString;
+    if (([host isEqualToString:@"github.com"] || [host isEqualToString:@"www.github.com"]) &&
+        [GHURLRouter routeGitHubURL:url fromViewController:self]) {
+        return;
+    }
+    [[UIApplication sharedApplication] openURL:url];
+}
+
+- (void)openForks {
+    ForkListViewController *forksVC = [[ForkListViewController alloc] init];
+    forksVC.ownerLogin = [self ownerLogin];
+    forksVC.repoName = [self repoName];
+    [self.navigationController pushViewController:forksVC animated:YES];
 }
 
 #pragma mark - UITableViewDelegate
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (indexPath.section == kSectionReadme) return;
 
-    if (indexPath.section == kSectionActions) {
-        if (indexPath.row == [self actionRowForOwner]) {
-            PublicProfileViewController *profileVC = [[PublicProfileViewController alloc] init];
-            profileVC.login = [self ownerLogin];
-            [self.navigationController pushViewController:profileVC animated:YES];
-            return;
-        }
-        if (indexPath.row == [self actionRowForStar]) {
-            [self toggleStar];
-            return;
-        }
-        if (indexPath.row == [self actionRowForMore]) {
-            [self toggleSectionsExpanded];
-            return;
-        }
-        if (indexPath.row == [self actionRowForReleases]) {
-            RepoDetailViewController *releasesVC = [[RepoDetailViewController alloc] init];
-            releasesVC.ownerLogin = [self ownerLogin];
-            releasesVC.repoName = [self repoName];
-            releasesVC.title = GHL(@"Релизы");
-            [self.navigationController pushViewController:releasesVC animated:YES];
-            return;
-        }
-        if (indexPath.row == [self actionRowForPullRequests]) {
-            PullRequestListViewController *pullRequestsVC = [[PullRequestListViewController alloc] init];
-            pullRequestsVC.ownerLogin = [self ownerLogin];
-            pullRequestsVC.repoName = [self repoName];
-            [self.navigationController pushViewController:pullRequestsVC animated:YES];
-            return;
-        }
-        if (indexPath.row == [self actionRowForIssues]) {
-
+    switch ([self rowKindAtIndexPath:indexPath]) {
+        case GHRepoRowKindIssues: {
             if (![self repoHasIssues]) {
                 UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Issues скрыты")
                                                                  message:GHL(@"Владелец репозитория отключил раздел Issues — GitHub не отдаёт по нему ни одной issue, поэтому список всегда будет пустым.")
@@ -1283,14 +1424,37 @@ static const NSInteger kMoreSectionsRowCount = 2;
             [self.navigationController pushViewController:issuesVC animated:YES];
             return;
         }
-        if (indexPath.row == [self actionRowForCommits]) {
-            CommitHistoryViewController *commitsVC = [[CommitHistoryViewController alloc] init];
-            commitsVC.ownerLogin = [self ownerLogin];
-            commitsVC.repoName = [self repoName];
-            [self.navigationController pushViewController:commitsVC animated:YES];
+        case GHRepoRowKindPullRequests: {
+            PullRequestListViewController *pullRequestsVC = [[PullRequestListViewController alloc] init];
+            pullRequestsVC.ownerLogin = [self ownerLogin];
+            pullRequestsVC.repoName = [self repoName];
+            [self.navigationController pushViewController:pullRequestsVC animated:YES];
             return;
         }
-        if (indexPath.row == [self actionRowForFiles]) {
+        case GHRepoRowKindReleases: {
+            RepoDetailViewController *releasesVC = [[RepoDetailViewController alloc] init];
+            releasesVC.ownerLogin = [self ownerLogin];
+            releasesVC.repoName = [self repoName];
+            releasesVC.title = GHL(@"Релизы");
+            [self.navigationController pushViewController:releasesVC animated:YES];
+            return;
+        }
+        case GHRepoRowKindLatestRelease: {
+            if (!self.latestRelease) return;
+            ReleaseDetailViewController *releaseVC = [[ReleaseDetailViewController alloc] init];
+            releaseVC.releaseInfo = self.latestRelease;
+            releaseVC.ownerLogin = [self ownerLogin];
+            releaseVC.repoName = [self repoName];
+            [self.navigationController pushViewController:releaseVC animated:YES];
+            return;
+        }
+        case GHRepoRowKindMore:
+            [self toggleSectionsExpanded];
+            return;
+        case GHRepoRowKindForks:
+            [self openForks];
+            return;
+        case GHRepoRowKindFiles: {
             RepoFilesViewController *filesVC = [[RepoFilesViewController alloc] init];
             filesVC.ownerLogin = [self ownerLogin];
             filesVC.repoName = [self repoName];
@@ -1299,13 +1463,15 @@ static const NSInteger kMoreSectionsRowCount = 2;
             [self.navigationController pushViewController:filesVC animated:YES];
             return;
         }
-        if (indexPath.row == [self actionRowForForks]) {
-            ForkListViewController *forksVC = [[ForkListViewController alloc] init];
-            forksVC.ownerLogin = [self ownerLogin];
-            forksVC.repoName = [self repoName];
-            [self.navigationController pushViewController:forksVC animated:YES];
+        case GHRepoRowKindCommits: {
+            CommitHistoryViewController *commitsVC = [[CommitHistoryViewController alloc] init];
+            commitsVC.ownerLogin = [self ownerLogin];
+            commitsVC.repoName = [self repoName];
+            [self.navigationController pushViewController:commitsVC animated:YES];
             return;
         }
+        default:
+            return;
     }
 }
 
