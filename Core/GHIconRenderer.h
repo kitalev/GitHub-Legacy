@@ -18,6 +18,35 @@
 
 + (UIImage *)smileyIconWithColor:(UIColor *)color size:(CGFloat)size;
 
++ (UIImage *)successBadgeWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)devicesIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)keyIconWithColor:(UIColor *)color size:(CGFloat)size;
+
++ (UIImage *)linkIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)locationIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)organizationIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)repoIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)pinIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)mailIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)personOutlineIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)issueOpenIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)issueClosedIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)issueNotPlannedIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)commentIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)pullRequestIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)pullRequestMergedIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)pullRequestClosedIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)pullRequestDraftIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)tagIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)moreIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)codeIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)commitIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)forkIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)branchIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)lawIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)infoIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)tileWithIcon:(UIImage *)icon backgroundColor:(UIColor *)color size:(CGFloat)size;
+
 + (UIImage *)issueLabelBadgeWithText:(NSString *)text
                        backgroundColor:(UIColor *)backgroundColor
                              textColor:(UIColor *)textColor

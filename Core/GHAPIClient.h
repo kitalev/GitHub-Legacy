@@ -88,11 +88,23 @@ typedef void (^GHStatusCompletionBlock)(NSInteger statusCode, NSString *message,
                     number:(NSInteger)number
                 completion:(GHJSONCompletionBlock)completion;
 
+- (void)timelineForOwner:(NSString *)owner
+                      repo:(NSString *)repo
+                    number:(NSInteger)number
+                completion:(GHJSONCompletionBlock)completion;
+
+- (void)checkRunsForOwner:(NSString *)owner
+                      repo:(NSString *)repo
+                       ref:(NSString *)ref
+                completion:(GHJSONCompletionBlock)completion;
+
 - (void)repositoriesForCurrentUserWithCompletion:(GHJSONCompletionBlock)completion;
 
 - (void)followersForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion;
 
 - (void)followingForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion;
+
+- (void)organizationsForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion;
 
 - (void)checkFollowingUser:(NSString *)login completion:(GHStatusCompletionBlock)completion;
 

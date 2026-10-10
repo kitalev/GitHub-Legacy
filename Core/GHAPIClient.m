@@ -53,11 +53,6 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
                 ? [NSString stringWithFormat:@"HTTP %ld: %@", (long)httpResponse.statusCode, githubMessage]
                 : [NSString stringWithFormat:@"HTTP %ld", (long)httpResponse.statusCode];
 
-            NSLog(@"GHAPIClient: %@ -> HTTP %ld%@%@",
-                  path, (long)httpResponse.statusCode,
-                  githubMessage.length > 0 ? [@" — " stringByAppendingString:githubMessage] : @"",
-                  acceptedPermissions.length > 0 ? [NSString stringWithFormat:@" (нужны права: %@)", acceptedPermissions] : @"");
-
             NSMutableDictionary *userInfo = [NSMutableDictionary dictionaryWithObject:description forKey:NSLocalizedDescriptionKey];
             if (acceptedPermissions.length > 0) userInfo[@"GHAcceptedPermissions"] = acceptedPermissions;
 
@@ -185,6 +180,16 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [self getJSONFromPath:path completion:completion];
 }
 
+- (void)timelineForOwner:(NSString *)owner repo:(NSString *)repo number:(NSInteger)number completion:(GHJSONCompletionBlock)completion {
+    NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/issues/%ld/timeline?per_page=100", owner, repo, (long)number];
+    [self getJSONFromPath:path completion:completion];
+}
+
+- (void)checkRunsForOwner:(NSString *)owner repo:(NSString *)repo ref:(NSString *)ref completion:(GHJSONCompletionBlock)completion {
+    NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/commits/%@/check-runs?per_page=100", owner, repo, ref];
+    [self getJSONFromPath:path completion:completion];
+}
+
 - (void)pullRequestsForOwner:(NSString *)owner repo:(NSString *)repo state:(NSString *)state page:(NSInteger)page completion:(GHJSONCompletionBlock)completion {
     NSString *safeState = state.length > 0 ? state : @"open";
     NSInteger safePage = page > 0 ? page : 1;
@@ -208,6 +213,11 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
 
 - (void)followingForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion {
     NSString *path = [NSString stringWithFormat:@"/users/%@/following?per_page=50", login];
+    [self getJSONFromPath:path completion:completion];
+}
+
+- (void)organizationsForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion {
+    NSString *path = [NSString stringWithFormat:@"/users/%@/orgs?per_page=100", login];
     [self getJSONFromPath:path completion:completion];
 }
 
