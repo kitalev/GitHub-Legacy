@@ -28,6 +28,13 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Controllers/RepoFilesViewController.m \
 	Core/GHAPIClient.m \
 	Core/GHAuthManager.m \
+	Core/GHDeviceLogin.m \
+	Core/GHLoginSuccessView.m \
+	Core/GHProfileHeaderView.m \
+	Core/GHRepoHeaderView.m \
+	Core/GHTimelineRenderer.m \
+	Controllers/GHProfileBaseViewController.m \
+	Cells/GHPinnedReposCell.m \
 	Core/GHMarkdownRenderer.m \
 	Core/DownloadManager.m \
 	Controllers/SettingsViewController.m \
@@ -44,6 +51,8 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Cells/GHExploreFeedCell.m \
 	Controllers/PublicProfileViewController.m \
 	Controllers/TokenLoginViewController.m \
+	Controllers/DeviceLoginViewController.m \
+	Controllers/SignInOptionsViewController.m \
 	Core/GHLocalization.m \
 	Controllers/LanguageViewController.m
 

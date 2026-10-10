@@ -6,6 +6,7 @@
 #import "GHLocalization.h"
 #import "LanguageViewController.h"
 #import "TokenLoginViewController.h"
+#import "SignInOptionsViewController.h"
 #import "RepoOverviewViewController.h"
 #import "ReleaseDetailViewController.h"
 
@@ -233,12 +234,12 @@ static const NSInteger kUpdateAlertTag = 2;
 
 - (void)presentTokenLogin {
 
-    TokenLoginViewController *tokenVC = [[TokenLoginViewController alloc] init];
+    SignInOptionsViewController *signInVC = [[SignInOptionsViewController alloc] init];
     __weak typeof(self) weakSelf = self;
-    tokenVC.onLoggedIn = ^{
+    signInVC.onLoggedIn = ^{
         [weakSelf refreshAccountRow];
     };
-    [self.navigationController pushViewController:tokenVC animated:YES];
+    [self.navigationController pushViewController:signInVC animated:YES];
 }
 
 #pragma mark - UIAlertViewDelegate

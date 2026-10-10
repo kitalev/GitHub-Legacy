@@ -10,7 +10,16 @@ static BOOL GHIsGitHubURL(NSURL *url) {
     if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) return NO;
 
     NSString *host = url.host.lowercaseString;
-    return [host isEqualToString:@"github.com"] || [host isEqualToString:@"www.github.com"];
+    if (![host isEqualToString:@"github.com"] && ![host isEqualToString:@"www.github.com"]) return NO;
+
+    NSString *path = url.path.lowercaseString;
+    NSArray *webOnlyPrefixes = [NSArray arrayWithObjects:@"/login", @"/logout", @"/session", @"/sessions", @"/settings",
+                                @"/join", @"/signup", @"/password_reset", @"/apps", @"/marketplace", nil];
+    for (NSString *prefix in webOnlyPrefixes) {
+        if ([path isEqualToString:prefix] || [path hasPrefix:[prefix stringByAppendingString:@"/"]]) return NO;
+    }
+
+    return YES;
 }
 
 static NSString * const kGHSafariRedirectPrefsPath = @"/var/mobile/Library/Preferences/com.githublegacy.safariredirect.plist";
