@@ -393,8 +393,10 @@ static NSDictionary *GHTranslations(void) {
                 @"You don't have write access to %@/%@, and GitHub only uploads photos and videos on behalf of a repository where you do. Normally one of your own public repositories is used for this (nothing is added to it), but you don't have any.\n\nLogs and text files can still be inserted into the issue as text via \"File…\".",
             @"Загрузка через %@… %d%%": @"Uploading via %@… %d%%",
             @"Файл пустой.": @"The file is empty.",
-            @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Скопируйте файл, например, в Загрузки через Filza и прикрепите копию.":
-                @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user. Copy the file, e.g. to Downloads with Filza, and attach the copy.",
+            @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Откройте папку с файлом в файловом менеджере, скопируйте файл, например, в Загрузки и прикрепите копию.":
+                @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user. Open the file's folder in a file manager, copy the file, e.g. to Downloads, and attach the copy.",
+            @"Открыть в Filza": @"Open in Filza",
+            @"Открыть в iFile": @"Open in iFile",
             @"GitHub не разрешил загрузку: для этого нужно право записи в репозиторий.": @"GitHub refused the upload: it requires write access to the repository.",
             @"GitHub не вернул ссылку на загруженный файл.": @"GitHub didn't return a link to the uploaded file.",
             @"Файл пустой или слишком большой: можно не больше %llu МБ.": @"The file is empty or too large: the limit is %llu MB.",

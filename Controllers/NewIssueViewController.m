@@ -17,6 +17,7 @@ static const NSUInteger kMaxIssueBodyLength = 65536;
 static const NSUInteger kMaxInlineFileCharacters = 60000;
 static const unsigned long long kMaxFileReadBytes = 256 * 1024;
 static const CGFloat kMaxPhotoDimension = 2048;
+static const NSInteger kUnreadableFileAlertTag = 1;
 
 static UIColor *GHNewIssueErrorColor(void) {
     return [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
@@ -245,8 +246,10 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 #pragma mark - NewIssueViewController
 
 @interface NewIssueViewController () <UITextFieldDelegate, UITextViewDelegate, UIActionSheetDelegate,
-                                      UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+                                      UIImagePickerControllerDelegate, UINavigationControllerDelegate,
+                                      UIAlertViewDelegate>
 @property (nonatomic, weak) GHIssueFieldRow *attachTargetRow;
+@property (nonatomic, copy) NSArray *fileManagerURLs;
 @property (nonatomic, copy) NSArray *attachActions;
 @property (nonatomic, strong) UIPopoverController *imagePopover;
 @property (nonatomic, strong) GHAttachmentUploader *activeUpload;
@@ -724,6 +727,10 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 }
 
 - (void)handlePickedFileAtPath:(NSString *)path forRow:(GHIssueFieldRow *)row {
+    if (![[NSFileManager defaultManager] isReadableFileAtPath:path]) {
+        [self showUnreadableFileAlertForPath:path];
+        return;
+    }
     NSString *contentType = [GHAttachmentUploader contentTypeForFileName:path];
     if (contentType == nil) {
         [self insertTextFileAtPath:path intoRow:row];
@@ -962,6 +969,43 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     [self clearInvalidStateForRow:row];
 }
 
+- (NSString *)unreadableFileMessageForPath:(NSString *)path {
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+    NSString *owner = attributes[NSFileOwnerAccountName] ?: @"?";
+    unsigned long permissions = [attributes[NSFilePosixPermissions] unsignedLongValue];
+    return [NSString stringWithFormat:GHL(@"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Откройте папку с файлом в файловом менеджере, скопируйте файл, например, в Загрузки и прикрепите копию."),
+            owner, permissions];
+}
+
+- (void)showUnreadableFileAlertForPath:(NSString *)path {
+    NSString *encodedFolder = [[path stringByDeletingLastPathComponent] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    NSArray *candidates = @[@[GHL(@"Открыть в Filza"), [NSString stringWithFormat:@"filza://view%@", encodedFolder]],
+                            @[GHL(@"Открыть в iFile"), [NSString stringWithFormat:@"ifile://%@", encodedFolder]]];
+
+    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Не удалось прикрепить файл")
+                                                     message:[self unreadableFileMessageForPath:path]
+                                                    delegate:self
+                                           cancelButtonTitle:nil
+                                           otherButtonTitles:nil];
+    NSMutableArray *urls = [NSMutableArray array];
+    for (NSArray *candidate in candidates) {
+        NSURL *url = [NSURL URLWithString:candidate[1]];
+        if (url == nil || ![[UIApplication sharedApplication] canOpenURL:url]) continue;
+        [alert addButtonWithTitle:candidate[0]];
+        [urls addObject:url];
+    }
+    alert.cancelButtonIndex = [alert addButtonWithTitle:urls.count > 0 ? GHL(@"Отмена") : @"OK"];
+    alert.tag = kUnreadableFileAlertTag;
+    self.fileManagerURLs = urls;
+    [alert show];
+}
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (alertView.tag != kUnreadableFileAlertTag || buttonIndex == alertView.cancelButtonIndex) return;
+    if (buttonIndex < 0 || buttonIndex >= (NSInteger)self.fileManagerURLs.count) return;
+    [[UIApplication sharedApplication] openURL:self.fileManagerURLs[buttonIndex]];
+}
+
 - (void)showAttachmentError:(NSString *)message {
     UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Не удалось прикрепить файл")
                                                      message:message
@@ -976,11 +1020,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
                           errorMessage:(NSString **)errorMessage {
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
     if (handle == nil) {
-        NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
-        NSString *owner = attributes[NSFileOwnerAccountName] ?: @"?";
-        unsigned long permissions = [attributes[NSFilePosixPermissions] unsignedLongValue];
-        *errorMessage = [NSString stringWithFormat:GHL(@"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Скопируйте файл, например, в Загрузки через Filza и прикрепите копию."),
-                         owner, permissions];
+        *errorMessage = [self unreadableFileMessageForPath:path];
         return nil;
     }
 
