@@ -3,7 +3,7 @@
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
 
-@interface WebLoginViewController () <UIWebViewDelegate>
+@interface WebLoginViewController () <UIWebViewDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UIWebView *webView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UIBarButtonItem *spinnerItem;
@@ -27,10 +27,10 @@
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
     self.spinner.hidesWhenStopped = YES;
     self.spinnerItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
-    self.confirmItem = [[UIBarButtonItem alloc] initWithTitle:GHL(@"Подтвердил")
-                                                        style:UIBarButtonItemStyleDone
+    self.confirmItem = [[UIBarButtonItem alloc] initWithTitle:GHL(@"Другой способ")
+                                                        style:UIBarButtonItemStyleBordered
                                                        target:self
-                                                       action:@selector(confirmTwoFactorTapped)];
+                                                       action:@selector(otherTwoFactorMethodTapped)];
     self.navigationItem.rightBarButtonItem = self.spinnerItem;
 
     NSArray *stack = self.navigationController.viewControllers;
@@ -77,7 +77,6 @@
 - (void)webViewDidFinishLoad:(UIWebView *)webView {
     if (!webView.isLoading) [self.spinner stopAnimating];
     if ([self finishIfSignedInAtURL:webView.request.URL]) return;
-    [self installDetailsSupport];
     [self updateConfirmItem];
     [self fillDeviceUserCodeIfNeeded];
 }
@@ -92,31 +91,32 @@
     if (self.navigationItem.rightBarButtonItem != item) [self.navigationItem setRightBarButtonItem:item animated:YES];
 }
 
-- (void)confirmTwoFactorTapped {
-    NSString *result = [self.webView stringByEvaluatingJavaScriptFromString:
-        @"(function(){"
-         "var fs=document.querySelectorAll('form[action*=\"two-factor\"]');"
-         "var f=null;for(var i=0;i<fs.length;i++){if((fs[i].getAttribute('action')||'').indexOf('mobile')>=0){f=fs[i];break;}}"
-         "if(!f&&fs.length)f=fs[0];"
-         "if(!f)return 'none';f.submit();return 'ok';"
-         "})()"];
-    if (![result isEqualToString:@"ok"]) [self.webView reload];
+- (NSArray *)twoFactorMethods {
+    return @[@[GHL(@"Код из приложения-аутентификатора"), @"/sessions/two-factor/app"],
+             @[GHL(@"Код из SMS"), @"/sessions/two-factor/sms"],
+             @[GHL(@"Код восстановления"), @"/sessions/recovery"]];
 }
 
-- (void)installDetailsSupport {
-    [self.webView stringByEvaluatingJavaScriptFromString:
-        @"(function(){"
-         "if(window.__ghLegacyDetails||!document.head)return;window.__ghLegacyDetails=1;"
-         "var st=document.createElement('style');"
-         "st.textContent='details:not([open])>*:not(summary){display:none!important}details[open]>*{display:block}';"
-         "document.head.appendChild(st);"
-         "document.addEventListener('click',function(e){"
-         "var t=e.target;while(t&&t.tagName!='SUMMARY')t=t.parentNode;if(!t)return;"
-         "var d=t.parentNode;if(!d||d.tagName!='DETAILS')return;"
-         "e.preventDefault();e.stopPropagation();"
-         "if(d.hasAttribute('open'))d.removeAttribute('open');else d.setAttribute('open','');"
-         "},true);"
-         "})()"];
+- (void)otherTwoFactorMethodTapped {
+    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:nil
+                                                       delegate:self
+                                              cancelButtonTitle:nil
+                                         destructiveButtonTitle:nil
+                                              otherButtonTitles:nil];
+    for (NSArray *method in [self twoFactorMethods]) [sheet addButtonWithTitle:method[0]];
+    sheet.cancelButtonIndex = [sheet addButtonWithTitle:GHL(@"Отмена")];
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+        [sheet showFromBarButtonItem:self.confirmItem animated:YES];
+    } else {
+        [sheet showInView:self.view];
+    }
+}
+
+- (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
+    NSArray *methods = [self twoFactorMethods];
+    if (buttonIndex == actionSheet.cancelButtonIndex || buttonIndex < 0 || buttonIndex >= (NSInteger)methods.count) return;
+    NSURL *url = [[NSURL URLWithString:methods[buttonIndex][1] relativeToURL:[GHWebSession baseURL]] absoluteURL];
+    [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
 }
 
 - (void)fillDeviceUserCodeIfNeeded {
