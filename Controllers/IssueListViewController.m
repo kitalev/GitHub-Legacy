@@ -8,11 +8,19 @@
 #import "GHLocalization.h"
 #import "GHIconRenderer.h"
 #import "GHIssueCell.h"
+#import "GHAuthManager.h"
+#import "GHIssueTemplate.h"
+#import "IssueTemplatePickerViewController.h"
+#import "NewIssueViewController.h"
+#import "SignInOptionsViewController.h"
 
 static NSString * const kIssueCellID = @"IssueCell";
 static NSString * const kIssueEmptyCellID = @"IssueEmptyCell";
 
-@interface IssueListViewController () <UISearchBarDelegate>
+static const NSInteger kNewIssueLoginAlertTag = 1;
+static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
+
+@interface IssueListViewController () <UISearchBarDelegate, UIAlertViewDelegate>
 
 @property (nonatomic, strong) NSMutableArray *openIssues;
 @property (nonatomic, strong) NSMutableArray *closedIssues;
@@ -37,6 +45,9 @@ static NSString * const kIssueEmptyCellID = @"IssueEmptyCell";
 @property (nonatomic, assign) BOOL searchAttempted;
 @property (nonatomic, assign) BOOL searchLoading;
 @property (nonatomic, strong) UIView *headerView;
+@property (nonatomic, strong) UIBarButtonItem *createIssueItem;
+@property (nonatomic, strong) GHIssueTemplateSet *templateSet;
+@property (nonatomic, assign) BOOL loadingTemplates;
 @end
 
 @implementation IssueListViewController
@@ -119,7 +130,11 @@ static NSString * const kIssueEmptyCellID = @"IssueEmptyCell";
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
     self.spinner.hidesWhenStopped = YES;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
+    self.createIssueItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd
+                                                                       target:self
+                                                                       action:@selector(newIssueTapped)];
+    self.navigationItem.rightBarButtonItems = @[self.createIssueItem,
+                                                [[UIBarButtonItem alloc] initWithCustomView:self.spinner]];
 
     if (GHPullToRefreshAvailable()) {
         self.refreshControl = [[UIRefreshControl alloc] init];
@@ -265,6 +280,117 @@ static NSString * const kIssueEmptyCellID = @"IssueEmptyCell";
         [self loadStateIfNeeded:[self isOpenTabSelected] ? @"open" : @"closed"];
     }
     [self.tableView reloadData];
+}
+
+#pragma mark - New issue
+
+- (void)newIssueTapped {
+    if (![GHAuthManager sharedManager].isAuthenticated) {
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Нужен вход")
+                                                         message:GHL(@"Чтобы создать задачу, войдите в аккаунт в настройках.")
+                                                        delegate:self
+                                               cancelButtonTitle:GHL(@"Отмена")
+                                               otherButtonTitles:GHL(@"Войти"), nil];
+        alert.tag = kNewIssueLoginAlertTag;
+        [alert show];
+        return;
+    }
+
+    if (self.templateSet) {
+        [self presentNewIssueFlow];
+        return;
+    }
+    if (self.loadingTemplates) return;
+
+    self.loadingTemplates = YES;
+    self.createIssueItem.enabled = NO;
+    [self.spinner startAnimating];
+
+    __weak typeof(self) weakSelf = self;
+    [GHIssueTemplateSet loadForOwner:self.ownerLogin repo:self.repoName completion:^(GHIssueTemplateSet *templateSet, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        strongSelf.loadingTemplates = NO;
+        strongSelf.createIssueItem.enabled = YES;
+        [strongSelf.spinner stopAnimating];
+
+        if (templateSet == nil) {
+            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Не удалось загрузить шаблоны задач")
+                                                             message:error.localizedDescription
+                                                            delegate:strongSelf
+                                                   cancelButtonTitle:GHL(@"Отмена")
+                                                   otherButtonTitles:GHL(@"Продолжить без шаблона"), nil];
+            alert.tag = kNewIssueTemplatesErrorAlertTag;
+            [alert show];
+            return;
+        }
+
+        strongSelf.templateSet = templateSet;
+        [strongSelf presentNewIssueFlow];
+    }];
+}
+
+- (void)presentNewIssueFlow {
+    if (!self.templateSet.hasChoices) {
+        [self pushComposerWithTemplate:self.templateSet.legacyTemplate];
+        return;
+    }
+
+    IssueTemplatePickerViewController *pickerVC = [[IssueTemplatePickerViewController alloc] init];
+    pickerVC.ownerLogin = self.ownerLogin;
+    pickerVC.repoName = self.repoName;
+    pickerVC.templateSet = self.templateSet;
+    pickerVC.onIssueCreated = [self issueCreatedHandler];
+    [self.navigationController pushViewController:pickerVC animated:YES];
+}
+
+- (void)pushComposerWithTemplate:(GHIssueTemplate *)issueTemplate {
+    NewIssueViewController *composer = [[NewIssueViewController alloc] init];
+    composer.ownerLogin = self.ownerLogin;
+    composer.repoName = self.repoName;
+    composer.issueTemplate = issueTemplate;
+    composer.onIssueCreated = [self issueCreatedHandler];
+    [self.navigationController pushViewController:composer animated:YES];
+}
+
+- (void (^)(NSDictionary *))issueCreatedHandler {
+    __weak typeof(self) weakSelf = self;
+    return ^(NSDictionary *issue) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        strongSelf.openLoaded = NO;
+        strongSelf.openLoadingMore = NO;
+        if ([strongSelf isOpenTabSelected] && strongSelf.searchQuery.length == 0) {
+            [strongSelf loadStateIfNeeded:@"open"];
+        }
+
+        IssueDetailViewController *detailVC = [[IssueDetailViewController alloc] init];
+        detailVC.issue = issue;
+        detailVC.ownerLogin = strongSelf.ownerLogin;
+        detailVC.repoName = strongSelf.repoName;
+
+        NSArray *stack = strongSelf.navigationController.viewControllers;
+        NSUInteger index = [stack indexOfObject:strongSelf];
+        if (index == NSNotFound) {
+            [strongSelf.navigationController pushViewController:detailVC animated:YES];
+            return;
+        }
+        NSArray *newStack = [[stack subarrayWithRange:NSMakeRange(0, index + 1)] arrayByAddingObject:detailVC];
+        [strongSelf.navigationController setViewControllers:newStack animated:YES];
+    };
+}
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (buttonIndex == alertView.cancelButtonIndex) return;
+
+    if (alertView.tag == kNewIssueLoginAlertTag) {
+        SignInOptionsViewController *signInVC = [[SignInOptionsViewController alloc] init];
+        [self.navigationController pushViewController:signInVC animated:YES];
+    } else if (alertView.tag == kNewIssueTemplatesErrorAlertTag) {
+        [self pushComposerWithTemplate:nil];
+    }
 }
 
 #pragma mark - UISearchBarDelegate

@@ -23,6 +23,7 @@
 + (UIImage *)keyIconWithColor:(UIColor *)color size:(CGFloat)size;
 
 + (UIImage *)linkIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)externalLinkIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)locationIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)organizationIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)repoIconWithColor:(UIColor *)color size:(CGFloat)size;

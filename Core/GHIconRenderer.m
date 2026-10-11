@@ -493,6 +493,43 @@
     return result;
 }
 
++ (UIImage *)externalLinkIconWithColor:(UIColor *)color size:(CGFloat)size {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
+    CGFloat line = MAX(1.2, size * 0.09);
+    CGFloat inset = line / 2.0 + size * 0.06;
+    CGFloat top = inset;
+    CGFloat right = size - inset;
+    CGFloat boxTop = size * 0.24;
+    CGFloat boxRight = size * 0.76;
+    CGFloat bottom = size - inset;
+
+    UIBezierPath *box = [UIBezierPath bezierPath];
+    [box moveToPoint:CGPointMake(size * 0.46, boxTop)];
+    [box addLineToPoint:CGPointMake(inset, boxTop)];
+    [box addLineToPoint:CGPointMake(inset, bottom)];
+    [box addLineToPoint:CGPointMake(boxRight, bottom)];
+    [box addLineToPoint:CGPointMake(boxRight, size * 0.54)];
+
+    UIBezierPath *arrow = [UIBezierPath bezierPath];
+    [arrow moveToPoint:CGPointMake(size * 0.40, size * 0.60)];
+    [arrow addLineToPoint:CGPointMake(right, top)];
+    [arrow moveToPoint:CGPointMake(right - size * 0.34, top)];
+    [arrow addLineToPoint:CGPointMake(right, top)];
+    [arrow addLineToPoint:CGPointMake(right, top + size * 0.34)];
+
+    [color setStroke];
+    for (UIBezierPath *path in @[box, arrow]) {
+        path.lineWidth = line;
+        path.lineCapStyle = kCGLineCapRound;
+        path.lineJoinStyle = kCGLineJoinRound;
+        [path stroke];
+    }
+
+    UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return result;
+}
+
 + (UIImage *)locationIconWithColor:(UIColor *)color size:(CGFloat)size {
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
     CGFloat line = MAX(1.2, size * 0.09);
