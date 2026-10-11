@@ -381,6 +381,41 @@ static NSDictionary *GHTranslations(void) {
             @"Возможно, у вашего токена нет прав на создание задач. Для classic-токена нужен scope «public_repo» (или «repo» для приватных репозиториев), для fine-grained — разрешение «Issues: Read and write».":
                 @"Your token may not have permission to create issues. Classic tokens need the \"public_repo\" scope (or \"repo\" for private repositories); fine-grained tokens need the \"Issues: Read and write\" permission.",
 
+            @"Прикрепить фото или файл…": @"Attach a photo or file…",
+            @"Фото из медиатеки": @"Photo Library",
+            @"Снять фото": @"Take Photo",
+            @"Файл…": @"File…",
+            @"Проверка доступа…": @"Checking access…",
+            @"Загрузка": @"Uploading",
+            @"Загрузка… %d%%": @"Uploading… %d%%",
+            @"Фото и видео недоступны": @"Photos and videos unavailable",
+            @"GitHub разрешает прикреплять фото и видео только тем, у кого есть право записи в репозиторий. В %@/%@ его у вас нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…».":
+                @"GitHub only lets people with write access to a repository attach photos and videos. You don't have it in %@/%@.\n\nLogs and text files can still be inserted into the issue as text via \"File…\".",
+            @"GitHub не разрешил загрузку: для этого нужно право записи в репозиторий.": @"GitHub refused the upload: it requires write access to the repository.",
+            @"GitHub не вернул ссылку на загруженный файл.": @"GitHub didn't return a link to the uploaded file.",
+            @"Файл пустой или слишком большой: можно не больше %llu МБ.": @"The file is empty or too large: the limit is %llu MB.",
+            @"Не удалось прочитать файл.": @"Couldn't read the file.",
+            @"Не удалось подготовить фото.": @"Couldn't prepare the photo.",
+            @"Файл ещё загружается": @"A file is still uploading",
+            @"Дождитесь окончания загрузки и отправьте задачу ещё раз.": @"Wait for the upload to finish, then submit the issue again.",
+            @"Не удалось прикрепить файл": @"Couldn't attach the file",
+            @"Этот файл нельзя прикрепить. GitHub принимает фото и видео (%@), а текстовые файлы — логи, конфиги — вставляются в задачу текстом.":
+                @"This file can't be attached. GitHub accepts photos and videos (%@); text files such as logs and configs are inserted into the issue as text.",
+            @"В тексте задачи не осталось места: GitHub ограничивает его 65 536 символами.":
+                @"There's no room left in the issue text: GitHub limits it to 65,536 characters.",
+            @"_Показан конец файла: последние %lu строк._\n\n": @"_Showing the end of the file: last %lu lines._\n\n",
+            @"Слишком длинный текст": @"Text is too long",
+            @"GitHub принимает не больше %lu символов, а в задаче %lu. Сократите текст или вложенные файлы.":
+                @"GitHub accepts at most %lu characters, but this issue has %lu. Shorten the text or the attached files.",
+            @"Выберите файл": @"Choose File",
+            @"Загрузки": @"Downloads",
+            @"Загрузки приложения": @"App Downloads",
+            @"Медиа": @"Media",
+            @"Документы": @"Documents",
+            @"Системные логи": @"System Logs",
+            @"Корень файловой системы": @"File System Root",
+            @"Нет доступа к папке": @"No access to this folder",
+
             @"Поиск по задачам": @"Search issues",
             @"Поиск по pull request'ам": @"Search pull requests",
             @"Ничего не найдено": @"Nothing found",

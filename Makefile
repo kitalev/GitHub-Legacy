@@ -23,6 +23,8 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Controllers/IssueDetailViewController.m \
 	Controllers/IssueTemplatePickerViewController.m \
 	Controllers/NewIssueViewController.m \
+	Controllers/GHFileBrowserViewController.m \
+	Core/GHAttachmentUploader.m \
 	Core/GHIssueTemplate.m \
 	Core/GHYAMLParser.m \
 	Controllers/PullRequestListViewController.m \

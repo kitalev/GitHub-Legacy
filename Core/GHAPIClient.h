@@ -10,6 +10,8 @@ typedef void (^GHTextCompletionBlock)(NSString *text, NSError *error);
 
 + (instancetype)sharedClient;
 
+- (NSError *)errorForHTTPResponse:(NSHTTPURLResponse *)httpResponse data:(NSData *)data;
+
 - (void)searchRepositoriesWithQuery:(NSString *)query
                           completion:(GHJSONCompletionBlock)completion;
 

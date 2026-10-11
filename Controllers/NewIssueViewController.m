@@ -1,6 +1,8 @@
 #import "NewIssueViewController.h"
 #import <QuartzCore/QuartzCore.h>
 #import "IssueDetailViewController.h"
+#import "GHFileBrowserViewController.h"
+#import "GHAttachmentUploader.h"
 #import "GHIssueTemplate.h"
 #import "GHAPIClient.h"
 #import "GHThemeManager.h"
@@ -11,6 +13,10 @@
 static const CGFloat kInputHeight = 44;
 static const CGFloat kTextareaHeight = 140;
 static const CGFloat kBodyTextareaHeight = 260;
+static const NSUInteger kMaxIssueBodyLength = 65536;
+static const NSUInteger kMaxInlineFileCharacters = 60000;
+static const unsigned long long kMaxFileReadBytes = 256 * 1024;
+static const CGFloat kMaxPhotoDimension = 2048;
 
 static UIColor *GHNewIssueErrorColor(void) {
     return [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
@@ -211,6 +217,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 @property (nonatomic, strong) NSArray *checkboxLabels;
 @property (nonatomic, strong) NSArray *checkboxSwitches;
 @property (nonatomic, strong) NSArray *checkboxSeparators;
+@property (nonatomic, strong) UIButton *attachButton;
 @end
 
 @implementation GHIssueFieldRow
@@ -237,7 +244,13 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 
 #pragma mark - NewIssueViewController
 
-@interface NewIssueViewController () <UITextFieldDelegate, UITextViewDelegate>
+@interface NewIssueViewController () <UITextFieldDelegate, UITextViewDelegate, UIActionSheetDelegate,
+                                      UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+@property (nonatomic, weak) GHIssueFieldRow *attachTargetRow;
+@property (nonatomic, copy) NSArray *attachActions;
+@property (nonatomic, strong) UIPopoverController *imagePopover;
+@property (nonatomic, strong) GHAttachmentUploader *activeUpload;
+@property (nonatomic, assign) long long uploadRepositoryID;
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UILabel *repoLabel;
 @property (nonatomic, strong) UILabel *templateLabel;
@@ -340,6 +353,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 }
 
 - (void)dealloc {
+    [self.activeUpload cancel];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -404,6 +418,15 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
             row.textView.text = row.value;
             row.textView.delegate = self;
             [row.card addSubview:row.textView];
+
+            if (field.render.length == 0) {
+                row.attachButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+                row.attachButton.titleLabel.font = [UIFont systemFontOfSize:14];
+                row.attachButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+                [row.attachButton setTitle:GHL(@"Прикрепить фото или файл…") forState:UIControlStateNormal];
+                [row.attachButton addTarget:self action:@selector(attachTapped:) forControlEvents:UIControlEventTouchUpInside];
+                [self.scrollView addSubview:row.attachButton];
+            }
             break;
         }
         case GHIssueFormFieldTypeDropdown: {
@@ -580,14 +603,20 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
             break;
     }
     row.card.frame = CGRectMake(left, y, width, cardHeight);
-    return y + cardHeight + 20;
+    y += cardHeight;
+
+    if (row.attachButton) {
+        row.attachButton.frame = CGRectMake(left + 2, y + 4, width - 4, 30);
+        y += 4 + 30;
+    }
+    return y + 20;
 }
 
 #pragma mark - Editing
 
 - (GHIssueFieldRow *)rowContainingView:(UIView *)view {
     for (GHIssueFieldRow *row in self.rows) {
-        if ([view isDescendantOfView:row.card]) return row;
+        if ([view isDescendantOfView:row.card] || (row.attachButton && view == row.attachButton)) return row;
     }
     return nil;
 }
@@ -627,6 +656,350 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         if ([strongRow.field isSatisfiedByValue:strongRow.value]) [weakSelf clearInvalidStateForRow:strongRow];
     };
     [self.navigationController pushViewController:optionsVC animated:YES];
+}
+
+#pragma mark - Attachments
+
+- (void)attachTapped:(UIButton *)button {
+    [self dismissKeyboard];
+    GHIssueFieldRow *row = [self rowContainingView:button];
+    if (row == nil || self.activeUpload != nil) return;
+    self.attachTargetRow = row;
+
+    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:nil
+                                                       delegate:self
+                                              cancelButtonTitle:nil
+                                         destructiveButtonTitle:nil
+                                              otherButtonTitles:nil];
+    NSMutableArray *actions = [NSMutableArray array];
+    [sheet addButtonWithTitle:GHL(@"Фото из медиатеки")];
+    [actions addObject:@"library"];
+    if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]) {
+        [sheet addButtonWithTitle:GHL(@"Снять фото")];
+        [actions addObject:@"camera"];
+    }
+    [sheet addButtonWithTitle:GHL(@"Файл…")];
+    [actions addObject:@"file"];
+    sheet.cancelButtonIndex = [sheet addButtonWithTitle:GHL(@"Отмена")];
+    self.attachActions = actions;
+
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+        [sheet showFromRect:button.frame inView:self.scrollView animated:YES];
+    } else {
+        [sheet showInView:self.view];
+    }
+}
+
+- (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (buttonIndex == actionSheet.cancelButtonIndex || buttonIndex < 0 || buttonIndex >= (NSInteger)self.attachActions.count) return;
+    NSString *action = self.attachActions[buttonIndex];
+
+    if ([action isEqualToString:@"file"]) {
+        [self presentFileBrowser];
+        return;
+    }
+
+    UIImagePickerControllerSourceType sourceType = [action isEqualToString:@"camera"]
+        ? UIImagePickerControllerSourceTypeCamera
+        : UIImagePickerControllerSourceTypePhotoLibrary;
+    __weak typeof(self) weakSelf = self;
+    [self ensureUploadAccess:^{
+        [weakSelf presentImagePickerWithSourceType:sourceType];
+    }];
+}
+
+- (void)presentFileBrowser {
+    GHFileBrowserViewController *browserVC = [[GHFileBrowserViewController alloc] init];
+    __weak typeof(self) weakSelf = self;
+    __weak GHIssueFieldRow *weakRow = self.attachTargetRow;
+    browserVC.onFilePicked = ^(NSString *path) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        GHIssueFieldRow *strongRow = weakRow;
+        if (!strongSelf || !strongRow) return;
+        [strongSelf.navigationController popToViewController:strongSelf animated:YES];
+        [strongSelf handlePickedFileAtPath:path forRow:strongRow];
+    };
+    [self.navigationController pushViewController:browserVC animated:YES];
+}
+
+- (void)handlePickedFileAtPath:(NSString *)path forRow:(GHIssueFieldRow *)row {
+    NSString *contentType = [GHAttachmentUploader contentTypeForFileName:path];
+    if (contentType == nil) {
+        [self insertTextFileAtPath:path intoRow:row];
+        return;
+    }
+
+    unsigned long long size = [[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil] fileSize];
+    unsigned long long maximum = [GHAttachmentUploader maximumSizeForContentType:contentType];
+    if (size == 0 || size > maximum) {
+        [self showAttachmentError:[NSString stringWithFormat:GHL(@"Файл пустой или слишком большой: можно не больше %llu МБ."),
+                                   maximum / (1024 * 1024)]];
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    __weak GHIssueFieldRow *weakRow = row;
+    [self ensureUploadAccess:^{
+        NSData *data = [NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:nil];
+        if (data.length == 0) {
+            [weakSelf showAttachmentError:GHL(@"Не удалось прочитать файл.")];
+            return;
+        }
+        GHIssueFieldRow *strongRow = weakRow;
+        if (strongRow) [weakSelf uploadData:data fileName:path.lastPathComponent contentType:contentType intoRow:strongRow];
+    }];
+}
+
+- (void)ensureUploadAccess:(void (^)(void))then {
+    if (self.uploadRepositoryID > 0) {
+        then();
+        return;
+    }
+
+    [self setAttachButtonsTitle:GHL(@"Проверка доступа…") enabled:NO];
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] repoDetailForOwner:self.ownerLogin repo:self.repoName completion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf setAttachButtonsTitle:nil enabled:YES];
+
+        NSDictionary *repo = [jsonObject isKindOfClass:[NSDictionary class]] ? jsonObject : nil;
+        NSDictionary *permissions = [repo[@"permissions"] isKindOfClass:[NSDictionary class]] ? repo[@"permissions"] : nil;
+        id repositoryID = repo[@"id"];
+        if (repo == nil) {
+            [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
+            return;
+        }
+        if (![permissions[@"push"] boolValue] || ![repositoryID respondsToSelector:@selector(longLongValue)]) {
+            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Фото и видео недоступны")
+                                                             message:[NSString stringWithFormat:GHL(@"GitHub разрешает прикреплять фото и видео только тем, у кого есть право записи в репозиторий. В %@/%@ его у вас нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…»."),
+                                                                      strongSelf.ownerLogin, strongSelf.repoName]
+                                                            delegate:nil
+                                                   cancelButtonTitle:@"OK"
+                                                   otherButtonTitles:nil];
+            [alert show];
+            return;
+        }
+
+        strongSelf.uploadRepositoryID = [repositoryID longLongValue];
+        then();
+    }];
+}
+
+- (void)setAttachButtonsTitle:(NSString *)title enabled:(BOOL)enabled {
+    for (GHIssueFieldRow *row in self.rows) {
+        if (row.attachButton == nil) continue;
+        [row.attachButton setTitle:title ?: GHL(@"Прикрепить фото или файл…") forState:UIControlStateNormal];
+        row.attachButton.enabled = enabled;
+    }
+}
+
+- (void)presentImagePickerWithSourceType:(UIImagePickerControllerSourceType)sourceType {
+    if (![UIImagePickerController isSourceTypeAvailable:sourceType]) return;
+
+    UIImagePickerController *picker = [[UIImagePickerController alloc] init];
+    picker.sourceType = sourceType;
+    picker.delegate = self;
+
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad && sourceType != UIImagePickerControllerSourceTypeCamera) {
+        self.imagePopover = [[UIPopoverController alloc] initWithContentViewController:picker];
+        [self.imagePopover presentPopoverFromRect:self.attachTargetRow.attachButton.frame
+                                           inView:self.scrollView
+                         permittedArrowDirections:UIPopoverArrowDirectionAny
+                                         animated:YES];
+        return;
+    }
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)dismissImagePicker:(UIImagePickerController *)picker {
+    if (self.imagePopover) {
+        [self.imagePopover dismissPopoverAnimated:YES];
+        self.imagePopover = nil;
+    } else {
+        [picker dismissViewControllerAnimated:YES completion:nil];
+    }
+}
+
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [self dismissImagePicker:picker];
+}
+
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info {
+    UIImage *image = info[UIImagePickerControllerOriginalImage];
+    [self dismissImagePicker:picker];
+    GHIssueFieldRow *row = self.attachTargetRow;
+    if (![image isKindOfClass:[UIImage class]] || row == nil) return;
+
+    NSData *data = [self jpegDataForImage:image];
+    if (data.length == 0) {
+        [self showAttachmentError:GHL(@"Не удалось подготовить фото.")];
+        return;
+    }
+
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+    formatter.dateFormat = @"yyyyMMdd_HHmmss";
+    NSString *fileName = [NSString stringWithFormat:@"IMG_%@.jpg", [formatter stringFromDate:[NSDate date]]];
+    [self uploadData:data fileName:fileName contentType:@"image/jpeg" intoRow:row];
+}
+
+- (NSData *)jpegDataForImage:(UIImage *)image {
+    CGSize size = image.size;
+    CGFloat longest = MAX(size.width, size.height);
+    CGFloat scale = longest > kMaxPhotoDimension ? kMaxPhotoDimension / longest : 1.0;
+    CGSize target = CGSizeMake(floor(size.width * scale), floor(size.height * scale));
+    if (target.width < 1 || target.height < 1) return nil;
+
+    UIGraphicsBeginImageContextWithOptions(target, YES, 1.0);
+    [image drawInRect:CGRectMake(0, 0, target.width, target.height)];
+    UIImage *normalized = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    CGFloat quality = 0.85;
+    NSData *data = UIImageJPEGRepresentation(normalized, quality);
+    while (data.length > [GHAttachmentUploader maximumSizeForContentType:@"image/jpeg"] && quality > 0.3) {
+        quality -= 0.15;
+        data = UIImageJPEGRepresentation(normalized, quality);
+    }
+    return data;
+}
+
+- (void)uploadData:(NSData *)data fileName:(NSString *)fileName contentType:(NSString *)contentType intoRow:(GHIssueFieldRow *)row {
+    NSString *placeholder = [NSString stringWithFormat:@"![%@ %@…]()", GHL(@"Загрузка"), fileName];
+    [self insertBlock:placeholder intoRow:row];
+    [self setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), 0] enabled:NO];
+
+    __weak typeof(self) weakSelf = self;
+    __weak GHIssueFieldRow *weakRow = row;
+    self.activeUpload = [GHAttachmentUploader uploadData:data
+                                                fileName:fileName
+                                             contentType:contentType
+                                            repositoryID:self.uploadRepositoryID
+                                                progress:^(float progress) {
+        [weakSelf setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), (int)(progress * 100)] enabled:NO];
+    } completion:^(NSString *url, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.activeUpload = nil;
+        [strongSelf setAttachButtonsTitle:nil enabled:YES];
+
+        GHIssueFieldRow *strongRow = weakRow;
+        NSString *replacement = url ? [GHAttachmentUploader markdownForFileName:fileName url:url contentType:contentType] : @"";
+        if (strongRow) [strongSelf replacePlaceholder:placeholder withText:replacement inRow:strongRow];
+        if (url == nil) [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
+    }];
+}
+
+- (void)replacePlaceholder:(NSString *)placeholder withText:(NSString *)replacement inRow:(GHIssueFieldRow *)row {
+    NSString *current = row.textView.text ?: @"";
+    NSRange range = [current rangeOfString:placeholder];
+    if (range.location == NSNotFound) {
+        if (replacement.length > 0) [self insertBlock:replacement intoRow:row];
+        return;
+    }
+    if (replacement.length == 0 && NSMaxRange(range) < current.length && [current characterAtIndex:NSMaxRange(range)] == '\n') {
+        range.length += 1;
+    }
+    row.textView.text = [current stringByReplacingCharactersInRange:range withString:replacement];
+}
+
+- (void)insertBlock:(NSString *)block intoRow:(GHIssueFieldRow *)row {
+    UITextView *textView = row.textView;
+    NSString *current = textView.text ?: @"";
+    NSRange selection = textView.selectedRange;
+    if (selection.location == NSNotFound || NSMaxRange(selection) > current.length) {
+        selection = NSMakeRange(current.length, 0);
+    }
+    NSString *before = [current substringToIndex:selection.location];
+    NSString *prefix = (before.length == 0 || [before hasSuffix:@"\n\n"]) ? @"" : ([before hasSuffix:@"\n"] ? @"\n" : @"\n\n");
+    NSString *insertion = [NSString stringWithFormat:@"%@%@\n", prefix, block];
+
+    textView.text = [current stringByReplacingCharactersInRange:selection withString:insertion];
+    textView.selectedRange = NSMakeRange(selection.location + insertion.length, 0);
+    [self clearInvalidStateForRow:row];
+}
+
+- (void)showAttachmentError:(NSString *)message {
+    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Не удалось прикрепить файл")
+                                                     message:message
+                                                    delegate:nil
+                                           cancelButtonTitle:@"OK"
+                                           otherButtonTitles:nil];
+    [alert show];
+}
+
+- (NSString *)textContentsOfFileAtPath:(NSString *)path totalLength:(unsigned long long *)totalLength {
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+    if (handle == nil) return nil;
+
+    unsigned long long length = [handle seekToEndOfFile];
+    if (totalLength != NULL) *totalLength = length;
+    unsigned long long readLength = MIN(length, (unsigned long long)kMaxFileReadBytes);
+    [handle seekToFileOffset:length - readLength];
+    NSData *data = [handle readDataOfLength:(NSUInteger)readLength];
+    [handle closeFile];
+
+    if (data.length > 0 && memchr(data.bytes, 0, data.length) != NULL) return nil;
+
+    NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (text == nil && readLength < length) {
+        for (NSUInteger skip = 1; skip < 4 && skip < data.length && text == nil; skip++) {
+            NSData *trimmed = [data subdataWithRange:NSMakeRange(skip, data.length - skip)];
+            text = [[NSString alloc] initWithData:trimmed encoding:NSUTF8StringEncoding];
+        }
+    }
+    if (text == nil) text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+    return text;
+}
+
+- (NSUInteger)longestBacktickRunInString:(NSString *)text {
+    NSUInteger longest = 0;
+    NSUInteger current = 0;
+    for (NSUInteger i = 0; i < text.length; i++) {
+        current = [text characterAtIndex:i] == '`' ? current + 1 : 0;
+        longest = MAX(longest, current);
+    }
+    return longest;
+}
+
+- (void)insertTextFileAtPath:(NSString *)path intoRow:(GHIssueFieldRow *)row {
+    unsigned long long fileLength = 0;
+    NSString *contents = [self textContentsOfFileAtPath:path totalLength:&fileLength];
+    if (contents == nil) {
+        [self showAttachmentError:[NSString stringWithFormat:GHL(@"Этот файл нельзя прикрепить. GitHub принимает фото и видео (%@), а текстовые файлы — логи, конфиги — вставляются в задачу текстом."),
+                                   [GHAttachmentUploader supportedExtensionsDescription]]];
+        return;
+    }
+
+    NSString *fileName = path.lastPathComponent;
+    NSString *bodySoFar = [self composedBody];
+    NSInteger budget = (NSInteger)kMaxIssueBodyLength - (NSInteger)bodySoFar.length - 200 - (NSInteger)fileName.length;
+    if (budget < 500) {
+        [self showAttachmentError:GHL(@"В тексте задачи не осталось места: GitHub ограничивает его 65 536 символами.")];
+        return;
+    }
+
+    NSUInteger limit = MIN((NSUInteger)budget, kMaxInlineFileCharacters);
+    BOOL truncated = fileLength > kMaxFileReadBytes;
+    if (contents.length > limit) {
+        NSRange cut = [contents rangeOfString:@"\n" options:0 range:NSMakeRange(contents.length - limit, limit)];
+        NSUInteger start = cut.location != NSNotFound ? cut.location + 1 : contents.length - limit;
+        contents = [contents substringFromIndex:start];
+        truncated = YES;
+    }
+    contents = [contents stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+
+    NSString *fence = [@"" stringByPaddingToLength:MAX((NSUInteger)3, [self longestBacktickRunInString:contents] + 1)
+                                         withString:@"`"
+                                    startingAtIndex:0];
+    NSMutableString *snippet = [NSMutableString stringWithFormat:@"<details><summary>%@</summary>\n\n", fileName];
+    if (truncated) {
+        [snippet appendFormat:GHL(@"_Показан конец файла: последние %lu строк._\n\n"),
+                              (unsigned long)[[contents componentsSeparatedByString:@"\n"] count]];
+    }
+    [snippet appendFormat:@"%@\n%@\n%@\n\n</details>", fence, contents, fence];
+    [self insertBlock:snippet intoRow:row];
 }
 
 - (void)textFieldDidBeginEditing:(UITextField *)textField {
@@ -721,6 +1094,15 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 
 - (void)submitTapped {
     if (self.submitting) return;
+    if (self.activeUpload) {
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Файл ещё загружается")
+                                                         message:GHL(@"Дождитесь окончания загрузки и отправьте задачу ещё раз.")
+                                                        delegate:nil
+                                               cancelButtonTitle:@"OK"
+                                               otherButtonTitles:nil];
+        [alert show];
+        return;
+    }
     [self dismissKeyboard];
 
     NSMutableArray *missing = [NSMutableArray array];
@@ -749,6 +1131,16 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     NSString *title = [[self.titleRow currentValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObject:title forKey:@"title"];
     NSString *body = [self composedBody];
+    if (body.length > kMaxIssueBodyLength) {
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Слишком длинный текст")
+                                                         message:[NSString stringWithFormat:GHL(@"GitHub принимает не больше %lu символов, а в задаче %lu. Сократите текст или вложенные файлы."),
+                                                                  (unsigned long)kMaxIssueBodyLength, (unsigned long)body.length]
+                                                        delegate:nil
+                                               cancelButtonTitle:@"OK"
+                                               otherButtonTitles:nil];
+        [alert show];
+        return;
+    }
     if (body.length > 0) parameters[@"body"] = body;
     if (self.issueTemplate.labels.count > 0) parameters[@"labels"] = self.issueTemplate.labels;
     if (self.issueTemplate.assignees.count > 0) parameters[@"assignees"] = self.issueTemplate.assignees;

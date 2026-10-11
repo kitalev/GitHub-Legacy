@@ -111,6 +111,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photos you choose are attached to the GitHub issue you are writing.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Photos you take are attached to the GitHub issue you are writing.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>ifile</string>
