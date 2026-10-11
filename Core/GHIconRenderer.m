@@ -1038,4 +1038,53 @@ static void GHStrokeSegment(CGPoint from, CGPoint to, CGFloat line) {
     return result;
 }
 
++ (UIImage *)fileZipIconWithColor:(UIColor *)color size:(CGFloat)size {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
+    CGFloat line = MAX(1.2, size * 0.08);
+    [color setStroke];
+    [color setFill];
+
+    CGFloat left = size * 0.18;
+    CGFloat right = size * 0.82;
+    CGFloat top = size * 0.08;
+    CGFloat bottom = size * 0.92;
+    CGFloat fold = size * 0.22;
+
+    UIBezierPath *page = [UIBezierPath bezierPath];
+    [page moveToPoint:CGPointMake(left, top)];
+    [page addLineToPoint:CGPointMake(right - fold, top)];
+    [page addLineToPoint:CGPointMake(right, top + fold)];
+    [page addLineToPoint:CGPointMake(right, bottom)];
+    [page addLineToPoint:CGPointMake(left, bottom)];
+    [page closePath];
+    page.lineWidth = line;
+    page.lineJoinStyle = kCGLineJoinRound;
+    [page stroke];
+
+    UIBezierPath *corner = [UIBezierPath bezierPath];
+    [corner moveToPoint:CGPointMake(right - fold, top)];
+    [corner addLineToPoint:CGPointMake(right - fold, top + fold)];
+    [corner addLineToPoint:CGPointMake(right, top + fold)];
+    corner.lineWidth = line;
+    corner.lineJoinStyle = kCGLineJoinRound;
+    [corner stroke];
+
+    CGFloat zipX = size * 0.40;
+    CGFloat tooth = size * 0.08;
+    for (NSInteger i = 0; i < 4; i++) {
+        CGFloat y = top + size * 0.06 + i * tooth * 1.5;
+        CGFloat x = (i % 2 == 0) ? zipX : zipX + tooth;
+        [[UIBezierPath bezierPathWithRect:CGRectMake(x, y, tooth, tooth)] fill];
+    }
+    UIBezierPath *pull = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(zipX - tooth * 0.25, size * 0.62, tooth * 2.5, tooth * 2.2)
+                                                    cornerRadius:tooth * 0.5];
+    pull.lineWidth = line * 0.9;
+    [pull stroke];
+
+    UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return result;
+}
+
+
 @end

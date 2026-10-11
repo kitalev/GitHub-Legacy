@@ -45,6 +45,7 @@
 + (UIImage *)branchIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)lawIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)infoIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)fileZipIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)tileWithIcon:(UIImage *)icon backgroundColor:(UIColor *)color size:(CGFloat)size;
 
 + (UIImage *)issueLabelBadgeWithText:(NSString *)text

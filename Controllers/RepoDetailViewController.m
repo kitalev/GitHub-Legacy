@@ -5,9 +5,167 @@
 #import "ReleaseDetailViewController.h"
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
+#import <QuartzCore/QuartzCore.h>
+
+static NSString *GHReleaseSafeString(NSDictionary *dict, NSString *key) {
+    id value = [dict isKindOfClass:[NSDictionary class]] ? dict[key] : nil;
+    return [value isKindOfClass:[NSString class]] ? value : @"";
+}
+
+static BOOL GHReleaseBool(NSDictionary *dict, NSString *key) {
+    id value = [dict isKindOfClass:[NSDictionary class]] ? dict[key] : nil;
+    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+}
+
+static NSString *GHReleaseShortAge(NSString *isoString) {
+    if (isoString.length == 0) return @"";
+
+    static NSDateFormatter *isoFormatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        isoFormatter = [[NSDateFormatter alloc] init];
+        isoFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+        isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
+        isoFormatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    });
+
+    NSDate *date = [isoFormatter dateFromString:isoString];
+    if (!date) return @"";
+
+    NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);
+    NSInteger minutes = (NSInteger)(seconds / 60);
+    NSInteger hours = minutes / 60;
+    NSInteger days = hours / 24;
+    BOOL russian = [[GHLocalization sharedManager].languageCode isEqualToString:@"ru"];
+
+    if (minutes < 1) return russian ? @"сейчас" : @"now";
+    if (minutes < 60) return [NSString stringWithFormat:russian ? @"%ld мин" : @"%ldm", (long)minutes];
+    if (hours < 24) return [NSString stringWithFormat:russian ? @"%ld ч" : @"%ldh", (long)hours];
+    if (days < 30) return [NSString stringWithFormat:russian ? @"%ld дн" : @"%ldd", (long)days];
+    if (days < 365) return [NSString stringWithFormat:russian ? @"%ld мес" : @"%ldmo", (long)(days / 30)];
+    return [NSString stringWithFormat:russian ? @"%ld г" : @"%ldy", (long)(days / 365)];
+}
+
+static UIColor *GHReleaseLatestColor(void) {
+    return [GHThemeManager sharedManager].darkModeEnabled
+        ? [UIColor colorWithRed:0.25 green:0.73 blue:0.31 alpha:1.0]
+        : [UIColor colorWithRed:0.10 green:0.50 blue:0.22 alpha:1.0];
+}
+
+static UIColor *GHReleasePreReleaseColor(void) {
+    return [GHThemeManager sharedManager].darkModeEnabled
+        ? [UIColor colorWithRed:0.86 green:0.48 blue:0.15 alpha:1.0]
+        : [UIColor colorWithRed:0.74 green:0.34 blue:0.00 alpha:1.0];
+}
+
+static const CGFloat kGHReleaseListRowHeight = 78.0;
+static const CGFloat kGHReleaseListSidePadding = 16.0;
+
+@interface GHReleaseListCell : UITableViewCell
+@property (nonatomic, strong) UILabel *nameLabel;
+@property (nonatomic, strong) UILabel *ageLabel;
+@property (nonatomic, strong) UILabel *dotLabel;
+@property (nonatomic, strong) UILabel *statusLabel;
+- (void)configureWithRelease:(NSDictionary *)release isLatest:(BOOL)isLatest;
+@end
+
+@implementation GHReleaseListCell
+
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
+    self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:reuseIdentifier];
+    if (self) {
+        _nameLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _nameLabel.backgroundColor = [UIColor clearColor];
+        _nameLabel.font = [UIFont boldSystemFontOfSize:18];
+        _nameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        [self.contentView addSubview:_nameLabel];
+
+        _ageLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _ageLabel.backgroundColor = [UIColor clearColor];
+        _ageLabel.font = [UIFont systemFontOfSize:15];
+        [self.contentView addSubview:_ageLabel];
+
+        _dotLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _dotLabel.backgroundColor = [UIColor clearColor];
+        _dotLabel.font = [UIFont systemFontOfSize:15];
+        _dotLabel.text = @"·";
+        [self.contentView addSubview:_dotLabel];
+
+        _statusLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _statusLabel.backgroundColor = [UIColor clearColor];
+        _statusLabel.font = [UIFont systemFontOfSize:15];
+        [self.contentView addSubview:_statusLabel];
+    }
+    return self;
+}
+
+- (void)configureWithRelease:(NSDictionary *)release isLatest:(BOOL)isLatest {
+    self.backgroundColor = GHCellBackgroundColor();
+    self.contentView.backgroundColor = GHCellBackgroundColor();
+
+    NSString *name = GHReleaseSafeString(release, @"name");
+    NSString *tag = GHReleaseSafeString(release, @"tag_name");
+    self.nameLabel.text = name.length > 0 ? name : (tag.length > 0 ? tag : GHL(@"Без названия"));
+    self.nameLabel.textColor = GHPrimaryTextColor();
+
+    NSString *dateString = GHReleaseSafeString(release, @"published_at");
+    if (dateString.length == 0) dateString = GHReleaseSafeString(release, @"created_at");
+    self.ageLabel.text = GHReleaseShortAge(dateString);
+    self.ageLabel.textColor = GHSecondaryTextColor();
+    self.dotLabel.textColor = GHSecondaryTextColor();
+
+    NSString *status = nil;
+    UIColor *statusColor = nil;
+    if (GHReleaseBool(release, @"draft")) {
+        status = GHL(@"Черновик");
+        statusColor = GHSecondaryTextColor();
+    } else if (GHReleaseBool(release, @"prerelease")) {
+        status = GHL(@"Пре-релиз");
+        statusColor = GHReleasePreReleaseColor();
+    } else if (isLatest) {
+        status = GHL(@"Последний релиз");
+        statusColor = GHReleaseLatestColor();
+    }
+    self.statusLabel.text = status;
+    self.statusLabel.textColor = statusColor;
+    self.statusLabel.hidden = status.length == 0;
+    self.dotLabel.hidden = status.length == 0 || self.ageLabel.text.length == 0;
+
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat width = self.contentView.bounds.size.width;
+    CGFloat textWidth = width - kGHReleaseListSidePadding * 2;
+
+    self.nameLabel.frame = CGRectMake(kGHReleaseListSidePadding, 14, textWidth, 24);
+
+    CGFloat y = 44;
+    CGFloat x = kGHReleaseListSidePadding;
+    CGSize ageSize = [self.ageLabel.text sizeWithFont:self.ageLabel.font];
+    self.ageLabel.frame = CGRectMake(x, y, MIN(ageSize.width, textWidth), 20);
+    x += ageSize.width;
+
+    if (!self.dotLabel.hidden) {
+        x += 6;
+        CGSize dotSize = [self.dotLabel.text sizeWithFont:self.dotLabel.font];
+        self.dotLabel.frame = CGRectMake(x, y, dotSize.width, 20);
+        x += dotSize.width + 6;
+    } else if (self.ageLabel.text.length == 0) {
+        x = kGHReleaseListSidePadding;
+    }
+
+    if (!self.statusLabel.hidden) {
+        self.statusLabel.frame = CGRectMake(x, y, MAX(0, width - kGHReleaseListSidePadding - x), 20);
+    }
+}
+
+@end
 
 @interface RepoDetailViewController ()
 @property (nonatomic, strong) NSMutableArray *releases;
+@property (nonatomic, assign) BOOL loaded;
 @end
 
 @interface RepoDetailViewController (GHReleaseRouting)
@@ -56,6 +214,8 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
 
+    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
+
     if (GHPullToRefreshAvailable()) {
         self.refreshControl = [[UIRefreshControl alloc] init];
         [self.refreshControl addTarget:self action:@selector(loadReleases) forControlEvents:UIControlEventValueChanged];
@@ -88,7 +248,7 @@
 }
 
 - (void)applyTheme {
-    self.tableView.backgroundColor = GHBackgroundColor();
+    self.tableView.backgroundColor = GHCellBackgroundColor();
 
     self.tableView.backgroundView = nil;
     self.tableView.separatorColor = GHSeparatorColor();
@@ -96,13 +256,14 @@
 }
 
 - (void)loadReleases {
-    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
     [spinner startAnimating];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:spinner];
 
     __weak typeof(self) weakSelf = self;
     [[GHAPIClient sharedClient] releasesForOwner:self.ownerLogin repo:self.repoName completion:^(id jsonObject, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
         strongSelf.navigationItem.rightBarButtonItem = nil;
         if (GHPullToRefreshAvailable()) { [strongSelf.refreshControl endRefreshing]; } else { [strongSelf.gh_legacyRefreshControl endRefreshing]; }
 
@@ -118,53 +279,79 @@
 
         if ([jsonObject isKindOfClass:[NSArray class]]) {
             [strongSelf.releases removeAllObjects];
-            [strongSelf.releases addObjectsFromArray:jsonObject];
+            for (id release in (NSArray *)jsonObject) {
+                if ([release isKindOfClass:[NSDictionary class]]) [strongSelf.releases addObject:release];
+            }
         }
+        strongSelf.loaded = YES;
         [strongSelf.tableView reloadData];
     }];
+}
+
+// «Последний релиз» в терминах GitHub — самый свежий опубликованный релиз,
+// который не черновик и не пре-релиз. API отдаёт список от новых к старым.
+- (NSInteger)latestReleaseIndex {
+    for (NSInteger i = 0; i < (NSInteger)self.releases.count; i++) {
+        NSDictionary *release = self.releases[i];
+        if (!GHReleaseBool(release, @"draft") && !GHReleaseBool(release, @"prerelease")) return i;
+    }
+    return NSNotFound;
 }
 
 #pragma mark - UITableViewDataSource
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (self.loaded && self.releases.count == 0) return 1;
     return self.releases.count;
 }
 
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    if (self.releases.count == 0) return nil;
+
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 48)];
+    header.backgroundColor = GHCellBackgroundColor();
+
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(kGHReleaseListSidePadding, 18, tableView.bounds.size.width - kGHReleaseListSidePadding * 2, 22)];
+    label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    label.backgroundColor = [UIColor clearColor];
+    label.font = [UIFont systemFontOfSize:17];
+    label.textColor = GHSecondaryTextColor();
+    label.text = GHL(@"Все релизы");
+    [header addSubview:label];
+    return header;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return self.releases.count > 0 ? 48 : 0;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (self.releases.count == 0) return 120;
+    return kGHReleaseListRowHeight;
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (self.releases.count == 0) {
+        UITableViewCell *emptyCell = [tableView dequeueReusableCellWithIdentifier:@"ReleaseEmptyCell"];
+        if (!emptyCell) {
+            emptyCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"ReleaseEmptyCell"];
+            emptyCell.selectionStyle = UITableViewCellSelectionStyleNone;
+            emptyCell.textLabel.textAlignment = NSTextAlignmentCenter;
+            emptyCell.textLabel.font = [UIFont systemFontOfSize:16];
+        }
+        emptyCell.backgroundColor = GHCellBackgroundColor();
+        emptyCell.textLabel.backgroundColor = [UIColor clearColor];
+        emptyCell.textLabel.textColor = GHSecondaryTextColor();
+        emptyCell.textLabel.text = GHL(@"Нет релизов");
+        return emptyCell;
+    }
 
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ReleaseCell"];
+    GHReleaseListCell *cell = [tableView dequeueReusableCellWithIdentifier:@"GHReleaseListCell"];
     if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ReleaseCell"];
+        cell = [[GHReleaseListCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"GHReleaseListCell"];
     }
-    cell.backgroundColor = GHCellBackgroundColor();
     NSDictionary *release = self.releases[indexPath.row];
-
-    id nameValue = release[@"name"];
-    id tagValue = release[@"tag_name"];
-    NSString *releaseName = [nameValue isKindOfClass:[NSString class]] ? nameValue : nil;
-    NSString *tagName = [tagValue isKindOfClass:[NSString class]] ? tagValue : nil;
-
-    cell.textLabel.text = releaseName.length > 0 ? releaseName : (tagName ?: GHL(@"Без названия"));
-    cell.textLabel.textColor = GHPrimaryTextColor();
-    NSArray *assets = [release[@"assets"] isKindOfClass:[NSArray class]] ? release[@"assets"] : @[];
-
-    long long totalBytes = 0;
-    for (NSDictionary *asset in assets) {
-        if (![asset isKindOfClass:[NSDictionary class]]) continue;
-        NSNumber *size = asset[@"size"];
-        if ([size isKindOfClass:[NSNumber class]]) totalBytes += size.longLongValue;
-    }
-    if (totalBytes > 0) {
-        double totalMB = (double)totalBytes / (1024.0 * 1024.0);
-        cell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"%lu файл(ов) · %.2f МБ"),
-                                                                 (unsigned long)assets.count, totalMB];
-    } else {
-
-        cell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"%lu файл(ов)"), (unsigned long)assets.count];
-    }
-    cell.detailTextLabel.textColor = GHSecondaryTextColor();
-    GHApplyDisclosureIndicator(cell);
-
+    [cell configureWithRelease:release isLatest:(indexPath.row == [self latestReleaseIndex])];
     return cell;
 }
 
@@ -172,6 +359,7 @@
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (indexPath.row >= (NSInteger)self.releases.count) return;
 
     NSDictionary *release = self.releases[indexPath.row];
     id tagValue = release[@"tag_name"];

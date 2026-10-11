@@ -11,13 +11,31 @@
 #import "GHIconRenderer.h"
 #import "ReadmeViewController.h"
 #import "AppDelegate.h"
+#import "GHAvatarLoader.h"
+#import "PublicProfileViewController.h"
+#import "CommitDetailViewController.h"
+#import <QuartzCore/QuartzCore.h>
 
-static const NSInteger kSectionNotes = 0;
-static const NSInteger kSectionDownloads = 1;
-static const NSInteger kSectionCount = 2;
+typedef NS_ENUM(NSInteger, GHReleaseSectionKind) {
+    GHReleaseSectionKindHeader = 0,
+    GHReleaseSectionKindNotes,
+    GHReleaseSectionKindContributors,
+    GHReleaseSectionKindInfo,
+    GHReleaseSectionKindAssets
+};
 
-static const NSInteger kNotesRowNotes = 0;
-static const NSInteger kNotesSectionRowCount = 1;
+typedef NS_ENUM(NSInteger, GHReleaseInfoRow) {
+    GHReleaseInfoRowCommit = 0,
+    GHReleaseInfoRowTag
+};
+
+typedef NS_ENUM(NSInteger, GHDownloadState) {
+    GHDownloadStateIdle = 0,
+    GHDownloadStateDownloading,
+    GHDownloadStateSaved,
+    GHDownloadStateFailed
+};
+
 static const NSInteger kDownloadCompleteAlertTag = 1;
 static const NSInteger kLoginRequiredAlertTag = 2;
 
@@ -43,13 +61,20 @@ static const CGFloat kNotesVerticalPadding = 10.0;
 @property (nonatomic, copy) NSString *downloadURLString;
 @property (nonatomic, assign) long long sizeBytes;
 @property (nonatomic, assign) float downloadProgress;
+@property (nonatomic, assign) GHDownloadState state;
+@property (nonatomic, assign) BOOL isSourceArchive;
 @end
 
 @implementation GHDownloadItem
 @end
 
-@interface ReleaseDetailViewController ()
+@interface ReleaseDetailViewController () <UIActionSheetDelegate>
 @property (nonatomic, strong) NSArray *downloadItems;
+@property (nonatomic, strong) NSArray *sectionKinds;
+@property (nonatomic, strong) NSArray *contributors;
+@property (nonatomic, assign) BOOL contributorsExpanded;
+@property (nonatomic, assign) BOOL isLatestRelease;
+@property (nonatomic, assign) NSInteger actionSheetItemIndex;
 @property (nonatomic, strong) NSIndexPath *downloadingIndexPath;
 @property (nonatomic, copy) NSString *lastDownloadedFilePath;
 @property (nonatomic, strong) UIDocumentInteractionController *documentInteractionController;
@@ -88,11 +113,17 @@ static const CGFloat kNotesVerticalPadding = 10.0;
     [super viewDidLoad];
 
     [self.tableView gh_registerCellClass:[UITableViewCell class] forCellReuseIdentifier:@"NotesCell"];
+    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
+    self.tableView.tableFooterView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 24)];
     self.reactionCounts = [NSMutableDictionary dictionary];
     self.myReactionIDs = [NSMutableDictionary dictionary];
+    self.actionSheetItemIndex = -1;
     [self buildDownloadItems];
+    [self buildContributors];
+    [self rebuildSections];
     [self loadReleaseNotesHTML];
     [self loadReactions];
+    [self checkLatestRelease];
 
     if (GHPullToRefreshAvailable()) {
         self.refreshControl = [[UIRefreshControl alloc] init];
@@ -181,6 +212,8 @@ static const CGFloat kNotesVerticalPadding = 10.0;
     self.notesHTMLReady = NO;
     self.notesFullHTML = nil;
     [self buildDownloadItems];
+    [self buildContributors];
+    [self rebuildSections];
     [self loadReleaseNotesHTML];
     [self.tableView reloadData];
 }
@@ -213,8 +246,11 @@ static const CGFloat kNotesVerticalPadding = 10.0;
         strongSelf.notesHTMLReady = NO;
         strongSelf.notesFullHTML = nil;
         [strongSelf buildDownloadItems];
+        [strongSelf buildContributors];
+        [strongSelf rebuildSections];
         [strongSelf loadReleaseNotesHTML];
         [strongSelf loadReactions];
+        [strongSelf checkLatestRelease];
         [strongSelf.tableView reloadData];
     }];
 }
@@ -225,7 +261,7 @@ static const CGFloat kNotesVerticalPadding = 10.0;
 }
 
 - (void)applyTheme {
-    self.tableView.backgroundColor = GHBackgroundColor();
+    self.tableView.backgroundColor = GHCellBackgroundColor();
 
     self.tableView.backgroundView = nil;
     self.tableView.separatorColor = GHSeparatorColor();
@@ -242,8 +278,9 @@ static const CGFloat kNotesVerticalPadding = 10.0;
 - (void)buildDownloadItems {
     NSMutableArray *items = [NSMutableArray array];
 
-    NSArray *assets = self.releaseInfo[@"assets"];
+    NSArray *assets = [self.releaseInfo[@"assets"] isKindOfClass:[NSArray class]] ? self.releaseInfo[@"assets"] : @[];
     for (NSDictionary *asset in assets) {
+        if (![asset isKindOfClass:[NSDictionary class]]) continue;
         GHDownloadItem *item = [[GHDownloadItem alloc] init];
         item.displayName = asset[@"name"];
         item.fileName = asset[@"name"];
@@ -261,6 +298,7 @@ static const CGFloat kNotesVerticalPadding = 10.0;
     if (zipURL.length > 0) {
         GHDownloadItem *item = [[GHDownloadItem alloc] init];
         item.displayName = GHL(@"Исходный код (zip)");
+        item.isSourceArchive = YES;
         item.fileName = [NSString stringWithFormat:@"source-%@.zip", tagName];
         item.downloadURLString = zipURL;
         item.sizeBytes = 0;
@@ -269,6 +307,7 @@ static const CGFloat kNotesVerticalPadding = 10.0;
     if (tarURL.length > 0) {
         GHDownloadItem *item = [[GHDownloadItem alloc] init];
         item.displayName = GHL(@"Исходный код (tar.gz)");
+        item.isSourceArchive = YES;
         item.fileName = [NSString stringWithFormat:@"source-%@.tar.gz", tagName];
         item.downloadURLString = tarURL;
         item.sizeBytes = 0;
@@ -844,37 +883,453 @@ static const CGFloat kReactionsRowHeight = 46.0;
     [self.tableView reloadData];
 }
 
-#pragma mark - UITableViewDataSource
+#pragma mark - Helpers (новый дизайн)
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return kSectionCount;
+static const CGFloat kReleaseSidePadding = 16.0;
+static const CGFloat kReleaseSectionHeaderHeight = 56.0;
+static const CGFloat kReleaseContributorRowHeight = 64.0;
+static const CGFloat kReleaseViewAllRowHeight = 72.0;
+static const CGFloat kReleaseInfoRowHeight = 56.0;
+static const CGFloat kReleaseAssetRowHeight = 84.0;
+static const CGFloat kReleaseAssetCompactRowHeight = 60.0;
+static const NSInteger kReleaseContributorsPreviewCount = 5;
+
+static const NSInteger kHeaderOwnerAvatarTag = 7101;
+static const NSInteger kHeaderRepoLabelTag = 7102;
+static const NSInteger kHeaderTitleLabelTag = 7103;
+static const NSInteger kHeaderBadgeLabelTag = 7104;
+static const NSInteger kHeaderAuthorAvatarTag = 7105;
+static const NSInteger kHeaderAuthorLoginTag = 7106;
+static const NSInteger kHeaderReleasedLabelTag = 7107;
+
+static const NSInteger kContributorAvatarTag = 7201;
+static const NSInteger kContributorLoginTag = 7202;
+static const NSInteger kViewAllTitleTag = 7211;
+static const NSInteger kViewAllSubtitleTag = 7212;
+static const NSInteger kViewAllHairlineTag = 7213;
+
+static const NSInteger kInfoIconTag = 7301;
+static const NSInteger kInfoLabelTag = 7302;
+
+static const NSInteger kAssetIconTag = 7401;
+static const NSInteger kAssetNameTag = 7402;
+static const NSInteger kAssetPillTag = 7403;
+static const NSInteger kAssetPillIconTag = 7404;
+static const NSInteger kAssetPillLabelTag = 7405;
+static const NSInteger kAssetMoreButtonTag = 7406;
+
+static NSString *GHReleaseString(NSDictionary *dict, NSString *key) {
+    id value = [dict isKindOfClass:[NSDictionary class]] ? dict[key] : nil;
+    return [value isKindOfClass:[NSString class]] ? value : @"";
 }
 
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if (section == kSectionNotes) return GHL(@"Описание");
-    if (section == kSectionDownloads) return GHL(@"Файлы");
+static BOOL GHReleaseFlag(NSDictionary *dict, NSString *key) {
+    id value = [dict isKindOfClass:[NSDictionary class]] ? dict[key] : nil;
+    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+}
+
+static UIColor *GHReleaseBadgeLatestColor(void) {
+    return [GHThemeManager sharedManager].darkModeEnabled
+        ? [UIColor colorWithRed:0.25 green:0.73 blue:0.31 alpha:1.0]
+        : [UIColor colorWithRed:0.10 green:0.50 blue:0.22 alpha:1.0];
+}
+
+static UIColor *GHReleaseBadgePreReleaseColor(void) {
+    return [GHThemeManager sharedManager].darkModeEnabled
+        ? [UIColor colorWithRed:0.86 green:0.48 blue:0.15 alpha:1.0]
+        : [UIColor colorWithRed:0.74 green:0.34 blue:0.00 alpha:1.0];
+}
+
+static NSString *GHReleaseFormattedSize(long long bytes) {
+    if (bytes < 1024) return [NSString stringWithFormat:@"%lld %@", bytes, GHL(@"байт")];
+    double kb = (double)bytes / 1024.0;
+    if (kb < 1024.0) return [NSString stringWithFormat:@"%.0f %@", kb, GHL(@"КБ")];
+    double mb = kb / 1024.0;
+    if (mb < 10.0) return [NSString stringWithFormat:@"%.1f %@", mb, GHL(@"МБ")];
+    if (mb < 1024.0) return [NSString stringWithFormat:@"%.0f %@", mb, GHL(@"МБ")];
+    return [NSString stringWithFormat:@"%.2f %@", mb / 1024.0, GHL(@"ГБ")];
+}
+
+static NSString *GHReleaseDateString(NSString *isoString) {
+    if (isoString.length == 0) return @"";
+
+    static NSDateFormatter *isoFormatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        isoFormatter = [[NSDateFormatter alloc] init];
+        isoFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+        isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
+        isoFormatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    });
+
+    NSDate *date = [isoFormatter dateFromString:isoString];
+    if (!date) return @"";
+
+    BOOL russian = [[GHLocalization sharedManager].languageCode isEqualToString:@"ru"];
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSInteger year = [[calendar components:NSYearCalendarUnit fromDate:date] year];
+    NSInteger currentYear = [[calendar components:NSYearCalendarUnit fromDate:[NSDate date]] year];
+    BOOL sameYear = (year == currentYear);
+
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:russian ? @"ru_RU" : @"en_US"];
+    if (russian) {
+        formatter.dateFormat = sameYear ? @"d MMMM" : @"d MMMM yyyy";
+    } else {
+        formatter.dateFormat = sameYear ? @"MMM d" : @"MMM d, yyyy";
+    }
+    return [formatter stringFromDate:date];
+}
+
+static NSString *GHReleaseAvatarURLForLogin(NSString *login) {
+    if (login.length == 0) return nil;
+    NSString *escaped = [login stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding] ?: login;
+    return [NSString stringWithFormat:@"https://avatars.githubusercontent.com/%@?s=96", escaped];
+}
+
+static UILabel *GHReleaseLabel(UIView *container, NSInteger tag) {
+    UILabel *label = (UILabel *)[container viewWithTag:tag];
+    if (![label isKindOfClass:[UILabel class]]) {
+        label = [[UILabel alloc] initWithFrame:CGRectZero];
+        label.tag = tag;
+        label.backgroundColor = [UIColor clearColor];
+        [container addSubview:label];
+    }
+    return label;
+}
+
+static UIImageView *GHReleaseImageView(UIView *container, NSInteger tag, CGFloat cornerRadius) {
+    UIImageView *imageView = (UIImageView *)[container viewWithTag:tag];
+    if (![imageView isKindOfClass:[UIImageView class]]) {
+        imageView = [[UIImageView alloc] initWithFrame:CGRectZero];
+        imageView.tag = tag;
+        imageView.contentMode = UIViewContentModeScaleAspectFill;
+        imageView.layer.cornerRadius = cornerRadius;
+        imageView.layer.masksToBounds = cornerRadius > 0;
+        [container addSubview:imageView];
+    }
+    return imageView;
+}
+
+static void GHReleaseLoadAvatar(UIImageView *imageView, NSString *urlString) {
+    if (urlString.length == 0) {
+        imageView.image = nil;
+        imageView.accessibilityLabel = nil;
+        return;
+    }
+    if ([imageView.accessibilityLabel isEqualToString:urlString] && imageView.image != nil) return;
+    imageView.accessibilityLabel = urlString;
+    imageView.image = nil;
+    [[GHAvatarLoader sharedLoader] loadAvatarWithURLString:urlString intoImageView:imageView];
+    // Загрузчик ставит contentMode = Center под 30-pt картинку; растягиваем под наш размер.
+    imageView.contentMode = UIViewContentModeScaleAspectFill;
+}
+
+#pragma mark - Sections
+
+- (void)rebuildSections {
+    NSMutableArray *kinds = [NSMutableArray arrayWithObjects:@(GHReleaseSectionKindHeader), @(GHReleaseSectionKindNotes), nil];
+    if (self.contributors.count > 0) [kinds addObject:@(GHReleaseSectionKindContributors)];
+    if ([self infoRows].count > 0) [kinds addObject:@(GHReleaseSectionKindInfo)];
+    if (self.downloadItems.count > 0) [kinds addObject:@(GHReleaseSectionKindAssets)];
+    self.sectionKinds = kinds;
+}
+
+- (GHReleaseSectionKind)kindForSection:(NSInteger)section {
+    if (section < 0 || section >= (NSInteger)self.sectionKinds.count) return GHReleaseSectionKindHeader;
+    return (GHReleaseSectionKind)[self.sectionKinds[section] integerValue];
+}
+
+- (NSInteger)sectionForKind:(GHReleaseSectionKind)kind {
+    NSUInteger index = [self.sectionKinds indexOfObject:@(kind)];
+    return index == NSNotFound ? -1 : (NSInteger)index;
+}
+
+- (void)buildContributors {
+    NSString *body = GHReleaseString(self.releaseInfo, @"body");
+    if (body.length == 0) {
+        self.contributors = @[];
+        return;
+    }
+
+    static NSRegularExpression *mentionRegex = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        mentionRegex = [NSRegularExpression regularExpressionWithPattern:@"(?<![A-Za-z0-9_./@`-])@([A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38})(?![A-Za-z0-9_/-])"
+                                                                  options:0
+                                                                    error:nil];
+    });
+
+    NSMutableArray *logins = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    NSArray *matches = [mentionRegex matchesInString:body options:0 range:NSMakeRange(0, body.length)];
+    for (NSTextCheckingResult *match in matches) {
+        if (match.numberOfRanges < 2) continue;
+        NSString *login = [body substringWithRange:[match rangeAtIndex:1]];
+        NSString *key = login.lowercaseString;
+        if ([seen containsObject:key]) continue;
+        [seen addObject:key];
+        [logins addObject:login];
+    }
+    self.contributors = logins;
+}
+
+- (NSArray *)infoRows {
+    NSMutableArray *rows = [NSMutableArray array];
+    if (GHReleaseString(self.releaseInfo, @"target_commitish").length > 0) [rows addObject:@(GHReleaseInfoRowCommit)];
+    if (GHReleaseString(self.releaseInfo, @"tag_name").length > 0) [rows addObject:@(GHReleaseInfoRowTag)];
+    return rows;
+}
+
+- (BOOL)targetIsCommitSHA {
+    NSString *target = GHReleaseString(self.releaseInfo, @"target_commitish");
+    if (target.length < 7 || target.length > 40) return NO;
+    NSCharacterSet *nonHex = [[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdefABCDEF"] invertedSet];
+    return [target rangeOfCharacterFromSet:nonHex].location == NSNotFound;
+}
+
+- (NSInteger)visibleContributorCount {
+    if (self.contributorsExpanded) return self.contributors.count;
+    return MIN((NSInteger)self.contributors.count, kReleaseContributorsPreviewCount);
+}
+
+- (BOOL)showsViewAllContributorsRow {
+    return !self.contributorsExpanded && (NSInteger)self.contributors.count > kReleaseContributorsPreviewCount;
+}
+
+#pragma mark - Latest release badge
+
+- (void)checkLatestRelease {
+    self.isLatestRelease = NO;
+    if (GHReleaseFlag(self.releaseInfo, @"draft") || GHReleaseFlag(self.releaseInfo, @"prerelease")) return;
+    long long releaseID = [self releaseID];
+    if (releaseID == 0 || self.ownerLogin.length == 0 || self.repoName.length == 0) return;
+
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] latestReleaseForOwner:self.ownerLogin repo:self.repoName completion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || error || ![jsonObject isKindOfClass:[NSDictionary class]]) return;
+        id latestID = jsonObject[@"id"];
+        BOOL isLatest = [latestID respondsToSelector:@selector(longLongValue)] && [latestID longLongValue] == [strongSelf releaseID];
+        if (isLatest == strongSelf.isLatestRelease) return;
+        strongSelf.isLatestRelease = isLatest;
+        [strongSelf.tableView reloadData];
+    }];
+}
+
+- (NSString *)badgeText {
+    if (GHReleaseFlag(self.releaseInfo, @"draft")) return GHL(@"Черновик");
+    if (GHReleaseFlag(self.releaseInfo, @"prerelease")) return GHL(@"Пре-релиз");
+    if (self.isLatestRelease) return GHL(@"Последний релиз");
     return nil;
 }
 
+- (UIColor *)badgeColor {
+    if (GHReleaseFlag(self.releaseInfo, @"draft")) return GHSecondaryTextColor();
+    if (GHReleaseFlag(self.releaseInfo, @"prerelease")) return GHReleaseBadgePreReleaseColor();
+    return GHReleaseBadgeLatestColor();
+}
+
+#pragma mark - Header layout
+
+// Один и тот же код и меряет высоту (container == nil), и раскладывает вьюхи.
+- (CGFloat)layoutHeaderInView:(UIView *)container width:(CGFloat)width {
+    CGFloat textWidth = width - kReleaseSidePadding * 2;
+    CGFloat y = 18;
+
+    NSString *repoText = (self.ownerLogin.length > 0 && self.repoName.length > 0)
+        ? [NSString stringWithFormat:@"%@ / %@", self.ownerLogin, self.repoName]
+        : @"";
+    if (repoText.length > 0) {
+        if (container) {
+            UIImageView *ownerAvatar = GHReleaseImageView(container, kHeaderOwnerAvatarTag, 12);
+            ownerAvatar.frame = CGRectMake(kReleaseSidePadding, y, 24, 24);
+            ownerAvatar.backgroundColor = GHReactionPillBackgroundColor();
+            GHReleaseLoadAvatar(ownerAvatar, GHReleaseAvatarURLForLogin(self.ownerLogin));
+
+            UILabel *repoLabel = GHReleaseLabel(container, kHeaderRepoLabelTag);
+            repoLabel.font = [UIFont systemFontOfSize:16];
+            repoLabel.textColor = GHSecondaryTextColor();
+            repoLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+            repoLabel.text = repoText;
+            repoLabel.frame = CGRectMake(kReleaseSidePadding + 34, y + 2, textWidth - 34, 20);
+        }
+        y += 24 + 14;
+    }
+
+    NSString *name = GHReleaseString(self.releaseInfo, @"name");
+    NSString *tag = GHReleaseString(self.releaseInfo, @"tag_name");
+    NSString *titleText = name.length > 0 ? name : (tag.length > 0 ? tag : GHL(@"Релиз"));
+    UIFont *titleFont = [UIFont boldSystemFontOfSize:30];
+    CGSize titleSize = [titleText sizeWithFont:titleFont
+                             constrainedToSize:CGSizeMake(textWidth, CGFLOAT_MAX)
+                                 lineBreakMode:NSLineBreakByWordWrapping];
+    if (container) {
+        UILabel *titleLabel = GHReleaseLabel(container, kHeaderTitleLabelTag);
+        titleLabel.font = titleFont;
+        titleLabel.textColor = GHPrimaryTextColor();
+        titleLabel.numberOfLines = 0;
+        titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+        titleLabel.text = titleText;
+        titleLabel.frame = CGRectMake(kReleaseSidePadding, y, textWidth, ceil(titleSize.height));
+    }
+    y += ceil(titleSize.height) + 12;
+
+    NSString *badge = [self badgeText];
+    UILabel *badgeLabel = container ? GHReleaseLabel(container, kHeaderBadgeLabelTag) : nil;
+    if (badge.length > 0) {
+        UIFont *badgeFont = [UIFont systemFontOfSize:16];
+        CGSize badgeSize = [badge sizeWithFont:badgeFont];
+        if (badgeLabel) {
+            UIColor *color = [self badgeColor];
+            badgeLabel.hidden = NO;
+            badgeLabel.font = badgeFont;
+            badgeLabel.textAlignment = NSTextAlignmentCenter;
+            badgeLabel.text = badge;
+            badgeLabel.textColor = color;
+            badgeLabel.backgroundColor = [color colorWithAlphaComponent:0.14];
+            badgeLabel.layer.cornerRadius = 8;
+            badgeLabel.layer.masksToBounds = YES;
+            badgeLabel.layer.borderWidth = 1.0;
+            badgeLabel.layer.borderColor = [color colorWithAlphaComponent:0.45].CGColor;
+            badgeLabel.frame = CGRectMake(kReleaseSidePadding, y, MIN(ceil(badgeSize.width) + 24, textWidth), 32);
+        }
+        y += 32 + 16;
+    } else {
+        badgeLabel.hidden = YES;
+    }
+
+    NSDictionary *author = [self.releaseInfo[@"author"] isKindOfClass:[NSDictionary class]] ? self.releaseInfo[@"author"] : nil;
+    NSString *authorLogin = GHReleaseString(author, @"login");
+    NSString *dateText = GHReleaseDateString(GHReleaseString(self.releaseInfo, @"published_at"));
+    if (dateText.length == 0) dateText = GHReleaseDateString(GHReleaseString(self.releaseInfo, @"created_at"));
+
+    UIImageView *authorAvatar = container ? GHReleaseImageView(container, kHeaderAuthorAvatarTag, 14) : nil;
+    UILabel *loginLabel = container ? GHReleaseLabel(container, kHeaderAuthorLoginTag) : nil;
+    UILabel *releasedLabel = container ? GHReleaseLabel(container, kHeaderReleasedLabelTag) : nil;
+
+    if (authorLogin.length > 0 || dateText.length > 0) {
+        if (container) {
+            CGFloat x = kReleaseSidePadding;
+            authorAvatar.hidden = authorLogin.length == 0;
+            loginLabel.hidden = authorLogin.length == 0;
+            if (authorLogin.length > 0) {
+                authorAvatar.frame = CGRectMake(x, y, 28, 28);
+                authorAvatar.backgroundColor = GHReactionPillBackgroundColor();
+                NSString *avatarURL = GHReleaseString(author, @"avatar_url");
+                GHReleaseLoadAvatar(authorAvatar, avatarURL.length > 0 ? avatarURL : GHReleaseAvatarURLForLogin(authorLogin));
+                x += 28 + 10;
+
+                loginLabel.font = [UIFont boldSystemFontOfSize:16];
+                loginLabel.textColor = GHPrimaryTextColor();
+                loginLabel.text = authorLogin;
+                CGSize loginSize = [authorLogin sizeWithFont:loginLabel.font];
+                CGFloat loginWidth = MIN(ceil(loginSize.width), width - kReleaseSidePadding - x);
+                loginLabel.frame = CGRectMake(x, y + 4, loginWidth, 20);
+                x += loginWidth + 5;
+            }
+
+            releasedLabel.hidden = dateText.length == 0;
+            releasedLabel.font = [UIFont systemFontOfSize:16];
+            releasedLabel.textColor = GHSecondaryTextColor();
+            releasedLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+            releasedLabel.text = [NSString stringWithFormat:GHL(@"опубликовал(а) %@"), dateText];
+            releasedLabel.frame = CGRectMake(x, y + 4, MAX(0, width - kReleaseSidePadding - x), 20);
+        }
+        y += 28 + 18;
+    } else if (container) {
+        authorAvatar.hidden = YES;
+        loginLabel.hidden = YES;
+        releasedLabel.hidden = YES;
+    }
+
+    return y;
+}
+
+#pragma mark - UITableViewDataSource
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return self.sectionKinds.count;
+}
+
+- (NSString *)titleForSectionKind:(GHReleaseSectionKind)kind {
+    switch (kind) {
+        case GHReleaseSectionKindContributors: return GHL(@"Участники");
+        case GHReleaseSectionKindInfo: return GHL(@"Информация");
+        case GHReleaseSectionKindAssets: return GHL(@"Файлы релиза");
+        default: return nil;
+    }
+}
+
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-    return GHThemedSectionHeaderView([self tableView:tableView titleForHeaderInSection:section]);
+    NSString *title = [self titleForSectionKind:[self kindForSection:section]];
+    if (title.length == 0) return nil;
+
+    CGFloat width = tableView.bounds.size.width;
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, kReleaseSectionHeaderHeight)];
+    header.backgroundColor = GHCellBackgroundColor();
+
+    CGFloat hairline = 1.0 / [UIScreen mainScreen].scale;
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, hairline)];
+    line.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    line.backgroundColor = GHSeparatorColor();
+    [header addSubview:line];
+
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(kReleaseSidePadding, 24, width - kReleaseSidePadding * 2, 22)];
+    label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    label.backgroundColor = [UIColor clearColor];
+    label.font = [UIFont systemFontOfSize:17];
+    label.textColor = GHSecondaryTextColor();
+    label.text = title;
+    [header addSubview:label];
+    return header;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return GHThemedSectionHeaderHeight([self tableView:tableView titleForHeaderInSection:section]);
+    NSString *title = [self titleForSectionKind:[self kindForSection:section]];
+    return title.length > 0 ? kReleaseSectionHeaderHeight : 0;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-
-    if (section == kSectionNotes) return kNotesSectionRowCount;
-    if (section == kSectionDownloads) return self.downloadItems.count;
+    switch ([self kindForSection:section]) {
+        case GHReleaseSectionKindHeader: return 1;
+        case GHReleaseSectionKindNotes: return 1;
+        case GHReleaseSectionKindContributors:
+            return [self visibleContributorCount] + ([self showsViewAllContributorsRow] ? 1 : 0);
+        case GHReleaseSectionKindInfo: return [self infoRows].count;
+        case GHReleaseSectionKindAssets: return self.downloadItems.count;
+    }
     return 0;
 }
 
+- (UITableViewCell *)plainCellForTableView:(UITableView *)tableView identifier:(NSString *)identifier {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+    }
+    cell.backgroundColor = GHCellBackgroundColor();
+    cell.contentView.backgroundColor = GHCellBackgroundColor();
+    cell.textLabel.text = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = nil;
+    return cell;
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == kSectionNotes && indexPath.row == kNotesRowNotes) {
+    GHReleaseSectionKind kind = [self kindForSection:indexPath.section];
+    CGFloat width = tableView.bounds.size.width;
+
+    if (kind == GHReleaseSectionKindHeader) {
+        UITableViewCell *cell = [self plainCellForTableView:tableView identifier:@"ReleaseHeaderCell"];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        [self layoutHeaderInView:cell.contentView width:width];
+        return cell;
+    }
+
+    if (kind == GHReleaseSectionKindNotes) {
         UITableViewCell *cell = [tableView gh_dequeueCellWithIdentifier:@"NotesCell" forIndexPath:indexPath];
         cell.backgroundColor = GHCellBackgroundColor();
+        cell.contentView.backgroundColor = GHCellBackgroundColor();
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
         CGFloat notesHeight = [self notesContentHeight];
@@ -892,47 +1347,200 @@ static const CGFloat kReactionsRowHeight = 46.0;
             id bodyValue = self.releaseInfo[@"body"];
             BOOL hasBody = [bodyValue isKindOfClass:[NSString class]] && [(NSString *)bodyValue length] > 0;
             cell.textLabel.text = hasBody ? GHL(@"Загрузка описания…") : GHL(@"У этого релиза нет описания");
+            cell.textLabel.backgroundColor = [UIColor clearColor];
             cell.textLabel.textColor = GHSecondaryTextColor();
             cell.textLabel.numberOfLines = 0;
             cell.textLabel.font = [UIFont systemFontOfSize:15];
-            cell.textLabel.frame = CGRectMake(15, kNotesVerticalPadding, tableView.bounds.size.width - 30, notesHeight);
+            cell.textLabel.frame = CGRectMake(kReleaseSidePadding, kNotesVerticalPadding, width - kReleaseSidePadding * 2, notesHeight);
         }
 
         [self layoutReactionButtonsInCell:cell topY:kNotesVerticalPadding + notesHeight];
         return cell;
     }
 
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"AssetCell"];
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"AssetCell"];
+    if (kind == GHReleaseSectionKindContributors) {
+        if (indexPath.row >= [self visibleContributorCount]) {
+            UITableViewCell *cell = [self plainCellForTableView:tableView identifier:@"ReleaseViewAllCell"];
+            cell.selectionStyle = UITableViewCellSelectionStyleGray;
+
+            CGFloat hairline = 1.0 / [UIScreen mainScreen].scale;
+            UIView *line = [cell.contentView viewWithTag:kViewAllHairlineTag];
+            if (!line) {
+                line = [[UIView alloc] initWithFrame:CGRectZero];
+                line.tag = kViewAllHairlineTag;
+                [cell.contentView addSubview:line];
+            }
+            line.backgroundColor = GHSeparatorColor();
+            line.frame = CGRectMake(72, 0, width - 72, hairline);
+
+            UILabel *title = GHReleaseLabel(cell.contentView, kViewAllTitleTag);
+            title.font = [UIFont systemFontOfSize:18];
+            title.textColor = GHPrimaryTextColor();
+            title.text = GHL(@"Показать всех");
+            title.frame = CGRectMake(72, 14, width - 72 - kReleaseSidePadding, 24);
+
+            UILabel *subtitle = GHReleaseLabel(cell.contentView, kViewAllSubtitleTag);
+            subtitle.font = [UIFont systemFontOfSize:15];
+            subtitle.textColor = GHSecondaryTextColor();
+            subtitle.text = [NSString stringWithFormat:GHL(@"Участников: %ld"), (long)self.contributors.count];
+            subtitle.frame = CGRectMake(72, 40, width - 72 - kReleaseSidePadding, 20);
+            return cell;
+        }
+
+        UITableViewCell *cell = [self plainCellForTableView:tableView identifier:@"ReleaseContributorCell"];
+        cell.selectionStyle = UITableViewCellSelectionStyleGray;
+        NSString *login = self.contributors[indexPath.row];
+
+        UIImageView *avatar = GHReleaseImageView(cell.contentView, kContributorAvatarTag, 20);
+        avatar.backgroundColor = GHReactionPillBackgroundColor();
+        avatar.frame = CGRectMake(kReleaseSidePadding, (kReleaseContributorRowHeight - 40) / 2.0, 40, 40);
+        GHReleaseLoadAvatar(avatar, GHReleaseAvatarURLForLogin(login));
+
+        UILabel *loginLabel = GHReleaseLabel(cell.contentView, kContributorLoginTag);
+        loginLabel.font = [UIFont systemFontOfSize:18];
+        loginLabel.textColor = GHPrimaryTextColor();
+        loginLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        loginLabel.text = login;
+        loginLabel.frame = CGRectMake(72, (kReleaseContributorRowHeight - 24) / 2.0, width - 72 - kReleaseSidePadding, 24);
+        return cell;
     }
-    cell.backgroundColor = GHCellBackgroundColor();
-    GHDownloadItem *item = self.downloadItems[indexPath.row];
 
-    cell.textLabel.text = item.displayName;
-    cell.textLabel.textColor = GHPrimaryTextColor();
+    if (kind == GHReleaseSectionKindInfo) {
+        UITableViewCell *cell = [self plainCellForTableView:tableView identifier:@"ReleaseInfoCell"];
+        NSArray *rows = [self infoRows];
+        GHReleaseInfoRow row = (GHReleaseInfoRow)[rows[indexPath.row] integerValue];
 
-    if (item.sizeBytes > 0) {
-        double sizeMB = (double)item.sizeBytes / (1024.0 * 1024.0);
-        cell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"%.2f МБ — нажмите для скачивания"), sizeMB];
-    } else {
-        cell.detailTextLabel.text = GHL(@"Нажмите для скачивания");
+        UIImageView *icon = GHReleaseImageView(cell.contentView, kInfoIconTag, 0);
+        icon.contentMode = UIViewContentModeCenter;
+        icon.frame = CGRectMake(kReleaseSidePadding, (kReleaseInfoRowHeight - 24) / 2.0, 24, 24);
+
+        UILabel *label = GHReleaseLabel(cell.contentView, kInfoLabelTag);
+        label.font = [UIFont systemFontOfSize:18];
+        label.textColor = GHSecondaryTextColor();
+        label.lineBreakMode = NSLineBreakByTruncatingMiddle;
+        label.frame = CGRectMake(56, (kReleaseInfoRowHeight - 24) / 2.0, width - 56 - kReleaseSidePadding, 24);
+
+        if (row == GHReleaseInfoRowCommit) {
+            NSString *target = GHReleaseString(self.releaseInfo, @"target_commitish");
+            BOOL isSHA = [self targetIsCommitSHA];
+            icon.image = isSHA ? [GHIconRenderer commitIconWithColor:GHSecondaryTextColor() size:22]
+                               : [GHIconRenderer branchIconWithColor:GHSecondaryTextColor() size:22];
+            label.text = (isSHA && target.length > 7) ? [target substringToIndex:7] : target;
+            cell.selectionStyle = isSHA ? UITableViewCellSelectionStyleGray : UITableViewCellSelectionStyleNone;
+        } else {
+            icon.image = [GHIconRenderer tagIconWithColor:GHSecondaryTextColor() size:22];
+            label.text = GHReleaseString(self.releaseInfo, @"tag_name");
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        }
+        return cell;
     }
-    cell.detailTextLabel.textColor = GHSecondaryTextColor();
-    cell.accessoryType = UITableViewCellAccessoryNone;
 
-    if ([indexPath isEqual:self.downloadingIndexPath]) {
-        cell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"Скачивание: %.0f%%"), item.downloadProgress * 100];
-
-        UIProgressView *progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-        progressView.frame = CGRectMake(0, 0, 80, progressView.frame.size.height);
-        progressView.progress = item.downloadProgress;
-        cell.accessoryView = progressView;
-    } else {
-        cell.accessoryView = nil;
-    }
-
+    UITableViewCell *cell = [self plainCellForTableView:tableView identifier:@"ReleaseAssetCell"];
+    cell.selectionStyle = UITableViewCellSelectionStyleGray;
+    [self configureAssetCell:cell atRow:indexPath.row width:width];
     return cell;
+}
+
+- (NSString *)pillTextForItem:(GHDownloadItem *)item {
+    switch (item.state) {
+        case GHDownloadStateDownloading:
+            return [NSString stringWithFormat:GHL(@"Скачивание: %.0f%%"), item.downloadProgress * 100];
+        case GHDownloadStateSaved:
+            return GHL(@"Сохранено");
+        case GHDownloadStateFailed:
+            return GHL(@"Ошибка скачивания");
+        case GHDownloadStateIdle:
+            break;
+    }
+    return item.sizeBytes > 0 ? GHReleaseFormattedSize(item.sizeBytes) : nil;
+}
+
+- (CGFloat)heightForAssetItem:(GHDownloadItem *)item {
+    return [self pillTextForItem:item].length > 0 ? kReleaseAssetRowHeight : kReleaseAssetCompactRowHeight;
+}
+
+- (void)configureAssetCell:(UITableViewCell *)cell atRow:(NSInteger)row width:(CGFloat)width {
+    if (row < 0 || row >= (NSInteger)self.downloadItems.count) return;
+    GHDownloadItem *item = self.downloadItems[row];
+    NSString *pillText = [self pillTextForItem:item];
+    BOOL hasPill = pillText.length > 0;
+    CGFloat rowHeight = hasPill ? kReleaseAssetRowHeight : kReleaseAssetCompactRowHeight;
+
+    UIImageView *icon = GHReleaseImageView(cell.contentView, kAssetIconTag, 0);
+    icon.contentMode = UIViewContentModeCenter;
+    UIImage *fileIcon = item.isSourceArchive
+        ? [GHIconRenderer codeIconWithColor:GHSecondaryTextColor() size:22]
+        : [GHIconRenderer fileZipIconWithColor:GHSecondaryTextColor() size:24];
+    icon.image = fileIcon;
+    icon.frame = CGRectMake(kReleaseSidePadding, hasPill ? 16 : (rowHeight - 26) / 2.0, 26, 26);
+
+    CGFloat moreSize = 44;
+    UIButton *moreButton = (UIButton *)[cell.contentView viewWithTag:kAssetMoreButtonTag];
+    if (![moreButton isKindOfClass:[UIButton class]]) {
+        moreButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        moreButton.tag = kAssetMoreButtonTag;
+        [moreButton addTarget:self action:@selector(assetMoreButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [cell.contentView addSubview:moreButton];
+    }
+    [moreButton setImage:[GHIconRenderer moreIconWithColor:GHSecondaryTextColor() size:22] forState:UIControlStateNormal];
+    moreButton.frame = CGRectMake(width - moreSize - 6, hasPill ? 8 : (rowHeight - moreSize) / 2.0, moreSize, moreSize);
+
+    CGFloat textX = 56;
+    CGFloat textWidth = width - textX - moreSize - 10;
+    UILabel *nameLabel = GHReleaseLabel(cell.contentView, kAssetNameTag);
+    nameLabel.font = [UIFont systemFontOfSize:17];
+    nameLabel.textColor = GHPrimaryTextColor();
+    nameLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    nameLabel.text = item.displayName;
+    nameLabel.frame = CGRectMake(textX, hasPill ? 18 : (rowHeight - 22) / 2.0, textWidth, 22);
+
+    UIView *pill = [cell.contentView viewWithTag:kAssetPillTag];
+    if (!pill) {
+        pill = [[UIView alloc] initWithFrame:CGRectZero];
+        pill.tag = kAssetPillTag;
+        pill.userInteractionEnabled = NO;
+        pill.layer.cornerRadius = 12;
+        pill.layer.masksToBounds = YES;
+        [cell.contentView addSubview:pill];
+    }
+    pill.hidden = !hasPill;
+    if (!hasPill) return;
+
+    pill.backgroundColor = GHReactionPillBackgroundColor();
+    UIColor *pillTextColor = item.state == GHDownloadStateSaved ? GHReleaseBadgeLatestColor()
+                           : (item.state == GHDownloadStateFailed ? [UIColor colorWithRed:0.85 green:0.25 blue:0.22 alpha:1.0]
+                                                                  : GHSecondaryTextColor());
+
+    UIImageView *pillIcon = GHReleaseImageView(pill, kAssetPillIconTag, 0);
+    pillIcon.contentMode = UIViewContentModeCenter;
+    pillIcon.image = [GHIconRenderer fileZipIconWithColor:pillTextColor size:13];
+    pillIcon.frame = CGRectMake(9, 5, 14, 14);
+
+    UILabel *pillLabel = GHReleaseLabel(pill, kAssetPillLabelTag);
+    pillLabel.font = [UIFont systemFontOfSize:14];
+    pillLabel.textColor = pillTextColor;
+    pillLabel.text = pillText;
+    CGSize pillTextSize = [pillText sizeWithFont:pillLabel.font];
+    CGFloat pillWidth = MIN(ceil(pillTextSize.width) + 9 + 14 + 6 + 10, textWidth);
+    pillLabel.frame = CGRectMake(9 + 14 + 6, 3, pillWidth - (9 + 14 + 6) - 10, 18);
+    pill.frame = CGRectMake(textX, 48, pillWidth, 24);
+}
+
+- (void)refreshAssetRowForItem:(GHDownloadItem *)item {
+    NSInteger section = [self sectionForKind:GHReleaseSectionKindAssets];
+    NSUInteger row = [self.downloadItems indexOfObject:item];
+    if (section < 0 || row == NSNotFound) return;
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:row inSection:section];
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    if (cell) [self configureAssetCell:cell atRow:row width:self.tableView.bounds.size.width];
+}
+
+- (void)reloadAssetRowForItem:(GHDownloadItem *)item {
+    NSInteger section = [self sectionForKind:GHReleaseSectionKindAssets];
+    NSUInteger row = [self.downloadItems indexOfObject:item];
+    if (section < 0 || row == NSNotFound) return;
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:row inSection:section];
+    [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 #pragma mark - UITableViewDelegate
@@ -944,7 +1552,7 @@ static const CGFloat kReactionsRowHeight = 46.0;
     BOOL hasBody = [bodyValue isKindOfClass:[NSString class]] && [(NSString *)bodyValue length] > 0;
     NSString *placeholder = hasBody ? GHL(@"Загрузка описания…") : GHL(@"У этого релиза нет описания");
 
-    CGFloat width = self.tableView.bounds.size.width - 30;
+    CGFloat width = self.tableView.bounds.size.width - kReleaseSidePadding * 2;
     CGSize size = [placeholder sizeWithFont:[UIFont systemFontOfSize:15]
                            constrainedToSize:CGSizeMake(width, CGFLOAT_MAX)
                                lineBreakMode:NSLineBreakByWordWrapping];
@@ -952,58 +1560,131 @@ static const CGFloat kReactionsRowHeight = 46.0;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == kSectionNotes && indexPath.row == kNotesRowNotes) {
-        return (kNotesVerticalPadding * 2) + [self notesContentHeight] + kReactionsRowHeight;
+    switch ([self kindForSection:indexPath.section]) {
+        case GHReleaseSectionKindHeader:
+            return [self layoutHeaderInView:nil width:tableView.bounds.size.width];
+        case GHReleaseSectionKindNotes:
+            return (kNotesVerticalPadding * 2) + [self notesContentHeight] + kReactionsRowHeight;
+        case GHReleaseSectionKindContributors:
+            return indexPath.row >= [self visibleContributorCount] ? kReleaseViewAllRowHeight : kReleaseContributorRowHeight;
+        case GHReleaseSectionKindInfo:
+            return kReleaseInfoRowHeight;
+        case GHReleaseSectionKindAssets:
+            if (indexPath.row < (NSInteger)self.downloadItems.count) {
+                return [self heightForAssetItem:self.downloadItems[indexPath.row]];
+            }
+            return kReleaseAssetRowHeight;
     }
     return 44;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if (indexPath.section != kSectionDownloads) return;
+    GHReleaseSectionKind kind = [self kindForSection:indexPath.section];
 
-    if (self.downloadingIndexPath) {
-
+    if (kind == GHReleaseSectionKindContributors) {
+        if (indexPath.row >= [self visibleContributorCount]) {
+            self.contributorsExpanded = YES;
+            [tableView reloadSections:[NSIndexSet indexSetWithIndex:indexPath.section] withRowAnimation:UITableViewRowAnimationFade];
+            return;
+        }
+        PublicProfileViewController *profileVC = [[PublicProfileViewController alloc] init];
+        profileVC.login = self.contributors[indexPath.row];
+        [self.navigationController pushViewController:profileVC animated:YES];
         return;
     }
 
+    if (kind == GHReleaseSectionKindInfo) {
+        NSArray *rows = [self infoRows];
+        if ([rows[indexPath.row] integerValue] == GHReleaseInfoRowCommit && [self targetIsCommitSHA]) {
+            CommitDetailViewController *commitVC = [[CommitDetailViewController alloc] init];
+            commitVC.ownerLogin = self.ownerLogin;
+            commitVC.repoName = self.repoName;
+            commitVC.sha = GHReleaseString(self.releaseInfo, @"target_commitish");
+            [self.navigationController pushViewController:commitVC animated:YES];
+        }
+        return;
+    }
+
+    if (kind == GHReleaseSectionKindAssets) {
+        [self startDownloadForItemAtIndex:indexPath.row];
+    }
+}
+
+#pragma mark - Скачивание файлов
+
+- (void)assetMoreButtonTapped:(UIButton *)sender {
+    UIView *view = sender;
+    while (view && ![view isKindOfClass:[UITableViewCell class]]) view = view.superview;
+    if (!view) return;
+    NSIndexPath *indexPath = [self.tableView indexPathForCell:(UITableViewCell *)view];
+    if (!indexPath || indexPath.row >= (NSInteger)self.downloadItems.count) return;
+
     GHDownloadItem *item = self.downloadItems[indexPath.row];
+    self.actionSheetItemIndex = indexPath.row;
+
+    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:item.displayName
+                                                       delegate:self
+                                              cancelButtonTitle:GHL(@"Отмена")
+                                         destructiveButtonTitle:nil
+                                              otherButtonTitles:GHL(@"Скачать"), GHL(@"Скопировать ссылку"), nil];
+    [sheet showInView:self.view];
+}
+
+- (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
+    NSInteger itemIndex = self.actionSheetItemIndex;
+    self.actionSheetItemIndex = -1;
+    if (buttonIndex == actionSheet.cancelButtonIndex) return;
+    if (itemIndex < 0 || itemIndex >= (NSInteger)self.downloadItems.count) return;
+
+    NSInteger firstOther = actionSheet.firstOtherButtonIndex;
+    if (buttonIndex == firstOther) {
+        [self startDownloadForItemAtIndex:itemIndex];
+    } else if (buttonIndex == firstOther + 1) {
+        GHDownloadItem *item = self.downloadItems[itemIndex];
+        if (item.downloadURLString.length > 0) {
+            [UIPasteboard generalPasteboard].string = item.downloadURLString;
+            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Ссылка скопирована")
+                                                             message:nil
+                                                            delegate:nil
+                                                   cancelButtonTitle:@"OK"
+                                                   otherButtonTitles:nil];
+            [alert show];
+        }
+    }
+}
+
+- (void)startDownloadForItemAtIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.downloadItems.count) return;
+    if (self.downloadingIndexPath) return;
+
+    GHDownloadItem *item = self.downloadItems[index];
     NSURL *url = [NSURL URLWithString:item.downloadURLString];
+    if (!url) return;
 
-    self.downloadingIndexPath = indexPath;
+    NSInteger section = [self sectionForKind:GHReleaseSectionKindAssets];
+    self.downloadingIndexPath = [NSIndexPath indexPathForRow:index inSection:MAX(section, 0)];
     item.downloadProgress = 0.0;
-
-    UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
-    cell.detailTextLabel.text = GHL(@"Скачивание: 0%");
-
-    UIProgressView *progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-    progressView.frame = CGRectMake(0, 0, 80, progressView.frame.size.height);
-    progressView.progress = 0.0;
-    cell.accessoryView = progressView;
+    item.state = GHDownloadStateDownloading;
+    [self reloadAssetRowForItem:item];
 
     __weak typeof(self) weakSelf = self;
     [[DownloadManager sharedManager] downloadFileAtURL:url
                                                 fileName:item.fileName
                                                 progress:^(float progress) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
         item.downloadProgress = progress;
-        UITableViewCell *progressCell = [strongSelf.tableView cellForRowAtIndexPath:indexPath];
-        progressCell.detailTextLabel.text = [NSString stringWithFormat:GHL(@"Скачивание: %.0f%%"), progress * 100];
-        UIProgressView *pv = (UIProgressView *)progressCell.accessoryView;
-        if ([pv isKindOfClass:[UIProgressView class]]) {
-            pv.progress = progress;
-        }
+        [strongSelf refreshAssetRowForItem:item];
     } completion:^(NSString *filePath, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
         strongSelf.downloadingIndexPath = nil;
         item.downloadProgress = 0.0;
 
-        UITableViewCell *doneCell = [strongSelf.tableView cellForRowAtIndexPath:indexPath];
-        doneCell.accessoryView = nil;
-
         if (error) {
-            doneCell.detailTextLabel.text = GHL(@"Ошибка скачивания");
-            doneCell.accessoryType = UITableViewCellAccessoryNone;
+            item.state = GHDownloadStateFailed;
+            [strongSelf reloadAssetRowForItem:item];
 
             UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Ошибка скачивания")
                                                              message:error.localizedDescription
@@ -1012,8 +1693,8 @@ static const CGFloat kReactionsRowHeight = 46.0;
                                                    otherButtonTitles:nil];
             [alert show];
         } else {
-            doneCell.detailTextLabel.text = GHL(@"Сохранено в Media/Downloads");
-            doneCell.accessoryType = UITableViewCellAccessoryCheckmark;
+            item.state = GHDownloadStateSaved;
+            [strongSelf reloadAssetRowForItem:item];
 
             strongSelf.lastDownloadedFilePath = filePath;
 
