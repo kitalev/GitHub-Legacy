@@ -232,16 +232,13 @@ static NSString *GHAttachmentServerMessage(NSData *data) {
     NSString *html = [[NSString alloc] initWithData:self.responseData encoding:NSUTF8StringEncoding]
         ?: [[NSString alloc] initWithData:self.responseData encoding:NSISOLatin1StringEncoding];
     NSString *token = self.response.statusCode < 400 && html.length > 0 ? GHAttachmentUploadToken(html) : nil;
-    if (token.length == 0) {
-        [self failWithCode:GHAttachmentUploaderErrorFailed message:GHL(@"github.com не разрешил загрузку файлов в этот репозиторий.")];
-        return;
-    }
 
-    NSArray *fields = @[@[@"name", self.fileName],
-                        @[@"size", [NSString stringWithFormat:@"%lu", (unsigned long)self.data.length]],
-                        @[@"content_type", self.contentType],
-                        @[@"authenticity_token", token],
-                        @[@"repository_id", [NSString stringWithFormat:@"%lld", self.repositoryID]]];
+    NSMutableArray *fields = [NSMutableArray arrayWithObjects:
+                              @[@"name", self.fileName],
+                              @[@"size", [NSString stringWithFormat:@"%lu", (unsigned long)self.data.length]],
+                              @[@"content_type", self.contentType],
+                              @[@"repository_id", [NSString stringWithFormat:@"%lld", self.repositoryID]], nil];
+    if (token.length > 0) [fields addObject:@[@"authenticity_token", token]];
     NSMutableURLRequest *request = [self gitHubRequestWithURL:[self gitHubURLForString:kGHUploadPolicyPath] method:@"POST"];
     [self setMultipartFields:fields file:NO onRequest:request];
     [self startStage:GHAttachmentUploadStagePolicy request:request];
@@ -257,8 +254,9 @@ static NSString *GHAttachmentServerMessage(NSData *data) {
             [self failWithCode:GHAttachmentUploaderErrorSignInRequired message:GHL(@"Войдите на github.com, чтобы прикреплять фото и видео.")];
             return;
         }
-        [self failWithCode:GHAttachmentUploaderErrorFailed
-                   message:GHAttachmentServerMessage(self.responseData) ?: GHL(@"github.com не разрешил загрузку файлов в этот репозиторий.")];
+        NSString *message = GHAttachmentServerMessage(self.responseData)
+            ?: [NSString stringWithFormat:GHL(@"github.com не разрешил загрузку файлов в этот репозиторий (HTTP %ld)."), (long)self.response.statusCode];
+        [self failWithCode:GHAttachmentUploaderErrorFailed message:message];
         return;
     }
     self.policy = policy;
@@ -293,7 +291,8 @@ static NSString *GHAttachmentServerMessage(NSData *data) {
 
 - (void)handleStorageResponse {
     if (self.response.statusCode >= 300) {
-        [self failWithCode:GHAttachmentUploaderErrorFailed message:GHL(@"Не удалось загрузить файл в хранилище GitHub.")];
+        [self failWithCode:GHAttachmentUploaderErrorFailed
+                   message:[NSString stringWithFormat:GHL(@"Не удалось загрузить файл в хранилище GitHub (HTTP %ld)."), (long)self.response.statusCode]];
         return;
     }
 
@@ -311,7 +310,8 @@ static NSString *GHAttachmentServerMessage(NSData *data) {
 - (void)handleFinalizeResponse {
     if (self.response.statusCode >= 400) {
         [self failWithCode:GHAttachmentUploaderErrorFailed
-                   message:GHAttachmentServerMessage(self.responseData) ?: GHL(@"github.com не подтвердил загруженный файл.")];
+                   message:GHAttachmentServerMessage(self.responseData)
+                               ?: [NSString stringWithFormat:GHL(@"github.com не подтвердил загруженный файл (HTTP %ld)."), (long)self.response.statusCode]];
         return;
     }
     id json = self.responseData.length > 0 ? [NSJSONSerialization JSONObjectWithData:self.responseData options:0 error:nil] : nil;
