@@ -9,6 +9,7 @@
 #import "RepoOverviewViewController.h"
 #import "GHCompat.h"
 #import "GHLegacyRefreshControl.h"
+#import "PublicProfileViewController.h"
 
 @interface CommitDetailViewController () <UIScrollViewDelegate>
 @property (nonatomic, strong) UIWebView *webView;
@@ -60,8 +61,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    NSString *shortSHA = self.sha.length >= 7 ? [self.sha substringToIndex:7] : self.sha;
-    self.title = shortSHA.length > 0 ? shortSHA : GHL(@"Коммит");
+    self.title = GHL(@"Коммит");
     self.view.backgroundColor = GHBackgroundColor();
 
     [self installWebView];
@@ -573,6 +573,22 @@
         return NO;
     }
 
+    if ([[request.URL scheme] isEqualToString:@"ghlegacy-copy"]) {
+        NSString *sha = [self safeStringForKey:@"sha" inDict:self.lastCommitJSON];
+        if (sha.length > 0) [UIPasteboard generalPasteboard].string = sha;
+        return NO;
+    }
+
+    if ([[request.URL scheme] isEqualToString:@"ghlegacy-user"]) {
+        NSString *login = request.URL.host;
+        if (login.length > 0) {
+            PublicProfileViewController *profileVC = [[PublicProfileViewController alloc] init];
+            profileVC.login = login;
+            [self.navigationController pushViewController:profileVC animated:YES];
+        }
+        return NO;
+    }
+
     if (navigationType != UIWebViewNavigationTypeLinkClicked) {
         return YES;
     }
@@ -795,29 +811,146 @@ static const NSInteger kDiffChunkSize = 80;
             self.ownerLogin, self.repoName, sha, encodedPath];
 }
 
+static NSString *GHCommitL(NSString *ru, NSString *en) {
+    return [[GHLocalization sharedManager].languageCode isEqualToString:@"en"] ? en : ru;
+}
+
+- (NSString *)groupedNumber:(NSInteger)value {
+    static NSNumberFormatter *formatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        formatter = [[NSNumberFormatter alloc] init];
+        formatter.numberStyle = NSNumberFormatterDecimalStyle;
+        formatter.groupingSeparator = @" ";
+        formatter.usesGroupingSeparator = YES;
+        formatter.groupingSize = 3;
+    });
+    return [formatter stringFromNumber:@(value)] ?: [NSString stringWithFormat:@"%ld", (long)value];
+}
+
+- (NSString *)relativeDateFromISOString:(NSString *)isoString {
+    if (isoString.length == 0) return @"";
+    NSDate *date = [GHISODateFormatter() dateFromString:isoString];
+    if (!date) return @"";
+    NSTimeInterval seconds = MAX(-[date timeIntervalSinceNow], 0);
+    NSInteger minutes = (NSInteger)(seconds / 60);
+    NSInteger hours = minutes / 60;
+    NSInteger days = hours / 24;
+    BOOL en = [[GHLocalization sharedManager].languageCode isEqualToString:@"en"];
+    if (minutes < 1) return en ? @"now" : @"сейчас";
+    if (minutes < 60) return [NSString stringWithFormat:en ? @"%ldm" : @"%ld мин", (long)minutes];
+    if (hours < 24) return [NSString stringWithFormat:en ? @"%ldh" : @"%ld ч", (long)hours];
+    if (days < 30) return [NSString stringWithFormat:en ? @"%ldd" : @"%ld д", (long)days];
+    if (days < 365) return [NSString stringWithFormat:en ? @"%ldmo" : @"%ld мес", (long)(days / 30)];
+    return [NSString stringWithFormat:en ? @"%ldy" : @"%ld г", (long)(days / 365)];
+}
+
+- (NSString *)filesChangedText:(NSInteger)count {
+    NSString *number = [self groupedNumber:count];
+    if ([[GHLocalization sharedManager].languageCode isEqualToString:@"en"]) {
+        return [NSString stringWithFormat:@"%@ %@", number, count == 1 ? @"file changed" : @"files changed"];
+    }
+    NSInteger mod10 = count % 10;
+    NSInteger mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) return [NSString stringWithFormat:@"%@ файл изменён", number];
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return [NSString stringWithFormat:@"%@ файла изменено", number];
+    return [NSString stringWithFormat:@"%@ файлов изменено", number];
+}
+
+- (NSString *)avatarHTML:(NSString *)url size:(NSInteger)size {
+    if (url.length == 0) {
+        return [NSString stringWithFormat:@"<span class=\"avatar\" style=\"width:%ldpx;height:%ldpx;\"></span>", (long)size, (long)size];
+    }
+    NSString *sep = [url rangeOfString:@"?"].location == NSNotFound ? @"?" : @"&";
+    return [NSString stringWithFormat:@"<img class=\"avatar\" style=\"width:%ldpx;height:%ldpx;\" src=\"%@%@s=%ld\"/>",
+            (long)size, (long)size, [self escapeHTML:url], sep, (long)size * 2];
+}
+
+- (NSString *)personRowHTMLWithLogin:(NSString *)login name:(NSString *)name avatarURL:(NSString *)avatarURL {
+    NSString *display = login.length > 0 ? login : (name ?: @"");
+    NSString *inner = [NSString stringWithFormat:@"%@<span class=\"person-name\">%@</span>",
+                       [self avatarHTML:avatarURL size:40], [self escapeHTML:display]];
+    if (login.length > 0) {
+        return [NSString stringWithFormat:@"<a class=\"detail-row person\" href=\"ghlegacy-user://%@\">%@</a>", [self escapeHTML:login], inner];
+    }
+    return [NSString stringWithFormat:@"<div class=\"detail-row person\">%@</div>", inner];
+}
+
 - (NSString *)htmlForCommit:(NSDictionary *)commitJSON {
     NSDictionary *commitData = [self safeDictForKey:@"commit" inDict:commitJSON];
     NSDictionary *authorData = [self safeDictForKey:@"author" inDict:commitData];
+    NSDictionary *committerData = [self safeDictForKey:@"committer" inDict:commitData];
+    NSDictionary *ghAuthor = [self safeDictForKey:@"author" inDict:commitJSON];
+    NSDictionary *ghCommitter = [self safeDictForKey:@"committer" inDict:commitJSON];
     NSString *message = [self safeStringForKey:@"message" inDict:commitData] ?: @"";
     NSString *authorName = [self safeStringForKey:@"name" inDict:authorData] ?: @"";
+    NSString *authorLogin = [self safeStringForKey:@"login" inDict:ghAuthor];
+    NSString *authorAvatar = [self safeStringForKey:@"avatar_url" inDict:ghAuthor];
+    NSString *date = [self safeStringForKey:@"date" inDict:authorData];
     NSString *sha = [self safeStringForKey:@"sha" inDict:commitJSON] ?: @"";
+    NSString *shortSHA = sha.length >= 7 ? [sha substringToIndex:7] : sha;
 
     NSString *parentSHA = sha;
-    NSArray *parents = commitJSON[@"parents"];
-    if ([parents isKindOfClass:[NSArray class]] && parents.count > 0) {
+    NSArray *parents = [commitJSON[@"parents"] isKindOfClass:[NSArray class]] ? commitJSON[@"parents"] : @[];
+    if (parents.count > 0) {
         NSDictionary *parentDict = [parents[0] isKindOfClass:[NSDictionary class]] ? parents[0] : nil;
         NSString *candidateSHA = [self safeStringForKey:@"sha" inDict:parentDict];
         if (candidateSHA.length > 0) parentSHA = candidateSHA;
     }
 
-    NSMutableString *body = [NSMutableString string];
-    [body appendFormat:@"<div class=\"commit-header\"><pre class=\"commit-message\">%@</pre>"
-                         "<div class=\"commit-meta\">%@ · %@</div></div>",
-                         [self escapeHTML:message], [self escapeHTML:authorName], [self escapeHTML:sha]];
+    NSString *trimmed = [message stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *titleLine = trimmed;
+    NSString *bodyText = @"";
+    NSRange nl = [trimmed rangeOfString:@"\n"];
+    if (nl.location != NSNotFound) {
+        titleLine = [trimmed substringToIndex:nl.location];
+        bodyText = [[trimmed substringFromIndex:nl.location + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    }
 
-    NSArray *files = commitJSON[@"files"];
-    if (![files isKindOfClass:[NSArray class]] || files.count == 0) {
-        [body appendString:@"<div class=\"no-files\">Нет данных об изменённых файлах.</div>"];
+    NSArray *files = [commitJSON[@"files"] isKindOfClass:[NSArray class]] ? commitJSON[@"files"] : @[];
+    NSDictionary *stats = [self safeDictForKey:@"stats" inDict:commitJSON];
+    NSInteger totalAdd = [[self safeNumberForKey:@"additions" inDict:stats] integerValue];
+    NSInteger totalDel = [[self safeNumberForKey:@"deletions" inDict:stats] integerValue];
+    if (stats == nil) {
+        for (NSDictionary *file in files) {
+            if (![file isKindOfClass:[NSDictionary class]]) continue;
+            totalAdd += [[self safeNumberForKey:@"additions" inDict:file] integerValue];
+            totalDel += [[self safeNumberForKey:@"deletions" inDict:file] integerValue];
+        }
+    }
+
+    NSMutableString *body = [NSMutableString string];
+
+    [body appendFormat:@"<div class=\"tabs\">"
+                         "<div class=\"tab active\" id=\"tab-btn-changes\" ontouchstart=\"fileTouchStart(event)\" ontouchend=\"tabTouchEnd(event,'changes')\">%@</div>"
+                         "<div class=\"tab\" id=\"tab-btn-details\" ontouchstart=\"fileTouchStart(event)\" ontouchend=\"tabTouchEnd(event,'details')\">%@</div>"
+                         "</div>",
+                         GHCommitL(@"ИЗМЕНЕНИЯ", @"CHANGES"), GHCommitL(@"ПОДРОБНЕЕ", @"DETAILS")];
+
+    [body appendString:@"<div id=\"tab-changes\">"];
+
+    NSString *who = authorLogin.length > 0 ? authorLogin : authorName;
+    [body appendFormat:@"<div class=\"commit-header\">"
+                         "<div class=\"author-row\"><span class=\"author-date\">%@</span>%@"
+                         "<span class=\"author-name\">%@</span> <span class=\"author-verb\">%@</span></div>"
+                         "<div class=\"commit-title\">%@</div>",
+                         [self escapeHTML:[self relativeDateFromISOString:date]],
+                         [self avatarHTML:authorAvatar size:26],
+                         [self escapeHTML:who], GHCommitL(@"автор", @"authored"),
+                         [self escapeHTML:titleLine.length > 0 ? titleLine : GHL(@"(без сообщения)")]];
+    if (bodyText.length > 0) {
+        [body appendFormat:@"<pre class=\"commit-body\">%@</pre>", [self escapeHTML:bodyText]];
+    }
+    [body appendString:@"</div><div class=\"gap\"></div>"];
+
+    [body appendFormat:@"<div class=\"summary\"><div class=\"summary-title\">%@</div>"
+                         "<div class=\"summary-stats\"><span class=\"sum-add\">%@ %@</span>&nbsp;&nbsp;<span class=\"sum-del\">%@ %@</span></div></div>",
+                         [self escapeHTML:[self filesChangedText:files.count]],
+                         [self groupedNumber:totalAdd], GHCommitL(@"добавлено", totalAdd == 1 ? @"addition" : @"additions"),
+                         [self groupedNumber:totalDel], GHCommitL(@"удалено", totalDel == 1 ? @"deletion" : @"deletions")];
+
+    if (files.count == 0) {
+        [body appendFormat:@"<div class=\"no-files\">%@</div>", GHCommitL(@"Нет данных об изменённых файлах.", @"No changed files.")];
     }
 
     NSInteger fileIndex = 0;
@@ -826,68 +959,131 @@ static const NSInteger kDiffChunkSize = 80;
 
         NSString *filename = [self safeStringForKey:@"filename" inDict:file] ?: GHL(@"(файл)");
         NSString *status = [self safeStringForKey:@"status" inDict:file] ?: @"";
-        NSNumber *additions = [self safeNumberForKey:@"additions" inDict:file];
-        NSNumber *deletions = [self safeNumberForKey:@"deletions" inDict:file];
+        NSInteger additions = [[self safeNumberForKey:@"additions" inDict:file] integerValue];
+        NSInteger deletions = [[self safeNumberForKey:@"deletions" inDict:file] integerValue];
         NSString *patch = [self safeStringForKey:@"patch" inDict:file];
 
-        NSString *statusRu = status;
-        if ([status isEqualToString:@"added"]) statusRu = GHL(@"добавлен");
-        else if ([status isEqualToString:@"removed"]) statusRu = GHL(@"удалён");
-        else if ([status isEqualToString:@"modified"]) statusRu = GHL(@"изменён");
-        else if ([status isEqualToString:@"renamed"]) statusRu = GHL(@"переименован");
+        NSString *statusText = status;
+        NSString *statusClass = @"st-mod";
+        if ([status isEqualToString:@"added"]) { statusText = GHCommitL(@"добавлен", @"added"); statusClass = @"st-add"; }
+        else if ([status isEqualToString:@"removed"]) { statusText = GHCommitL(@"удалён", @"removed"); statusClass = @"st-del"; }
+        else if ([status isEqualToString:@"modified"]) { statusText = GHCommitL(@"изменён", @"modified"); }
+        else if ([status isEqualToString:@"renamed"]) { statusText = GHCommitL(@"переименован", @"renamed"); }
 
-        BOOL collapsedByDefault = YES;
-
-        NSString *iconStyle = collapsedByDefault ? @" style=\"-webkit-transform:rotate(-45deg);transform:rotate(-45deg);\"" : @"";
-        NSString *contentStyle = collapsedByDefault ? @" style=\"display:none;\"" : @"";
+        NSString *baseName = [filename lastPathComponent];
+        NSString *dirName = [filename stringByDeletingLastPathComponent];
+        NSString *subline = dirName.length > 0 ? [NSString stringWithFormat:@"%@/ · %@", dirName, statusText] : statusText;
 
         [body appendFormat:@"<div class=\"file-section\">"
                              "<div class=\"file-header\" ontouchstart=\"fileTouchStart(event)\" ontouchend=\"fileTouchEnd(event,%ld)\">"
-                             "<span class=\"toggle-icon\" id=\"toggle-%ld\"%@></span>"
-                             "<div class=\"file-name\">%@ <span class=\"file-status\">(%@)</span></div>"
-                             "<div class=\"file-stats\"><span class=\"stat-add\">+%@</span> "
-                             "<span class=\"stat-del\">-%@</span></div>"
+                             "<span class=\"toggle-icon\" id=\"toggle-%ld\" style=\"-webkit-transform:rotate(-45deg);transform:rotate(-45deg);\"></span>"
+                             "<div class=\"file-stats\"><span class=\"stat-add\">+%@</span> <span class=\"stat-del\">−%@</span></div>"
+                             "<div class=\"file-name\">%@<span class=\"file-status\"><i class=\"st-dot %@\"></i>%@</span></div>"
                              "</div>",
-                             (long)fileIndex, (long)fileIndex, iconStyle,
-                             [self escapeHTML:filename], [self escapeHTML:statusRu], additions, deletions];
+                             (long)fileIndex, (long)fileIndex,
+                             [self groupedNumber:additions], [self groupedNumber:deletions],
+                             [self escapeHTML:baseName], statusClass, [self escapeHTML:subline]];
 
-        [body appendFormat:@"<div class=\"file-content\" id=\"file-content-%ld\"%@>", (long)fileIndex, contentStyle];
+        [body appendFormat:@"<div class=\"file-content\" id=\"file-content-%ld\" style=\"display:none;\">", (long)fileIndex];
 
         if (patch.length > 0) {
             [body appendString:[self diffHTMLFromPatch:patch fileIndex:fileIndex]];
         } else if ([self isImageFilename:filename]) {
-
             NSString *imageSHA = [status isEqualToString:@"removed"] ? parentSHA : sha;
             NSString *imageURL = [self rawURLForFilename:filename atSHA:imageSHA];
             [body appendFormat:@"<div class=\"image-preview\"><img src=\"%@\" alt=\"%@\"/></div>",
                                  imageURL, [self escapeHTML:filename]];
         } else {
-            [body appendString:@"<div class=\"no-diff\">Бинарный файл или diff слишком большой для отображения.</div>"];
+            [body appendFormat:@"<div class=\"no-diff\">%@</div>",
+                                 GHCommitL(@"Бинарный файл или diff слишком большой для отображения.", @"Binary file or diff too large to display.")];
         }
 
-        [body appendString:@"</div>"];
-        [body appendString:@"</div>"];
+        [body appendString:@"</div></div>"];
         fileIndex++;
     }
 
+    [body appendString:@"</div>"];
+
+    [body appendString:@"<div id=\"tab-details\" style=\"display:none;\">"];
+    [body appendFormat:@"<div class=\"detail-section\"><div class=\"detail-label\">%@</div>"
+                         "<div class=\"detail-row\"><a class=\"copy-link\" href=\"ghlegacy-copy://sha\" ontouchend=\"copyTouched(this)\">%@</a>"
+                         "<span class=\"commit-icon\"></span><span class=\"mono\">%@</span></div></div>",
+                         GHCommitL(@"Коммит", @"Commit"), GHCommitL(@"КОПИРОВАТЬ", @"COPY"), [self escapeHTML:shortSHA]];
+
+    [body appendFormat:@"<div class=\"detail-section\"><div class=\"detail-label\">%@</div>", GHCommitL(@"Участники", @"Contributors")];
+    [body appendString:[self personRowHTMLWithLogin:authorLogin name:authorName avatarURL:authorAvatar]];
+    NSString *committerLogin = [self safeStringForKey:@"login" inDict:ghCommitter];
+    NSString *committerName = [self safeStringForKey:@"name" inDict:committerData];
+    BOOL sameCommitter = (committerLogin.length > 0 && [committerLogin isEqualToString:authorLogin])
+                      || (committerLogin.length == 0 && [committerName isEqualToString:authorName]);
+    if (!sameCommitter && ![committerLogin isEqualToString:@"web-flow"] && (committerLogin.length > 0 || committerName.length > 0)) {
+        [body appendString:[self personRowHTMLWithLogin:committerLogin name:committerName
+                                               avatarURL:[self safeStringForKey:@"avatar_url" inDict:ghCommitter]]];
+    }
+    [body appendString:@"</div>"];
+
+    if (parents.count > 0) {
+        [body appendFormat:@"<div class=\"detail-section\"><div class=\"detail-label\">%@</div>", GHCommitL(@"Родители", @"Parents")];
+        for (NSDictionary *parent in parents) {
+            if (![parent isKindOfClass:[NSDictionary class]]) continue;
+            NSString *psha = [self safeStringForKey:@"sha" inDict:parent];
+            if (psha.length == 0) continue;
+            NSString *pshort = psha.length >= 7 ? [psha substringToIndex:7] : psha;
+            [body appendFormat:@"<a class=\"detail-row\" href=\"https://github.com/%@/%@/commit/%@\"><span class=\"commit-icon\"></span><span class=\"mono\">%@</span></a>",
+                                 self.ownerLogin, self.repoName, psha, pshort];
+        }
+        [body appendString:@"</div>"];
+    }
+    [body appendString:@"</div>"];
+
     NSString *css =
         @"html,body{-webkit-text-size-adjust:100%;-webkit-overflow-scrolling:touch;}"
-        "body{font-family:-apple-system,Helvetica;font-size:14px;color:#000;margin:0;padding:0;}"
-        ".commit-header{padding:14px 16px;border-bottom:1px solid #ddd;}"
-        ".commit-message{white-space:pre-wrap;font-family:-apple-system,Helvetica;font-size:15px;font-weight:bold;margin:0 0 8px 0;}"
-        ".commit-meta{color:#666;font-size:12px;word-wrap:break-word;}"
+        "body{font-family:-apple-system,Helvetica;font-size:14px;color:#000;margin:0;padding:0;background:#fff;}"
+        "a{color:inherit;text-decoration:none;}"
+        ".tabs{display:table;width:100%;table-layout:fixed;border-bottom:1px solid #ddd;}"
+        ".tab{display:table-cell;text-align:center;padding:13px 0 11px 0;font-size:14px;font-weight:bold;color:#666;border-bottom:3px solid transparent;cursor:pointer;}"
+        ".tab.active{color:#000;border-bottom-color:#0969da;}"
+        ".avatar{display:inline-block;border-radius:50%;background:#ddd;vertical-align:middle;}"
+        ".commit-header{padding:14px 16px 16px 16px;}"
+        ".author-row{font-size:15px;line-height:26px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}"
+        ".author-row .avatar{margin-right:8px;}"
+        ".author-name{font-weight:bold;}"
+        ".author-verb{color:#666;}"
+        ".author-date{float:right;color:#666;margin-left:8px;}"
+        ".commit-title{font-size:17px;font-weight:bold;margin-top:10px;word-wrap:break-word;}"
+        ".commit-body{white-space:pre-wrap;word-wrap:break-word;font-family:Menlo,monospace;font-size:13px;line-height:1.5;margin:6px 0 0 0;}"
+        ".gap{height:10px;background:#f0f1f3;border-top:1px solid #ddd;border-bottom:1px solid #ddd;}"
+        ".summary{padding:12px 16px;}"
+        ".summary-title{font-size:17px;font-weight:bold;}"
+        ".summary-stats{font-size:15px;margin-top:3px;}"
+        ".sum-add{color:#1a7f37;}"
+        ".sum-del{color:#cf222e;}"
+        ".detail-section{border-bottom:1px solid #ddd;padding:6px 0;}"
+        ".detail-label{color:#666;font-size:14px;padding:10px 16px 4px 16px;}"
+        ".detail-row{display:block;padding:10px 16px;font-size:16px;overflow:hidden;line-height:24px;}"
+        ".detail-row.person{line-height:40px;}"
+        ".detail-row .avatar{margin-right:12px;}"
+        ".mono{font-family:Menlo,monospace;font-size:15px;}"
+        ".commit-icon{display:inline-block;width:6px;height:6px;border:2px solid #666;border-radius:6px;margin:0 16px 0 4px;vertical-align:middle;position:relative;}"
+        ".commit-icon:before,.commit-icon:after{content:'';position:absolute;top:2px;width:6px;height:2px;background:#666;}"
+        ".commit-icon:before{left:-8px;}"
+        ".commit-icon:after{right:-8px;}"
+        ".copy-link{float:right;color:#0969da;font-weight:bold;font-size:14px;}"
 
         ".file-section{position:relative;}"
 
-        ".file-header{background:#f6f8fa;height:44px;box-sizing:border-box;overflow:hidden;padding:4px 12px 4px 30px;font-weight:bold;font-size:13px;border-top:1px solid #ddd;border-bottom:1px solid #ddd;word-wrap:break-word;cursor:pointer;"
+        ".file-header{background:#f6f8fa;height:44px;-webkit-box-sizing:border-box;box-sizing:border-box;overflow:hidden;padding:4px 12px 4px 30px;font-weight:bold;font-size:13px;border-top:1px solid #ddd;border-bottom:1px solid #ddd;cursor:pointer;"
         "position:-webkit-sticky;position:sticky;top:0;z-index:5;}"
         ".file-header:active{background:#eaeef1;}"
         ".toggle-icon{position:absolute;left:13px;top:12px;width:7px;height:7px;border-right:2px solid #6a737d;border-bottom:2px solid #6a737d;"
         "-webkit-transform:rotate(45deg);transform:rotate(45deg);"
         "-webkit-transition:-webkit-transform 0.25s ease;transition:transform 0.25s ease;}"
-        ".file-name{word-wrap:break-word;}"
-        ".file-status{font-weight:normal;color:#666;}"
-        ".file-stats{text-align:right;font-weight:normal;margin-top:2px;}"
+        ".file-name{font-family:Menlo,monospace;font-size:13px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-right:96px;}"
+        ".file-status{display:block;font-family:-apple-system,Helvetica;font-weight:normal;font-size:12px;line-height:16px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".st-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;background:#bf8700;}"
+        ".st-dot.st-add{background:#1a7f37;}"
+        ".st-dot.st-del{background:#cf222e;}"
+        ".file-stats{position:absolute;right:12px;top:0;line-height:42px;font-weight:normal;font-size:13px;white-space:nowrap;}"
         ".stat-add{color:#22863a;}"
         ".stat-del{color:#cb2431;}"
 
@@ -926,8 +1122,19 @@ static const NSInteger kDiffChunkSize = 80;
     if ([GHThemeManager sharedManager].darkModeEnabled) {
         NSString *darkOverride =
             @"body{background:#121212;color:#e6e6e6;}"
-            ".commit-header{border-bottom-color:#333;}"
-            ".commit-meta{color:#999;}"
+            ".tabs{border-bottom-color:#2a2a2a;}"
+            ".tab{color:#999;}"
+            ".tab.active{color:#fff;border-bottom-color:#4493f8;}"
+            ".avatar{background:#333;}"
+            ".author-verb,.author-date{color:#999;}"
+            ".gap{background:#000;border-color:#2a2a2a;}"
+            ".sum-add{color:#3fb950;}"
+            ".sum-del{color:#f85149;}"
+            ".detail-section{border-bottom-color:#2a2a2a;}"
+            ".detail-label{color:#999;}"
+            ".commit-icon{border-color:#999;}"
+            ".commit-icon:before,.commit-icon:after{background:#999;}"
+            ".copy-link{color:#4493f8;}"
             ".file-header{background:#1c1c1c;border-top-color:#333;border-bottom-color:#333;}"
             ".file-header:active{background:#262626;}"
             ".toggle-icon{border-right-color:#8b949e;border-bottom-color:#8b949e;}"
@@ -1012,6 +1219,25 @@ static const NSInteger kDiffChunkSize = 80;
         "f.src='ghlegacy-layout://changed?t='+new Date().getTime();"
         "}"
 
+        "function tabTouchEnd(e,name){"
+        "if(didMoveTooMuch(e))return;"
+        "showTab(name);"
+        "}"
+        "function showTab(name){"
+        "var tabs=['changes','details'];"
+        "for(var i=0;i<tabs.length;i++){"
+        "var on=tabs[i]===name;"
+        "document.getElementById('tab-'+tabs[i]).style.display=on?'':'none';"
+        "document.getElementById('tab-btn-'+tabs[i]).className=on?'tab active':'tab';"
+        "}"
+        "notifyLayoutChanged();"
+        "}"
+        "function copyTouched(el){"
+        "var old=el.getAttribute('data-label')||el.innerHTML;"
+        "el.setAttribute('data-label',old);"
+        "el.innerHTML='\u2713';"
+        "setTimeout(function(){el.innerHTML=old;},1200);"
+        "}"
         "function ghSetStickyDomIndex(i){"
         "var hs=document.getElementsByClassName('file-header');"
         "for(var j=0;j<hs.length;j++){"

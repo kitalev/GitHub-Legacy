@@ -6,8 +6,90 @@
 #import "GHAvatarLoader.h"
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
+#import <QuartzCore/QuartzCore.h>
 
 static NSString * const kCommitCellID = @"CommitCell";
+
+static const CGFloat kCommitMargin = 16;
+static const CGFloat kCommitTop = 12;
+static const CGFloat kCommitMetaHeight = 20;
+
+@interface GHCommitRowCell : UITableViewCell
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UIImageView *avatarView;
+@property (nonatomic, strong) UILabel *authorLabel;
+@property (nonatomic, strong) UILabel *dateLabel;
+@property (nonatomic, strong) UILabel *shaLabel;
++ (CGFloat)heightForTitle:(NSString *)title width:(CGFloat)width;
+@end
+
+@implementation GHCommitRowCell
+
++ (UIFont *)titleFont {
+    return [UIFont boldSystemFontOfSize:16];
+}
+
++ (CGFloat)titleHeight:(NSString *)title width:(CGFloat)width {
+    UIFont *font = [self titleFont];
+    CGSize size = [(title ?: @"") sizeWithFont:font constrainedToSize:CGSizeMake(width, CGFLOAT_MAX) lineBreakMode:NSLineBreakByTruncatingTail];
+    return MAX(ceil(font.lineHeight), MIN(ceil(size.height), ceil(font.lineHeight) * 2));
+}
+
++ (CGFloat)heightForTitle:(NSString *)title width:(CGFloat)width {
+    return kCommitTop + [self titleHeight:title width:width - kCommitMargin * 2] + 8 + kCommitMetaHeight + kCommitTop;
+}
+
+- (UILabel *)labelWithFont:(UIFont *)font {
+    UILabel *label = [[UILabel alloc] init];
+    label.font = font;
+    label.backgroundColor = [UIColor clearColor];
+    label.lineBreakMode = NSLineBreakByTruncatingTail;
+    [self.contentView addSubview:label];
+    return label;
+}
+
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        self.selectionStyle = UITableViewCellSelectionStyleBlue;
+        self.titleLabel = [self labelWithFont:[GHCommitRowCell titleFont]];
+        self.titleLabel.numberOfLines = 2;
+        self.avatarView = [[UIImageView alloc] init];
+        self.avatarView.layer.cornerRadius = 10;
+        self.avatarView.layer.masksToBounds = YES;
+        [self.contentView addSubview:self.avatarView];
+        self.authorLabel = [self labelWithFont:[UIFont systemFontOfSize:14]];
+        self.dateLabel = [self labelWithFont:[UIFont systemFontOfSize:14]];
+        self.dateLabel.textAlignment = NSTextAlignmentRight;
+        self.shaLabel = [self labelWithFont:[UIFont fontWithName:@"Courier" size:14] ?: [UIFont systemFontOfSize:13]];
+        self.shaLabel.textAlignment = NSTextAlignmentRight;
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat width = self.contentView.bounds.size.width;
+    CGFloat contentWidth = width - kCommitMargin * 2;
+    CGFloat y = kCommitTop;
+    CGFloat titleHeight = [GHCommitRowCell titleHeight:self.titleLabel.text width:contentWidth];
+    self.titleLabel.frame = CGRectMake(kCommitMargin, y, contentWidth, titleHeight);
+    y += titleHeight + 8;
+
+    CGFloat shaWidth = ceil([self.shaLabel.text sizeWithFont:self.shaLabel.font].width);
+    self.shaLabel.frame = CGRectMake(width - kCommitMargin - shaWidth, y, shaWidth, kCommitMetaHeight);
+
+    self.avatarView.frame = CGRectMake(kCommitMargin, y, 20, 20);
+    CGFloat x = kCommitMargin + 28;
+    CGFloat maxRight = width - kCommitMargin - shaWidth - 12;
+    CGFloat dateWidth = ceil([self.dateLabel.text sizeWithFont:self.dateLabel.font].width);
+    CGFloat authorWidth = MIN(ceil([self.authorLabel.text sizeWithFont:self.authorLabel.font].width), MAX(maxRight - x - dateWidth - 6, 0));
+    self.authorLabel.frame = CGRectMake(x, y, authorWidth, kCommitMetaHeight);
+    x += authorWidth + 6;
+    self.dateLabel.frame = CGRectMake(x, y, MIN(dateWidth, MAX(maxRight - x, 0)), kCommitMetaHeight);
+}
+
+@end
 
 static const NSInteger kCommitsPerPage = 30;
 
@@ -55,7 +137,7 @@ static const NSInteger kCommitsPerPage = 30;
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.tableView.rowHeight = 64;
+    [self.tableView gh_registerCellClass:[GHCommitRowCell class] forCellReuseIdentifier:kCommitCellID];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
     self.spinner.hidesWhenStopped = YES;
@@ -199,47 +281,50 @@ static const NSInteger kCommitsPerPage = 30;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kCommitCellID];
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:kCommitCellID];
-    }
+    GHCommitRowCell *cell = [tableView gh_dequeueCellWithIdentifier:kCommitCellID forIndexPath:indexPath];
 
     NSDictionary *commitEntry = self.commits[indexPath.row];
     NSDictionary *commitData = [self safeDictForKey:@"commit" inDict:commitEntry];
     NSDictionary *authorData = [self safeDictForKey:@"author" inDict:commitData];
+    NSDictionary *githubAuthor = [self safeDictForKey:@"author" inDict:commitEntry];
 
     NSString *message = [self safeStringForKey:@"message" inDict:commitData];
     NSString *authorName = [self safeStringForKey:@"name" inDict:authorData];
+    NSString *authorLogin = [self safeStringForKey:@"login" inDict:githubAuthor];
     NSString *date = [self safeStringForKey:@"date" inDict:authorData];
+    NSString *sha = [self safeStringForKey:@"sha" inDict:commitEntry] ?: @"";
+    NSString *avatarURL = [self safeStringForKey:@"avatar_url" inDict:githubAuthor];
 
     cell.backgroundColor = GHCellBackgroundColor();
-    cell.textLabel.text = [self firstLineOfMessage:message];
-    cell.textLabel.numberOfLines = 2;
-    cell.textLabel.font = [UIFont boldSystemFontOfSize:15];
-    cell.textLabel.textColor = GHPrimaryTextColor();
+    cell.titleLabel.text = [self firstLineOfMessage:message];
+    cell.titleLabel.textColor = GHPrimaryTextColor();
 
-    cell.detailTextLabel.text = authorName.length > 0 ? authorName : @"";
-    cell.detailTextLabel.font = [UIFont systemFontOfSize:12];
-    cell.detailTextLabel.textColor = GHSecondaryTextColor();
+    cell.authorLabel.text = authorLogin.length > 0 ? authorLogin : (authorName ?: @"");
+    cell.authorLabel.textColor = GHPrimaryTextColor();
 
-    UILabel *dateLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 40, 20)];
-    dateLabel.font = [UIFont systemFontOfSize:12];
-    dateLabel.textColor = GHSecondaryTextColor();
-    dateLabel.textAlignment = NSTextAlignmentRight;
-    dateLabel.backgroundColor = [UIColor clearColor];
-    dateLabel.text = [self relativeDateStringFromISOString:date];
-    cell.accessoryView = dateLabel;
-    cell.accessoryType = UITableViewCellAccessoryNone;
-    cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+    NSString *relative = [self relativeDateStringFromISOString:date];
+    cell.dateLabel.text = relative.length > 0 ? [NSString stringWithFormat:@"\u00b7 %@", relative] : @"";
+    cell.dateLabel.textColor = GHSecondaryTextColor();
 
-    NSDictionary *githubAuthor = [self safeDictForKey:@"author" inDict:commitEntry];
-    NSString *avatarURL = [self safeStringForKey:@"avatar_url" inDict:githubAuthor];
-    [[GHAvatarLoader sharedLoader] loadAvatarWithURLString:avatarURL intoImageView:cell.imageView];
+    cell.shaLabel.text = sha.length >= 7 ? [sha substringToIndex:7] : sha;
+    cell.shaLabel.textColor = GHSecondaryTextColor();
+
+    cell.avatarView.image = nil;
+    cell.avatarView.backgroundColor = GHSeparatorColor();
+    [[GHAvatarLoader sharedLoader] loadAvatarWithURLString:avatarURL intoImageView:cell.avatarView];
+    [cell setNeedsLayout];
 
     return cell;
 }
 
 #pragma mark - UITableViewDelegate
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSDictionary *commitEntry = self.commits[indexPath.row];
+    NSDictionary *commitData = [self safeDictForKey:@"commit" inDict:commitEntry];
+    NSString *title = [self firstLineOfMessage:[self safeStringForKey:@"message" inDict:commitData]];
+    return [GHCommitRowCell heightForTitle:title width:tableView.bounds.size.width];
+}
 
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (self.commits.count == 0 || indexPath.row != (NSInteger)self.commits.count - 1) return;

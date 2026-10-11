@@ -195,6 +195,9 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     self.headerView.onForksTapped = ^{
         [weakHeaderSelf openForks];
     };
+    self.headerView.onParentTapped = ^(NSString *ownerLogin, NSString *repoName) {
+        [RepoOverviewViewController pushRepoOverviewForOwnerLogin:ownerLogin repoName:repoName fromViewController:weakHeaderSelf];
+    };
     self.headerView.onStarButtonTapped = ^{
         [weakHeaderSelf toggleStar];
     };

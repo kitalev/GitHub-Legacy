@@ -14,6 +14,7 @@ typedef NS_ENUM(NSInteger, GHRepoStarState) {
 @property (nonatomic, copy) void (^onOwnerTapped)(void);
 @property (nonatomic, copy) void (^onHomepageTapped)(NSURL *url);
 @property (nonatomic, copy) void (^onForksTapped)(void);
+@property (nonatomic, copy) void (^onParentTapped)(NSString *ownerLogin, NSString *repoName);
 @property (nonatomic, copy) void (^onStarButtonTapped)(void);
 
 - (void)configureWithRepo:(NSDictionary *)repo;

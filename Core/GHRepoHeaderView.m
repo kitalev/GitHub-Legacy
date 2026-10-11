@@ -34,10 +34,17 @@ static UIColor *GHRepoStarYellow(void) {
 @property (nonatomic, strong) UIControl *homepageControl;
 @property (nonatomic, strong) UIImageView *homepageIconView;
 @property (nonatomic, strong) UILabel *homepageLabel;
+@property (nonatomic, strong) UIControl *parentControl;
+@property (nonatomic, strong) UILabel *parentPrefixLabel;
+@property (nonatomic, strong) UILabel *parentNameLabel;
+@property (nonatomic, copy) NSString *parentFullName;
 @property (nonatomic, strong) UIImageView *starsIconView;
-@property (nonatomic, strong) UILabel *starsLabel;
-@property (nonatomic, strong) UIButton *forksButton;
+@property (nonatomic, strong) UILabel *starsCountLabel;
+@property (nonatomic, strong) UILabel *starsCaptionLabel;
+@property (nonatomic, strong) UIControl *forksControl;
 @property (nonatomic, strong) UIImageView *forksIconView;
+@property (nonatomic, strong) UILabel *forksCountLabel;
+@property (nonatomic, strong) UILabel *forksCaptionLabel;
 @property (nonatomic, strong) UIButton *starButton;
 
 @property (nonatomic, strong) NSDictionary *repo;
@@ -81,6 +88,16 @@ static UIColor *GHRepoStarYellow(void) {
         _nameLabel.lineBreakMode = NSLineBreakByWordWrapping;
         [self addSubview:_nameLabel];
 
+        _parentControl = [[UIControl alloc] init];
+        [_parentControl addTarget:self action:@selector(parentTapped) forControlEvents:UIControlEventTouchUpInside];
+        [self addSubview:_parentControl];
+
+        _parentPrefixLabel = [self makeLabelWithFont:[UIFont systemFontOfSize:14]];
+        [_parentControl addSubview:_parentPrefixLabel];
+
+        _parentNameLabel = [self makeLabelWithFont:[UIFont boldSystemFontOfSize:14]];
+        [_parentControl addSubview:_parentNameLabel];
+
         _descriptionLabel = [self makeLabelWithFont:[UIFont systemFontOfSize:16]];
         _descriptionLabel.numberOfLines = 0;
         _descriptionLabel.lineBreakMode = NSLineBreakByWordWrapping;
@@ -102,18 +119,26 @@ static UIColor *GHRepoStarYellow(void) {
         _starsIconView.contentMode = UIViewContentModeCenter;
         [self addSubview:_starsIconView];
 
-        _starsLabel = [self makeLabelWithFont:[UIFont systemFontOfSize:16]];
-        [self addSubview:_starsLabel];
+        _starsCountLabel = [self makeLabelWithFont:[UIFont boldSystemFontOfSize:16]];
+        [self addSubview:_starsCountLabel];
+
+        _starsCaptionLabel = [self makeLabelWithFont:[UIFont systemFontOfSize:16]];
+        [self addSubview:_starsCaptionLabel];
+
+        _forksControl = [[UIControl alloc] init];
+        [_forksControl addTarget:self action:@selector(forksTapped) forControlEvents:UIControlEventTouchUpInside];
+        [self addSubview:_forksControl];
 
         _forksIconView = [[UIImageView alloc] init];
         _forksIconView.contentMode = UIViewContentModeCenter;
-        [self addSubview:_forksIconView];
+        _forksIconView.userInteractionEnabled = NO;
+        [_forksControl addSubview:_forksIconView];
 
-        _forksButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        _forksButton.titleLabel.font = [UIFont systemFontOfSize:16];
-        _forksButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-        [_forksButton addTarget:self action:@selector(forksTapped) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:_forksButton];
+        _forksCountLabel = [self makeLabelWithFont:[UIFont boldSystemFontOfSize:16]];
+        [_forksControl addSubview:_forksCountLabel];
+
+        _forksCaptionLabel = [self makeLabelWithFont:[UIFont systemFontOfSize:16]];
+        [_forksControl addSubview:_forksCaptionLabel];
 
         _starButton = [UIButton buttonWithType:UIButtonTypeCustom];
         _starButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
@@ -169,6 +194,13 @@ static UIColor *GHRepoStarYellow(void) {
     self.nameLabel.text = [self stringIn:self.repo forKey:@"name"] ?: @"";
     self.descriptionLabel.text = [self stringIn:self.repo forKey:@"description"] ?: @"";
 
+    NSDictionary *parent = [[self.repo objectForKey:@"parent"] isKindOfClass:[NSDictionary class]] ? [self.repo objectForKey:@"parent"] : nil;
+    self.parentFullName = [self stringIn:parent forKey:@"full_name"];
+    BOOL isRu = [[GHLocalization sharedManager].languageCode isEqualToString:@"ru"];
+    self.parentPrefixLabel.text = isRu ? @"Форк от " : @"Forked from ";
+    self.parentNameLabel.text = self.parentFullName ?: @"";
+    self.parentControl.hidden = self.parentFullName.length == 0;
+
     NSString *homepage = [self stringIn:self.repo forKey:@"homepage"];
     self.homepageURL = nil;
     if (homepage) {
@@ -181,41 +213,13 @@ static UIColor *GHRepoStarYellow(void) {
 
     NSInteger stars = [self integerIn:self.repo forKey:@"stargazers_count"];
     NSInteger forks = [self integerIn:self.repo forKey:@"forks_count"];
-    [self setCountLabel:self.starsLabel count:stars
-                caption:GHRepoPluralCaption(stars, @"звезда", @"звезды", @"звёзд", @"star", @"stars")];
-    [self setCountButton:self.forksButton count:forks
-                 caption:GHRepoPluralCaption(forks, @"форк", @"форка", @"форков", @"fork", @"forks")];
+    self.starsCountLabel.text = [self formattedCount:stars];
+    self.starsCaptionLabel.text = GHRepoPluralCaption(stars, @"звезда", @"звезды", @"звёзд", @"star", @"stars");
+    self.forksCountLabel.text = [self formattedCount:forks];
+    self.forksCaptionLabel.text = GHRepoPluralCaption(forks, @"форк", @"форка", @"форков", @"fork", @"forks");
 
     [self updateStarButton];
     [self setNeedsLayout];
-}
-
-- (NSAttributedString *)attributedCount:(NSInteger)count caption:(NSString *)caption {
-    NSString *countText = [self formattedCount:count];
-    NSString *text = [NSString stringWithFormat:@"%@ %@", countText, caption];
-    NSMutableAttributedString *attributed = [[NSMutableAttributedString alloc] initWithString:text];
-    NSRange countRange = NSMakeRange(0, countText.length);
-    NSRange captionRange = NSMakeRange(countText.length, text.length - countText.length);
-    [attributed addAttribute:GHFontAttributeName() value:[UIFont boldSystemFontOfSize:16] range:countRange];
-    [attributed addAttribute:GHForegroundColorAttributeName() value:GHPrimaryTextColor() range:countRange];
-    [attributed addAttribute:GHFontAttributeName() value:[UIFont systemFontOfSize:16] range:captionRange];
-    [attributed addAttribute:GHForegroundColorAttributeName() value:GHSecondaryTextColor() range:captionRange];
-    return attributed;
-}
-
-- (void)setCountLabel:(UILabel *)label count:(NSInteger)count caption:(NSString *)caption {
-    NSString *plain = [NSString stringWithFormat:@"%@ %@", [self formattedCount:count], caption];
-    label.text = plain;
-    if ([label respondsToSelector:@selector(setAttributedText:)]) {
-        label.attributedText = [self attributedCount:count caption:caption];
-    }
-}
-
-- (void)setCountButton:(UIButton *)button count:(NSInteger)count caption:(NSString *)caption {
-    NSString *plain = [NSString stringWithFormat:@"%@ %@", [self formattedCount:count], caption];
-    [button setTitle:plain forState:UIControlStateNormal];
-    [button setTitleColor:GHSecondaryTextColor() forState:UIControlStateNormal];
-    [button gh_setAttributedTitle:[self attributedCount:count caption:caption] forState:UIControlStateNormal];
 }
 
 - (void)setStarState:(GHRepoStarState)state {
@@ -265,6 +269,12 @@ static UIColor *GHRepoStarYellow(void) {
     self.ownerLabel.textColor = GHSecondaryTextColor();
     self.nameLabel.textColor = GHPrimaryTextColor();
     self.descriptionLabel.textColor = GHSecondaryTextColor();
+    self.parentPrefixLabel.textColor = GHSecondaryTextColor();
+    self.parentNameLabel.textColor = GHPrimaryTextColor();
+    self.starsCountLabel.textColor = GHPrimaryTextColor();
+    self.starsCaptionLabel.textColor = GHSecondaryTextColor();
+    self.forksCountLabel.textColor = GHPrimaryTextColor();
+    self.forksCaptionLabel.textColor = GHSecondaryTextColor();
     self.homepageIconView.image = [GHIconRenderer linkIconWithColor:GHSecondaryTextColor() size:kGHRepoIconSize];
     self.homepageLabel.textColor = GHPrimaryTextColor();
     self.starsIconView.image = [GHIconRenderer starIconWithColor:GHSecondaryTextColor() size:kGHRepoIconSize filled:NO];
@@ -308,6 +318,18 @@ static UIColor *GHRepoStarYellow(void) {
     if (apply) self.nameLabel.frame = CGRectMake(kGHRepoPadding, y, contentWidth, nameHeight);
     y += nameHeight + 10;
 
+    if (!self.parentControl.hidden) {
+        y -= 6;
+        if (apply) {
+            CGFloat prefixWidth = ceil([self.parentPrefixLabel.text sizeWithFont:self.parentPrefixLabel.font].width);
+            CGFloat nameWidth = MIN(ceil([self.parentNameLabel.text sizeWithFont:self.parentNameLabel.font].width), MAX(contentWidth - prefixWidth, 0));
+            self.parentControl.frame = CGRectMake(kGHRepoPadding, y, prefixWidth + nameWidth, 20);
+            self.parentPrefixLabel.frame = CGRectMake(0, 0, prefixWidth, 20);
+            self.parentNameLabel.frame = CGRectMake(prefixWidth, 0, nameWidth, 20);
+        }
+        y += 20 + 12;
+    }
+
     CGFloat descriptionHeight = [self textHeight:self.descriptionLabel.text font:self.descriptionLabel.font width:contentWidth];
     if (apply) self.descriptionLabel.frame = CGRectMake(kGHRepoPadding, y, contentWidth, descriptionHeight);
     if (descriptionHeight > 0) y += descriptionHeight + 16;
@@ -327,14 +349,23 @@ static UIColor *GHRepoStarYellow(void) {
         CGFloat x = kGHRepoPadding;
         self.starsIconView.frame = CGRectMake(x, iconY, kGHRepoIconSize, kGHRepoIconSize);
         x += kGHRepoIconSize + 8;
-        CGFloat starsWidth = ceil([self.starsLabel.text sizeWithFont:[UIFont boldSystemFontOfSize:16]].width);
-        self.starsLabel.frame = CGRectMake(x, y, starsWidth, kGHRepoRowHeight);
-        x += starsWidth + 22;
-        self.forksIconView.frame = CGRectMake(x, iconY, kGHRepoIconSize, kGHRepoIconSize);
-        x += kGHRepoIconSize + 8;
-        CGFloat forksWidth = MIN(ceil([[self.forksButton titleForState:UIControlStateNormal] sizeWithFont:[UIFont boldSystemFontOfSize:16]].width) + 4,
-                                 MAX(width - kGHRepoPadding - x, 40));
-        self.forksButton.frame = CGRectMake(x, y, forksWidth, kGHRepoRowHeight);
+        CGFloat w = ceil([self.starsCountLabel.text sizeWithFont:self.starsCountLabel.font].width);
+        self.starsCountLabel.frame = CGRectMake(x, y, w, kGHRepoRowHeight);
+        x += w + 5;
+        w = ceil([self.starsCaptionLabel.text sizeWithFont:self.starsCaptionLabel.font].width);
+        self.starsCaptionLabel.frame = CGRectMake(x, y, w, kGHRepoRowHeight);
+        x += w + 22;
+
+        CGFloat fx = 0;
+        self.forksIconView.frame = CGRectMake(fx, iconY - y, kGHRepoIconSize, kGHRepoIconSize);
+        fx += kGHRepoIconSize + 8;
+        w = ceil([self.forksCountLabel.text sizeWithFont:self.forksCountLabel.font].width);
+        self.forksCountLabel.frame = CGRectMake(fx, 0, w, kGHRepoRowHeight);
+        fx += w + 5;
+        w = MIN(ceil([self.forksCaptionLabel.text sizeWithFont:self.forksCaptionLabel.font].width), MAX(width - kGHRepoPadding - x - fx, 20));
+        self.forksCaptionLabel.frame = CGRectMake(fx, 0, w, kGHRepoRowHeight);
+        fx += w;
+        self.forksControl.frame = CGRectMake(x, y, fx, kGHRepoRowHeight);
     }
     y += kGHRepoRowHeight;
 
@@ -356,6 +387,12 @@ static UIColor *GHRepoStarYellow(void) {
 
 - (void)homepageTapped {
     if (self.homepageURL && self.onHomepageTapped) self.onHomepageTapped(self.homepageURL);
+}
+
+- (void)parentTapped {
+    NSArray *parts = [self.parentFullName componentsSeparatedByString:@"/"];
+    if (parts.count != 2 || !self.onParentTapped) return;
+    self.onParentTapped(parts[0], parts[1]);
 }
 
 - (void)forksTapped {
