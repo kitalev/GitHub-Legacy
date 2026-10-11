@@ -1,4 +1,5 @@
 #import "GHAuthManager.h"
+#import "GHWebSession.h"
 
 static NSString * const kGHTokenDefaultsKey = @"GHAccessToken";
 static NSString * const kGHCurrentUserLoginDefaultsKey = @"GHCurrentUserLogin";
@@ -60,6 +61,7 @@ static NSString * const kGHCurrentUserLoginDefaultsKey = @"GHCurrentUserLogin";
     self.currentUserLogin = nil;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:kGHTokenDefaultsKey];
     [[NSUserDefaults standardUserDefaults] synchronize];
+    [GHWebSession signOut];
 }
 
 @end

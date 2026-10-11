@@ -69,8 +69,11 @@ static NSDictionary *GHTranslations(void) {
             @"Скопировать": @"Copy",
             @"Скопировано": @"Copied",
             @"Новый код": @"New code",
-            @"1. Откройте github.com/login/device на компьютере или другом телефоне\n2. Введите код, показанный выше\n3. Нажмите «Authorize» — этот экран обновится сам":
-                @"1. Open github.com/login/device on a computer or another phone\n2. Enter the code shown above\n3. Tap \"Authorize\" — this screen will update on its own",
+            @"1. Нажмите «Открыть github.com здесь» — код скопируется сам. Или откройте github.com/login/device на другом устройстве\n2. Войдите в аккаунт и вставьте код\n3. Нажмите «Authorize» — этот экран обновится сам":
+                @"1. Tap \"Open github.com here\" — the code is copied automatically. Or open github.com/login/device on another device\n2. Sign in and paste the code\n3. Tap \"Authorize\" — this screen will update on its own",
+            @"Открыть github.com здесь": @"Open github.com here",
+            @"Вход на github.com": @"Sign in to github.com",
+            @"Не удалось открыть github.com": @"Couldn't open github.com",
             @"Ожидание подтверждения…": @"Waiting for confirmation…",
             @"Код истёк. Получите новый.": @"The code expired. Get a new one.",
             @"Код действует ещё %ld:%02ld": @"Code expires in %ld:%02ld",
@@ -388,10 +391,6 @@ static NSDictionary *GHTranslations(void) {
             @"Проверка доступа…": @"Checking access…",
             @"Загрузка": @"Uploading",
             @"Загрузка… %d%%": @"Uploading… %d%%",
-            @"Фото и видео недоступны": @"Photos and videos unavailable",
-            @"В %@/%@ у вас нет права записи, а GitHub загружает фото и видео только с привязкой к репозиторию, где такое право есть. Обычно для этого используется ваш собственный публичный репозиторий (в него ничего не добавляется), но у вас его нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…».":
-                @"You don't have write access to %@/%@, and GitHub only uploads photos and videos on behalf of a repository where you do. Normally one of your own public repositories is used for this (nothing is added to it), but you don't have any.\n\nLogs and text files can still be inserted into the issue as text via \"File…\".",
-            @"Загрузка через %@… %d%%": @"Uploading via %@… %d%%",
             @"Файл пустой.": @"The file is empty.",
             @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile.\n\nОткройте папку с файлом в файловом менеджере, выберите файл и нажмите «Открыть в…» → GitHub — он сразу прикрепится к задаче.":
                 @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user.\n\nOpen the file's folder in a file manager, select the file and tap \"Open In…\" → GitHub; it will be attached to the issue right away.",
@@ -400,7 +399,10 @@ static NSDictionary *GHTranslations(void) {
             @"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.": @"Wait for the current upload to finish, then attach the file again.",
             @"Открыть в Filza": @"Open in Filza",
             @"Открыть в iFile": @"Open in iFile",
-            @"GitHub не разрешил загрузку: для этого нужно право записи в репозиторий.": @"GitHub refused the upload: it requires write access to the repository.",
+            @"Войдите на github.com, чтобы прикреплять фото и видео.": @"Sign in to github.com to attach photos and videos.",
+            @"github.com не разрешил загрузку файлов в этот репозиторий.": @"github.com didn't allow uploading files to this repository.",
+            @"Не удалось загрузить файл в хранилище GitHub.": @"Couldn't upload the file to GitHub storage.",
+            @"github.com не подтвердил загруженный файл.": @"github.com didn't confirm the uploaded file.",
             @"GitHub не вернул ссылку на загруженный файл.": @"GitHub didn't return a link to the uploaded file.",
             @"Файл пустой или слишком большой: можно не больше %llu МБ.": @"The file is empty or too large: the limit is %llu MB.",
             @"Не удалось прочитать файл.": @"Couldn't read the file.",

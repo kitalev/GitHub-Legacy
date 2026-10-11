@@ -7,6 +7,7 @@
 #import "GHDeviceLogin.h"
 #import "GHIconRenderer.h"
 #import "GHLoginSuccessView.h"
+#import "WebLoginViewController.h"
 
 static NSString * const kGHDeviceLoginScope = @"repo user:follow";
 
@@ -39,6 +40,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 @property (nonatomic, strong) UIButton *refreshCodeButton;
 @property (nonatomic, strong) UIView *stepsCard;
 @property (nonatomic, strong) UILabel *stepsLabel;
+@property (nonatomic, strong) UIButton *openHereButton;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) UIButton *retryButton;
@@ -46,6 +48,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 @property (nonatomic, strong) GHLoginSuccessView *successView;
 
 @property (nonatomic, copy) NSString *deviceCode;
+@property (nonatomic, strong) NSURL *verificationURL;
 @property (nonatomic, strong) NSTimer *pollTimer;
 @property (nonatomic, strong) NSTimer *countdownTimer;
 @property (nonatomic, assign) NSTimeInterval expiresAt;
@@ -135,8 +138,14 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self.scrollView addSubview:self.stepsCard];
 
     self.stepsLabel = GHDeviceLoginMakeLabel([UIFont systemFontOfSize:15], NSTextAlignmentLeft);
-    self.stepsLabel.text = GHL(@"1. Откройте github.com/login/device на компьютере или другом телефоне\n2. Введите код, показанный выше\n3. Нажмите «Authorize» — этот экран обновится сам");
+    self.stepsLabel.text = GHL(@"1. Нажмите «Открыть github.com здесь» — код скопируется сам. Или откройте github.com/login/device на другом устройстве\n2. Войдите в аккаунт и вставьте код\n3. Нажмите «Authorize» — этот экран обновится сам");
     [self.stepsCard addSubview:self.stepsLabel];
+
+    self.openHereButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    [self.openHereButton setTitle:GHL(@"Открыть github.com здесь") forState:UIControlStateNormal];
+    self.openHereButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    [self.openHereButton addTarget:self action:@selector(openHereTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.scrollView addSubview:self.openHereButton];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
     self.spinner.hidesWhenStopped = YES;
@@ -264,7 +273,10 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     CGFloat stepsHeight = [self heightForLabel:self.stepsLabel width:width - 28];
     self.stepsCard.frame = CGRectMake(left, y, width, stepsHeight + 28);
     self.stepsLabel.frame = CGRectMake(14, 14, width - 28, stepsHeight);
-    y += stepsHeight + 28 + 20;
+    y += stepsHeight + 28 + 12;
+
+    self.openHereButton.frame = CGRectMake(left, y, width, 44);
+    y += 44 + 20;
 
     CGFloat statusHeight = [self heightForLabel:self.statusLabel width:width - 30];
     if (self.spinner.isAnimating && self.retryButton.hidden) {
@@ -296,6 +308,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.codeCopyButton.hidden = hidden;
     self.refreshCodeButton.hidden = hidden;
     self.stepsCard.hidden = hidden;
+    self.openHereButton.hidden = hidden;
     self.statusLabel.hidden = hidden;
 }
 
@@ -356,6 +369,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.codeLabel.alpha = 0.35;
     self.expiryLabel.text = @"";
     self.codeCopyButton.enabled = NO;
+    self.openHereButton.enabled = NO;
     self.refreshCodeButton.enabled = NO;
     [self.codeCopyButton setTitle:GHL(@"Скопировать") forState:UIControlStateNormal];
     [self setStatus:GHL(@"Получение кода…") isError:NO];
@@ -383,6 +397,9 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
         strongSelf.codeLabel.text = userCode;
         strongSelf.codeLabel.alpha = 1.0;
         strongSelf.codeCopyButton.enabled = YES;
+        strongSelf.verificationURL = (verificationURI.length > 0 ? [NSURL URLWithString:verificationURI] : nil)
+            ?: [NSURL URLWithString:@"https://github.com/login/device"];
+        strongSelf.openHereButton.enabled = YES;
         NSInteger lifetime = expiresIn;
         if (lifetime % 60 >= 55) lifetime += 60 - lifetime % 60;
         strongSelf.expiresAt = [NSDate timeIntervalSinceReferenceDate] + lifetime;
@@ -454,9 +471,20 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     }];
 }
 
+- (void)openHereTapped {
+    if (self.deviceCode.length == 0 || self.verificationURL == nil) return;
+    [UIPasteboard generalPasteboard].string = self.codeLabel.text;
+    WebLoginViewController *webVC = [[WebLoginViewController alloc] init];
+    webVC.startURL = self.verificationURL;
+    [self.navigationController pushViewController:webVC animated:YES];
+}
+
 - (void)finishWithAccessToken:(NSString *)accessToken {
     [self stopTimers];
     self.deviceCode = nil;
+    if (self.navigationController.topViewController != self) {
+        [self.navigationController popToViewController:self animated:YES];
+    }
 
     [[GHAuthManager sharedManager] setAccessToken:accessToken];
     [self setStatus:GHL(@"Готово, входим…") isError:NO];
@@ -506,6 +534,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.deviceCode = nil;
     self.codeLabel.alpha = 0.35;
     self.codeCopyButton.enabled = NO;
+    self.openHereButton.enabled = NO;
     self.refreshCodeButton.enabled = YES;
     self.expiryLabel.text = @"";
 

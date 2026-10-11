@@ -325,11 +325,6 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [self getJSONFromPath:@"/user/repos?sort=updated&per_page=50&affiliation=owner,collaborator" completion:completion];
 }
 
-- (void)publicRepositoriesForCurrentUserWithCompletion:(GHJSONCompletionBlock)completion {
-    [self getJSONFromPath:@"/user/repos?visibility=public&affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100"
-               completion:completion];
-}
-
 - (void)followersForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion {
     NSString *path = [NSString stringWithFormat:@"/users/%@/followers?per_page=50", login];
     [self getJSONFromPath:path completion:completion];

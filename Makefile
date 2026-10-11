@@ -25,6 +25,8 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Controllers/NewIssueViewController.m \
 	Controllers/GHFileBrowserViewController.m \
 	Core/GHAttachmentUploader.m \
+	Core/GHWebSession.m \
+	Controllers/WebLoginViewController.m \
 	Core/GHIssueTemplate.m \
 	Core/GHYAMLParser.m \
 	Controllers/PullRequestListViewController.m \

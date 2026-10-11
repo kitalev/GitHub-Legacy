@@ -3,6 +3,8 @@
 #import "IssueDetailViewController.h"
 #import "GHFileBrowserViewController.h"
 #import "GHAttachmentUploader.h"
+#import "GHWebSession.h"
+#import "WebLoginViewController.h"
 #import "GHIssueTemplate.h"
 #import "GHAPIClient.h"
 #import "GHThemeManager.h"
@@ -257,7 +259,6 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 @property (nonatomic, strong) UIPopoverController *imagePopover;
 @property (nonatomic, strong) GHAttachmentUploader *activeUpload;
 @property (nonatomic, assign) long long uploadRepositoryID;
-@property (nonatomic, copy) NSString *uploadRepositoryFullName;
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UILabel *repoLabel;
 @property (nonatomic, strong) UILabel *templateLabel;
@@ -819,6 +820,10 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 }
 
 - (void)ensureUploadAccess:(void (^)(void))then {
+    if (![GHWebSession isSignedIn]) {
+        [self presentWebSignInThen:then];
+        return;
+    }
     if (self.uploadRepositoryID > 0) {
         then();
         return;
@@ -832,59 +837,27 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         [strongSelf setAttachButtonsTitle:nil enabled:YES];
 
         NSDictionary *repo = [jsonObject isKindOfClass:[NSDictionary class]] ? jsonObject : nil;
-        if (repo == nil) {
+        id repositoryID = repo[@"id"];
+        if (![repositoryID respondsToSelector:@selector(longLongValue)] || [repositoryID longLongValue] <= 0) {
             [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
             return;
         }
-        if ([strongSelf adoptUploadRepository:repo requirePublic:NO]) {
-            then();
-            return;
-        }
-        [strongSelf findPublicUploadRepositoryThen:then];
+        strongSelf.uploadRepositoryID = [repositoryID longLongValue];
+        then();
     }];
 }
 
-- (BOOL)adoptUploadRepository:(NSDictionary *)repo requirePublic:(BOOL)requirePublic {
-    if (![repo isKindOfClass:[NSDictionary class]]) return NO;
-    NSDictionary *permissions = [repo[@"permissions"] isKindOfClass:[NSDictionary class]] ? repo[@"permissions"] : nil;
-    id repositoryID = repo[@"id"];
-    if (![permissions[@"push"] boolValue] || ![repositoryID respondsToSelector:@selector(longLongValue)]) return NO;
-    if ([repo[@"archived"] boolValue] || [repo[@"disabled"] boolValue]) return NO;
-    if (requirePublic && [repo[@"private"] boolValue]) return NO;
-
-    self.uploadRepositoryID = [repositoryID longLongValue];
-    id fullName = repo[@"full_name"];
-    self.uploadRepositoryFullName = [fullName isKindOfClass:[NSString class]] ? fullName : nil;
-    return YES;
-}
-
-- (void)findPublicUploadRepositoryThen:(void (^)(void))then {
-    [self setAttachButtonsTitle:GHL(@"Проверка доступа…") enabled:NO];
+- (void)presentWebSignInThen:(void (^)(void))then {
+    WebLoginViewController *loginVC = [[WebLoginViewController alloc] init];
+    loginVC.finishesOnSignIn = YES;
     __weak typeof(self) weakSelf = self;
-    [[GHAPIClient sharedClient] publicRepositoriesForCurrentUserWithCompletion:^(id jsonObject, NSError *error) {
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) return;
-        [strongSelf setAttachButtonsTitle:nil enabled:YES];
-
-        if (![jsonObject isKindOfClass:[NSArray class]]) {
-            [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
-            return;
-        }
-        for (id repo in jsonObject) {
-            if ([strongSelf adoptUploadRepository:repo requirePublic:YES]) {
-                then();
-                return;
-            }
-        }
-
-        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Фото и видео недоступны")
-                                                         message:[NSString stringWithFormat:GHL(@"В %@/%@ у вас нет права записи, а GitHub загружает фото и видео только с привязкой к репозиторию, где такое право есть. Обычно для этого используется ваш собственный публичный репозиторий (в него ничего не добавляется), но у вас его нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…»."),
-                                                                  strongSelf.ownerLogin, strongSelf.repoName]
-                                                        delegate:nil
-                                               cancelButtonTitle:@"OK"
-                                               otherButtonTitles:nil];
-        [alert show];
-    }];
+    loginVC.onSignedIn = ^{
+        [weakSelf dismissViewControllerAnimated:YES completion:^{
+            [weakSelf ensureUploadAccess:then];
+        }];
+    };
+    UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:loginVC];
+    [self presentViewController:navigationController animated:YES completion:nil];
 }
 
 - (void)setAttachButtonsTitle:(NSString *)title enabled:(BOOL)enabled {
@@ -969,16 +942,18 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 - (void)uploadData:(NSData *)data fileName:(NSString *)fileName contentType:(NSString *)contentType intoRow:(GHIssueFieldRow *)row {
     NSString *placeholder = [NSString stringWithFormat:@"![%@ %@…]()", GHL(@"Загрузка"), fileName];
     [self insertBlock:placeholder intoRow:row];
-    [self setAttachButtonsTitle:[self uploadProgressTitle:0] enabled:NO];
+    [self setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), 0] enabled:NO];
 
     __weak typeof(self) weakSelf = self;
     __weak GHIssueFieldRow *weakRow = row;
     self.activeUpload = [GHAttachmentUploader uploadData:data
                                                 fileName:fileName
                                              contentType:contentType
+                                                   owner:self.ownerLogin
+                                                    repo:self.repoName
                                             repositoryID:self.uploadRepositoryID
                                                 progress:^(float progress) {
-        [weakSelf setAttachButtonsTitle:[weakSelf uploadProgressTitle:(int)(progress * 100)] enabled:NO];
+        [weakSelf setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), (int)(progress * 100)] enabled:NO];
     } completion:^(NSString *url, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
@@ -988,16 +963,19 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         GHIssueFieldRow *strongRow = weakRow;
         NSString *replacement = url ? [GHAttachmentUploader markdownForFileName:fileName url:url contentType:contentType] : @"";
         if (strongRow) [strongSelf replacePlaceholder:placeholder withText:replacement inRow:strongRow];
-        if (url == nil) [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
-    }];
-}
+        if (url) return;
 
-- (NSString *)uploadProgressTitle:(int)percent {
-    NSString *target = [NSString stringWithFormat:@"%@/%@", self.ownerLogin, self.repoName];
-    if (self.uploadRepositoryFullName.length > 0 && [self.uploadRepositoryFullName caseInsensitiveCompare:target] != NSOrderedSame) {
-        return [NSString stringWithFormat:GHL(@"Загрузка через %@… %d%%"), self.uploadRepositoryFullName, percent];
-    }
-    return [NSString stringWithFormat:GHL(@"Загрузка… %d%%"), percent];
+        if ([error.domain isEqualToString:GHAttachmentUploaderErrorDomain] && error.code == GHAttachmentUploaderErrorSignInRequired && strongRow) {
+            [GHWebSession signOut];
+            __weak typeof(strongSelf) innerSelf = strongSelf;
+            [strongSelf ensureUploadAccess:^{
+                GHIssueFieldRow *retryRow = weakRow;
+                if (retryRow) [innerSelf uploadData:data fileName:fileName contentType:contentType intoRow:retryRow];
+            }];
+            return;
+        }
+        [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
+    }];
 }
 
 - (void)replacePlaceholder:(NSString *)placeholder withText:(NSString *)replacement inRow:(GHIssueFieldRow *)row {
