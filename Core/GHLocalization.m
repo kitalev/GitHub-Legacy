@@ -83,7 +83,11 @@ static NSDictionary *GHTranslations(void) {
             @"Вход в GitHub": @"Sign in to GitHub",
             @"Выберите, как войти в аккаунт": @"Choose how you'd like to sign in",
             @"Рекомендуется": @"Recommended",
-            @"Другой способ": @"Other option",
+            @"Другие способы": @"Other options",
+            @"Войти в приложении": @"Sign in in the app",
+            @"Вход в приложении": @"Sign in in the app",
+            @"Страница входа github.com откроется прямо здесь, код устройства подставится сам. Сразу можно прикреплять фото к задачам.":
+                @"The github.com sign-in page opens right here and the device code is filled in for you. Photos can be attached to issues right away.",
             @"Введите короткий код на github.com/login/device с компьютера или другого телефона. Пароль приложение не видит.":
                 @"Enter a short code at github.com/login/device from a computer or another phone. The app never sees your password.",
             @"Вставьте Personal Access Token, созданный вручную на github.com.": @"Paste a Personal Access Token you created on github.com.",

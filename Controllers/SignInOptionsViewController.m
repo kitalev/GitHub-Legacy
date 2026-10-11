@@ -186,11 +186,11 @@ static NSString * const kCellID = @"SignInOptionCell";
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return 1;
+    return section == 0 ? 1 : 2;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return section == 0 ? GHL(@"Рекомендуется") : GHL(@"Другой способ");
+    return section == 0 ? GHL(@"Рекомендуется") : GHL(@"Другие способы");
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
@@ -203,18 +203,36 @@ static NSString * const kCellID = @"SignInOptionCell";
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
     CGFloat groupedInset = tableView.bounds.size.width > 480 ? 90 : 20;
-    return [GHSignInOptionCell heightForDetail:[self detailForSection:indexPath.section]
+    return [GHSignInOptionCell heightForDetail:[self detailForOption:[self optionAtIndexPath:indexPath]]
                                          width:tableView.bounds.size.width - groupedInset];
 }
 
-- (NSString *)titleForSection:(NSInteger)section {
-    return section == 0 ? GHL(@"Войти через github.com") : GHL(@"Войти по токену");
+- (NSInteger)optionAtIndexPath:(NSIndexPath *)indexPath {
+    return indexPath.section == 0 ? 0 : 1 + indexPath.row;
 }
 
-- (NSString *)detailForSection:(NSInteger)section {
-    return section == 0
-        ? GHL(@"Введите короткий код на github.com/login/device с компьютера или другого телефона. Пароль приложение не видит.")
-        : GHL(@"Вставьте Personal Access Token, созданный вручную на github.com.");
+- (NSString *)titleForOption:(NSInteger)option {
+    switch (option) {
+        case 0: return GHL(@"Войти в приложении");
+        case 1: return GHL(@"Войти через github.com");
+        default: return GHL(@"Войти по токену");
+    }
+}
+
+- (NSString *)detailForOption:(NSInteger)option {
+    switch (option) {
+        case 0: return GHL(@"Страница входа github.com откроется прямо здесь, код устройства подставится сам. Сразу можно прикреплять фото к задачам.");
+        case 1: return GHL(@"Введите короткий код на github.com/login/device с компьютера или другого телефона. Пароль приложение не видит.");
+        default: return GHL(@"Вставьте Personal Access Token, созданный вручную на github.com.");
+    }
+}
+
+- (UIImage *)iconForOption:(NSInteger)option {
+    switch (option) {
+        case 0: return [GHIconRenderer personIconWithColor:GHTintColor() size:36];
+        case 1: return [GHIconRenderer devicesIconWithColor:GHSecondaryTextColor() size:36];
+        default: return [GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:36];
+    }
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -223,15 +241,13 @@ static NSString * const kCellID = @"SignInOptionCell";
         cell = [[GHSignInOptionCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:kCellID];
     }
 
-    BOOL recommended = indexPath.section == 0;
+    NSInteger option = [self optionAtIndexPath:indexPath];
     cell.backgroundColor = GHCellBackgroundColor();
-    cell.titleLabel.text = [self titleForSection:indexPath.section];
+    cell.titleLabel.text = [self titleForOption:option];
     cell.titleLabel.textColor = GHPrimaryTextColor();
-    cell.detailLabel.text = [self detailForSection:indexPath.section];
+    cell.detailLabel.text = [self detailForOption:option];
     cell.detailLabel.textColor = GHSecondaryTextColor();
-    cell.iconView.image = recommended
-        ? [GHIconRenderer devicesIconWithColor:GHTintColor() size:36]
-        : [GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:36];
+    cell.iconView.image = [self iconForOption:option];
     GHApplyDisclosureIndicator(cell);
     return cell;
 }
@@ -242,8 +258,10 @@ static NSString * const kCellID = @"SignInOptionCell";
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
     __weak typeof(self) weakSelf = self;
-    if (indexPath.section == 0) {
+    NSInteger option = [self optionAtIndexPath:indexPath];
+    if (option < 2) {
         DeviceLoginViewController *deviceVC = [[DeviceLoginViewController alloc] init];
+        deviceVC.opensInApp = option == 0;
         deviceVC.onLoggedIn = ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (strongSelf.onLoggedIn) strongSelf.onLoggedIn();

@@ -68,7 +68,30 @@
 
 - (void)webViewDidFinishLoad:(UIWebView *)webView {
     if (!webView.isLoading) [self.spinner stopAnimating];
-    [self finishIfSignedInAtURL:webView.request.URL];
+    if ([self finishIfSignedInAtURL:webView.request.URL]) return;
+    [self fillDeviceUserCodeIfNeeded];
+}
+
+- (void)fillDeviceUserCodeIfNeeded {
+    NSURL *url = self.webView.request.URL;
+    if (self.deviceUserCode.length == 0 || ![[url.host lowercaseString] isEqualToString:@"github.com"]) return;
+    if (![url.path isEqualToString:@"/login/device"]) return;
+
+    NSData *codeJSON = [NSJSONSerialization dataWithJSONObject:@[self.deviceUserCode] options:0 error:nil];
+    NSString *codeArray = [[NSString alloc] initWithData:codeJSON encoding:NSUTF8StringEncoding];
+    if (codeArray.length == 0) return;
+    NSString *script = [NSString stringWithFormat:
+        @"(function(c){"
+         "var f=document.querySelector('form[action*=\"/login/device\"]');if(!f)return;"
+         "var ins=[].filter.call(f.querySelectorAll('input'),function(i){var t=(i.type||'text').toLowerCase();"
+         "return (t=='text'||t=='tel')&&!i.disabled&&i.offsetParent!==null;});"
+         "if(!ins.length)return;"
+         "function set(i,v){i.focus();i.value=v;['input','change','keyup'].forEach(function(n){"
+         "var e=document.createEvent('HTMLEvents');e.initEvent(n,true,true);i.dispatchEvent(e);});}"
+         "if(ins.length==1){set(ins[0],c);return;}"
+         "var s=c.replace(/-/g,'');ins.forEach(function(i,k){if(k<s.length)set(i,s.charAt(k));});"
+         "})(%@[0]);", codeArray];
+    [self.webView stringByEvaluatingJavaScriptFromString:script];
 }
 
 - (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error {

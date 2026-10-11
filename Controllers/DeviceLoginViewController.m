@@ -54,13 +54,14 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 @property (nonatomic, assign) NSTimeInterval expiresAt;
 @property (nonatomic, assign) BOOL waitingForCode;
 @property (nonatomic, assign) BOOL statusIsError;
+@property (nonatomic, assign) BOOL didAutoOpen;
 @end
 
 @implementation DeviceLoginViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = GHL(@"Вход через github.com");
+    self.title = self.opensInApp ? GHL(@"Вход в приложении") : GHL(@"Вход через github.com");
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                               selector:@selector(applyTheme)
@@ -412,6 +413,10 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
                                                                       repeats:YES];
         [strongSelf layoutContent];
         [strongSelf schedulePollWithInterval:MAX(interval, 5)];
+        if (strongSelf.opensInApp && !strongSelf.didAutoOpen) {
+            strongSelf.didAutoOpen = YES;
+            [strongSelf openHereTapped];
+        }
     }];
 }
 
@@ -476,6 +481,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [UIPasteboard generalPasteboard].string = self.codeLabel.text;
     WebLoginViewController *webVC = [[WebLoginViewController alloc] init];
     webVC.startURL = self.verificationURL;
+    webVC.deviceUserCode = self.codeLabel.text;
     [self.navigationController pushViewController:webVC animated:YES];
 }
 
