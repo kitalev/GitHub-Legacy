@@ -85,6 +85,7 @@ static NSDictionary *GHTranslations(void) {
             @"Рекомендуется": @"Recommended",
             @"Другие способы": @"Other options",
             @"Войти в приложении": @"Sign in in the app",
+            @"Подтвердил": @"Approved",
             @"Вход в приложении": @"Sign in in the app",
             @"Страница входа github.com откроется прямо здесь, код устройства подставится сам. Сразу можно прикреплять фото к задачам.":
                 @"The github.com sign-in page opens right here and the device code is filled in for you. Photos can be attached to issues right away.",

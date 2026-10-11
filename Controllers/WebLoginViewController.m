@@ -6,6 +6,8 @@
 @interface WebLoginViewController () <UIWebViewDelegate>
 @property (nonatomic, strong) UIWebView *webView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
+@property (nonatomic, strong) UIBarButtonItem *spinnerItem;
+@property (nonatomic, strong) UIBarButtonItem *confirmItem;
 @property (nonatomic, assign) BOOL finished;
 @end
 
@@ -24,7 +26,12 @@
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
     self.spinner.hidesWhenStopped = YES;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
+    self.spinnerItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
+    self.confirmItem = [[UIBarButtonItem alloc] initWithTitle:GHL(@"Подтвердил")
+                                                        style:UIBarButtonItemStyleDone
+                                                       target:self
+                                                       action:@selector(confirmTwoFactorTapped)];
+    self.navigationItem.rightBarButtonItem = self.spinnerItem;
 
     NSArray *stack = self.navigationController.viewControllers;
     if (self.presentingViewController && stack.count > 0 && stack[0] == self) {
@@ -63,13 +70,53 @@
 }
 
 - (void)webViewDidStartLoad:(UIWebView *)webView {
+    if (self.navigationItem.rightBarButtonItem != self.spinnerItem) self.navigationItem.rightBarButtonItem = self.spinnerItem;
     [self.spinner startAnimating];
 }
 
 - (void)webViewDidFinishLoad:(UIWebView *)webView {
     if (!webView.isLoading) [self.spinner stopAnimating];
     if ([self finishIfSignedInAtURL:webView.request.URL]) return;
+    [self installDetailsSupport];
+    [self updateConfirmItem];
     [self fillDeviceUserCodeIfNeeded];
+}
+
+- (BOOL)isTwoFactorPage {
+    NSURL *url = self.webView.request.URL;
+    return [[url.host lowercaseString] isEqualToString:@"github.com"] && [url.path hasPrefix:@"/sessions/two-factor"];
+}
+
+- (void)updateConfirmItem {
+    UIBarButtonItem *item = [self isTwoFactorPage] ? self.confirmItem : self.spinnerItem;
+    if (self.navigationItem.rightBarButtonItem != item) [self.navigationItem setRightBarButtonItem:item animated:YES];
+}
+
+- (void)confirmTwoFactorTapped {
+    NSString *result = [self.webView stringByEvaluatingJavaScriptFromString:
+        @"(function(){"
+         "var fs=document.querySelectorAll('form[action*=\"two-factor\"]');"
+         "var f=null;for(var i=0;i<fs.length;i++){if((fs[i].getAttribute('action')||'').indexOf('mobile')>=0){f=fs[i];break;}}"
+         "if(!f&&fs.length)f=fs[0];"
+         "if(!f)return 'none';f.submit();return 'ok';"
+         "})()"];
+    if (![result isEqualToString:@"ok"]) [self.webView reload];
+}
+
+- (void)installDetailsSupport {
+    [self.webView stringByEvaluatingJavaScriptFromString:
+        @"(function(){"
+         "if(window.__ghLegacyDetails||!document.head)return;window.__ghLegacyDetails=1;"
+         "var st=document.createElement('style');"
+         "st.textContent='details:not([open])>*:not(summary){display:none!important}details[open]>*{display:block}';"
+         "document.head.appendChild(st);"
+         "document.addEventListener('click',function(e){"
+         "var t=e.target;while(t&&t.tagName!='SUMMARY')t=t.parentNode;if(!t)return;"
+         "var d=t.parentNode;if(!d||d.tagName!='DETAILS')return;"
+         "e.preventDefault();e.stopPropagation();"
+         "if(d.hasAttribute('open'))d.removeAttribute('open');else d.setAttribute('open','');"
+         "},true);"
+         "})()"];
 }
 
 - (void)fillDeviceUserCodeIfNeeded {
