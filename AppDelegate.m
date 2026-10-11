@@ -11,6 +11,7 @@
 #import "GHLocalization.h"
 #import "GHURLRouter.h"
 #import "GHAuthManager.h"
+#import "NewIssueViewController.h"
 
 NSString * const kGHAppDidEnterBackgroundNotification = @"GHAppDidEnterBackgroundNotification";
 NSString * const kGHAppWillEnterForegroundNotification = @"GHAppWillEnterForegroundNotification";
@@ -73,6 +74,7 @@ NSString * const kGHOpenReadmeStateKey = @"GHOpenReadmeState";
     self.pendingRestoreState = [self savedRestoreState];
 
     NSURL *launchURL = [launchOptions objectForKey:UIApplicationLaunchOptionsURLKey];
+    if (!launchURL.isFileURL) [self removeReceivedFiles];
     if (launchURL != nil) {
         __weak typeof(self) weakSelf = self;
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -81,6 +83,15 @@ NSString * const kGHOpenReadmeStateKey = @"GHOpenReadmeState";
     }
 
     return YES;
+}
+
+- (void)removeReceivedFiles {
+    NSArray *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *inbox = [documents.firstObject stringByAppendingPathComponent:@"Inbox"];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSString *name in [fileManager contentsOfDirectoryAtPath:inbox error:nil]) {
+        [fileManager removeItemAtPath:[inbox stringByAppendingPathComponent:name] error:nil];
+    }
 }
 
 - (BOOL)application:(UIApplication *)application
@@ -92,6 +103,11 @@ NSString * const kGHOpenReadmeStateKey = @"GHOpenReadmeState";
 }
 
 - (void)routeAppURL:(NSURL *)url {
+    if (url.isFileURL) {
+        [NewIssueViewController receiveIncomingFileAtPath:url.path];
+        return;
+    }
+
     NSURL *githubURL = [GHURLRouter gitHubURLFromAppURL:url];
     if (githubURL == nil) return;
 

@@ -19,6 +19,9 @@ static const unsigned long long kMaxFileReadBytes = 256 * 1024;
 static const CGFloat kMaxPhotoDimension = 2048;
 static const NSInteger kUnreadableFileAlertTag = 1;
 
+static __weak NewIssueViewController *gActiveComposer = nil;
+static NSString *gPendingIncomingFilePath = nil;
+
 static UIColor *GHNewIssueErrorColor(void) {
     return [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
 }
@@ -349,8 +352,65 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     [self applyTheme];
 }
 
++ (void)receiveIncomingFileAtPath:(NSString *)path {
+    if (path.length == 0) return;
+
+    NewIssueViewController *composer = gActiveComposer;
+    if (composer == nil || composer.navigationController == nil) {
+        gPendingIncomingFilePath = [path copy];
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Файл получен")
+                                                         message:[NSString stringWithFormat:GHL(@"«%@» будет прикреплён, когда вы откроете форму новой задачи."), path.lastPathComponent]
+                                                        delegate:nil
+                                               cancelButtonTitle:@"OK"
+                                               otherButtonTitles:nil];
+        [alert show];
+        return;
+    }
+
+    UINavigationController *navigationController = composer.navigationController;
+    if (composer.imagePopover) {
+        [composer.imagePopover dismissPopoverAnimated:NO];
+        composer.imagePopover = nil;
+    }
+    if (composer.presentedViewController) [composer dismissViewControllerAnimated:NO completion:nil];
+    if (navigationController.tabBarController) navigationController.tabBarController.selectedViewController = navigationController;
+    [navigationController popToViewController:composer animated:NO];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [composer handleIncomingFileAtPath:path];
+    });
+}
+
+- (void)handleIncomingFileAtPath:(NSString *)path {
+    GHIssueFieldRow *row = self.attachTargetRow;
+    if (row.attachButton == nil) {
+        row = nil;
+        for (GHIssueFieldRow *candidate in self.rows) {
+            if (candidate.attachButton) {
+                row = candidate;
+                break;
+            }
+        }
+    }
+    if (row == nil) return;
+    if (self.activeUpload) {
+        [self showAttachmentError:GHL(@"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.")];
+        return;
+    }
+    self.attachTargetRow = row;
+    [self handlePickedFileAtPath:path forRow:row];
+}
+
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    gActiveComposer = self;
+    if (gPendingIncomingFilePath.length > 0) {
+        NSString *path = gPendingIncomingFilePath;
+        gPendingIncomingFilePath = nil;
+        self.didAutoFocusTitle = YES;
+        [self handleIncomingFileAtPath:path];
+        return;
+    }
     if (self.didAutoFocusTitle) return;
     self.didAutoFocusTitle = YES;
     if (self.titleRow.textField.text.length == 0) [self.titleRow.textField becomeFirstResponder];
@@ -973,7 +1033,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
     NSString *owner = attributes[NSFileOwnerAccountName] ?: @"?";
     unsigned long permissions = [attributes[NSFilePosixPermissions] unsignedLongValue];
-    return [NSString stringWithFormat:GHL(@"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Откройте папку с файлом в файловом менеджере, скопируйте файл, например, в Загрузки и прикрепите копию."),
+    return [NSString stringWithFormat:GHL(@"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile.\n\nОткройте папку с файлом в файловом менеджере, выберите файл и нажмите «Открыть в…» → GitHub — он сразу прикрепится к задаче."),
             owner, permissions];
 }
 

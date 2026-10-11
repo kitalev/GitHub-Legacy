@@ -393,8 +393,11 @@ static NSDictionary *GHTranslations(void) {
                 @"You don't have write access to %@/%@, and GitHub only uploads photos and videos on behalf of a repository where you do. Normally one of your own public repositories is used for this (nothing is added to it), but you don't have any.\n\nLogs and text files can still be inserted into the issue as text via \"File…\".",
             @"Загрузка через %@… %d%%": @"Uploading via %@… %d%%",
             @"Файл пустой.": @"The file is empty.",
-            @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Откройте папку с файлом в файловом менеджере, скопируйте файл, например, в Загрузки и прикрепите копию.":
-                @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user. Open the file's folder in a file manager, copy the file, e.g. to Downloads, and attach the copy.",
+            @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile.\n\nОткройте папку с файлом в файловом менеджере, выберите файл и нажмите «Открыть в…» → GitHub — он сразу прикрепится к задаче.":
+                @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user.\n\nOpen the file's folder in a file manager, select the file and tap \"Open In…\" → GitHub; it will be attached to the issue right away.",
+            @"Файл получен": @"File received",
+            @"«%@» будет прикреплён, когда вы откроете форму новой задачи.": @"\"%@\" will be attached when you open the new issue form.",
+            @"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.": @"Wait for the current upload to finish, then attach the file again.",
             @"Открыть в Filza": @"Open in Filza",
             @"Открыть в iFile": @"Open in iFile",
             @"GitHub не разрешил загрузку: для этого нужно право записи в репозиторий.": @"GitHub refused the upload: it requires write access to the repository.",

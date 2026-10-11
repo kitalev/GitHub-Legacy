@@ -9,4 +9,6 @@
 @property (nonatomic, strong) GHIssueTemplate *issueTemplate;
 @property (nonatomic, copy) void (^onIssueCreated)(NSDictionary *issue);
 
++ (void)receiveIncomingFileAtPath:(NSString *)path;
+
 @end
