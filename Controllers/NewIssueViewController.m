@@ -251,6 +251,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 @property (nonatomic, strong) UIPopoverController *imagePopover;
 @property (nonatomic, strong) GHAttachmentUploader *activeUpload;
 @property (nonatomic, assign) long long uploadRepositoryID;
+@property (nonatomic, copy) NSString *uploadRepositoryFullName;
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UILabel *repoLabel;
 @property (nonatomic, strong) UILabel *templateLabel;
@@ -764,25 +765,58 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         [strongSelf setAttachButtonsTitle:nil enabled:YES];
 
         NSDictionary *repo = [jsonObject isKindOfClass:[NSDictionary class]] ? jsonObject : nil;
-        NSDictionary *permissions = [repo[@"permissions"] isKindOfClass:[NSDictionary class]] ? repo[@"permissions"] : nil;
-        id repositoryID = repo[@"id"];
         if (repo == nil) {
             [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
             return;
         }
-        if (![permissions[@"push"] boolValue] || ![repositoryID respondsToSelector:@selector(longLongValue)]) {
-            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Фото и видео недоступны")
-                                                             message:[NSString stringWithFormat:GHL(@"GitHub разрешает прикреплять фото и видео только тем, у кого есть право записи в репозиторий. В %@/%@ его у вас нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…»."),
-                                                                      strongSelf.ownerLogin, strongSelf.repoName]
-                                                            delegate:nil
-                                                   cancelButtonTitle:@"OK"
-                                                   otherButtonTitles:nil];
-            [alert show];
+        if ([strongSelf adoptUploadRepository:repo requirePublic:NO]) {
+            then();
             return;
         }
+        [strongSelf findPublicUploadRepositoryThen:then];
+    }];
+}
 
-        strongSelf.uploadRepositoryID = [repositoryID longLongValue];
-        then();
+- (BOOL)adoptUploadRepository:(NSDictionary *)repo requirePublic:(BOOL)requirePublic {
+    if (![repo isKindOfClass:[NSDictionary class]]) return NO;
+    NSDictionary *permissions = [repo[@"permissions"] isKindOfClass:[NSDictionary class]] ? repo[@"permissions"] : nil;
+    id repositoryID = repo[@"id"];
+    if (![permissions[@"push"] boolValue] || ![repositoryID respondsToSelector:@selector(longLongValue)]) return NO;
+    if ([repo[@"archived"] boolValue] || [repo[@"disabled"] boolValue]) return NO;
+    if (requirePublic && [repo[@"private"] boolValue]) return NO;
+
+    self.uploadRepositoryID = [repositoryID longLongValue];
+    id fullName = repo[@"full_name"];
+    self.uploadRepositoryFullName = [fullName isKindOfClass:[NSString class]] ? fullName : nil;
+    return YES;
+}
+
+- (void)findPublicUploadRepositoryThen:(void (^)(void))then {
+    [self setAttachButtonsTitle:GHL(@"Проверка доступа…") enabled:NO];
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] publicRepositoriesForCurrentUserWithCompletion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf setAttachButtonsTitle:nil enabled:YES];
+
+        if (![jsonObject isKindOfClass:[NSArray class]]) {
+            [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
+            return;
+        }
+        for (id repo in jsonObject) {
+            if ([strongSelf adoptUploadRepository:repo requirePublic:YES]) {
+                then();
+                return;
+            }
+        }
+
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Фото и видео недоступны")
+                                                         message:[NSString stringWithFormat:GHL(@"В %@/%@ у вас нет права записи, а GitHub загружает фото и видео только с привязкой к репозиторию, где такое право есть. Обычно для этого используется ваш собственный публичный репозиторий (в него ничего не добавляется), но у вас его нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…»."),
+                                                                  strongSelf.ownerLogin, strongSelf.repoName]
+                                                        delegate:nil
+                                               cancelButtonTitle:@"OK"
+                                               otherButtonTitles:nil];
+        [alert show];
     }];
 }
 
@@ -868,7 +902,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 - (void)uploadData:(NSData *)data fileName:(NSString *)fileName contentType:(NSString *)contentType intoRow:(GHIssueFieldRow *)row {
     NSString *placeholder = [NSString stringWithFormat:@"![%@ %@…]()", GHL(@"Загрузка"), fileName];
     [self insertBlock:placeholder intoRow:row];
-    [self setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), 0] enabled:NO];
+    [self setAttachButtonsTitle:[self uploadProgressTitle:0] enabled:NO];
 
     __weak typeof(self) weakSelf = self;
     __weak GHIssueFieldRow *weakRow = row;
@@ -877,7 +911,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
                                              contentType:contentType
                                             repositoryID:self.uploadRepositoryID
                                                 progress:^(float progress) {
-        [weakSelf setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), (int)(progress * 100)] enabled:NO];
+        [weakSelf setAttachButtonsTitle:[weakSelf uploadProgressTitle:(int)(progress * 100)] enabled:NO];
     } completion:^(NSString *url, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
@@ -889,6 +923,14 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         if (strongRow) [strongSelf replacePlaceholder:placeholder withText:replacement inRow:strongRow];
         if (url == nil) [strongSelf showAttachmentError:error.localizedDescription ?: GHL(@"неизвестная ошибка")];
     }];
+}
+
+- (NSString *)uploadProgressTitle:(int)percent {
+    NSString *target = [NSString stringWithFormat:@"%@/%@", self.ownerLogin, self.repoName];
+    if (self.uploadRepositoryFullName.length > 0 && [self.uploadRepositoryFullName caseInsensitiveCompare:target] != NSOrderedSame) {
+        return [NSString stringWithFormat:GHL(@"Загрузка через %@… %d%%"), self.uploadRepositoryFullName, percent];
+    }
+    return [NSString stringWithFormat:GHL(@"Загрузка… %d%%"), percent];
 }
 
 - (void)replacePlaceholder:(NSString *)placeholder withText:(NSString *)replacement inRow:(GHIssueFieldRow *)row {
@@ -929,18 +971,49 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     [alert show];
 }
 
-- (NSString *)textContentsOfFileAtPath:(NSString *)path totalLength:(unsigned long long *)totalLength {
+- (NSString *)textContentsOfFileAtPath:(NSString *)path
+                           totalLength:(unsigned long long *)totalLength
+                          errorMessage:(NSString **)errorMessage {
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
-    if (handle == nil) return nil;
+    if (handle == nil) {
+        NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+        NSString *owner = attributes[NSFileOwnerAccountName] ?: @"?";
+        unsigned long permissions = [attributes[NSFilePosixPermissions] unsignedLongValue];
+        *errorMessage = [NSString stringWithFormat:GHL(@"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Скопируйте файл, например, в Загрузки через Filza и прикрепите копию."),
+                         owner, permissions];
+        return nil;
+    }
 
     unsigned long long length = [handle seekToEndOfFile];
     if (totalLength != NULL) *totalLength = length;
     unsigned long long readLength = MIN(length, (unsigned long long)kMaxFileReadBytes);
     [handle seekToFileOffset:length - readLength];
-    NSData *data = [handle readDataOfLength:(NSUInteger)readLength];
+    NSData *raw = [handle readDataOfLength:(NSUInteger)readLength];
     [handle closeFile];
 
-    if (data.length > 0 && memchr(data.bytes, 0, data.length) != NULL) return nil;
+    NSMutableData *data = [NSMutableData dataWithCapacity:raw.length];
+    const unsigned char *bytes = raw.bytes;
+    NSUInteger controlBytes = 0;
+    NSUInteger start = 0;
+    for (NSUInteger i = 0; i <= raw.length; i++) {
+        if (i < raw.length && bytes[i] != 0) {
+            unsigned char c = bytes[i];
+            if ((c < 0x20 && c != '\t' && c != '\n' && c != '\r' && c != 0x1B) || c == 0x7F) controlBytes++;
+            continue;
+        }
+        if (i > start) [data appendBytes:bytes + start length:i - start];
+        start = i + 1;
+    }
+
+    if (data.length == 0) {
+        *errorMessage = GHL(@"Файл пустой.");
+        return nil;
+    }
+    if (controlBytes * 20 > data.length) {
+        *errorMessage = [NSString stringWithFormat:GHL(@"Этот файл нельзя прикрепить. GitHub принимает фото и видео (%@), а текстовые файлы — логи, конфиги — вставляются в задачу текстом."),
+                         [GHAttachmentUploader supportedExtensionsDescription]];
+        return nil;
+    }
 
     NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     if (text == nil && readLength < length) {
@@ -950,7 +1023,14 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         }
     }
     if (text == nil) text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
-    return text;
+
+    static NSRegularExpression *ansiRegex = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        ansiRegex = [NSRegularExpression regularExpressionWithPattern:@"\\x1B\\[[0-9;?]*[A-Za-z]" options:0 error:nil];
+    });
+    text = [ansiRegex stringByReplacingMatchesInString:text options:0 range:NSMakeRange(0, text.length) withTemplate:@""];
+    return [text stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"];
 }
 
 - (NSUInteger)longestBacktickRunInString:(NSString *)text {
@@ -965,10 +1045,10 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 
 - (void)insertTextFileAtPath:(NSString *)path intoRow:(GHIssueFieldRow *)row {
     unsigned long long fileLength = 0;
-    NSString *contents = [self textContentsOfFileAtPath:path totalLength:&fileLength];
+    NSString *errorMessage = nil;
+    NSString *contents = [self textContentsOfFileAtPath:path totalLength:&fileLength errorMessage:&errorMessage];
     if (contents == nil) {
-        [self showAttachmentError:[NSString stringWithFormat:GHL(@"Этот файл нельзя прикрепить. GitHub принимает фото и видео (%@), а текстовые файлы — логи, конфиги — вставляются в задачу текстом."),
-                                   [GHAttachmentUploader supportedExtensionsDescription]]];
+        [self showAttachmentError:errorMessage ?: GHL(@"Не удалось прочитать файл.")];
         return;
     }
 

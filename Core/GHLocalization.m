@@ -389,8 +389,12 @@ static NSDictionary *GHTranslations(void) {
             @"Загрузка": @"Uploading",
             @"Загрузка… %d%%": @"Uploading… %d%%",
             @"Фото и видео недоступны": @"Photos and videos unavailable",
-            @"GitHub разрешает прикреплять фото и видео только тем, у кого есть право записи в репозиторий. В %@/%@ его у вас нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…».":
-                @"GitHub only lets people with write access to a repository attach photos and videos. You don't have it in %@/%@.\n\nLogs and text files can still be inserted into the issue as text via \"File…\".",
+            @"В %@/%@ у вас нет права записи, а GitHub загружает фото и видео только с привязкой к репозиторию, где такое право есть. Обычно для этого используется ваш собственный публичный репозиторий (в него ничего не добавляется), но у вас его нет.\n\nЛоги и текстовые файлы можно вставить в задачу текстом через «Файл…».":
+                @"You don't have write access to %@/%@, and GitHub only uploads photos and videos on behalf of a repository where you do. Normally one of your own public repositories is used for this (nothing is added to it), but you don't have any.\n\nLogs and text files can still be inserted into the issue as text via \"File…\".",
+            @"Загрузка через %@… %d%%": @"Uploading via %@… %d%%",
+            @"Файл пустой.": @"The file is empty.",
+            @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile. Скопируйте файл, например, в Загрузки через Filza и прикрепите копию.":
+                @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user. Copy the file, e.g. to Downloads with Filza, and attach the copy.",
             @"GitHub не разрешил загрузку: для этого нужно право записи в репозиторий.": @"GitHub refused the upload: it requires write access to the repository.",
             @"GitHub не вернул ссылку на загруженный файл.": @"GitHub didn't return a link to the uploaded file.",
             @"Файл пустой или слишком большой: можно не больше %llu МБ.": @"The file is empty or too large: the limit is %llu MB.",

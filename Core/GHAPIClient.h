@@ -114,6 +114,8 @@ typedef void (^GHTextCompletionBlock)(NSString *text, NSError *error);
 
 - (void)repositoriesForCurrentUserWithCompletion:(GHJSONCompletionBlock)completion;
 
+- (void)publicRepositoriesForCurrentUserWithCompletion:(GHJSONCompletionBlock)completion;
+
 - (void)followersForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion;
 
 - (void)followingForUser:(NSString *)login completion:(GHJSONCompletionBlock)completion;
