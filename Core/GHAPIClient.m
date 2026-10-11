@@ -128,7 +128,8 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [self getJSONFromPath:path completion:completion];
 }
 
-- (void)fileContentsForOwner:(NSString *)owner repo:(NSString *)repo path:(NSString *)path completion:(GHJSONCompletionBlock)completion {
+- (NSString *)contentsAPIPathForOwner:(NSString *)owner repo:(NSString *)repo path:(NSString *)path {
+    if (path.length == 0) return [NSString stringWithFormat:@"/repos/%@/%@/contents", owner, repo];
 
     NSMutableArray *encodedComponents = [NSMutableArray array];
     for (NSString *component in [path componentsSeparatedByString:@"/"]) {
@@ -137,8 +138,126 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         [encodedComponents addObject:encoded];
     }
     NSString *encodedPath = [encodedComponents componentsJoinedByString:@"/"];
-    NSString *apiPath = [NSString stringWithFormat:@"/repos/%@/%@/contents/%@", owner, repo, encodedPath];
-    [self getJSONFromPath:apiPath completion:completion];
+    return [NSString stringWithFormat:@"/repos/%@/%@/contents/%@", owner, repo, encodedPath];
+}
+
+- (void)fileContentsForOwner:(NSString *)owner repo:(NSString *)repo path:(NSString *)path completion:(GHJSONCompletionBlock)completion {
+    [self getJSONFromPath:[self contentsAPIPathForOwner:owner repo:repo path:path] completion:completion];
+}
+
+- (NSMutableURLRequest *)requestWithMethod:(NSString *)method path:(NSString *)path accept:(NSString *)accept {
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@%@", kGHBaseURL, path]];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = method;
+    [request setValue:accept forHTTPHeaderField:@"Accept"];
+    [request setValue:@"GitHubLegacy-iOS6" forHTTPHeaderField:@"User-Agent"];
+    [request setTimeoutInterval:15.0];
+
+    NSString *token = [GHAuthManager sharedManager].accessToken;
+    if (token.length > 0) {
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+    }
+    return request;
+}
+
+- (NSError *)errorForHTTPResponse:(NSHTTPURLResponse *)httpResponse data:(NSData *)data {
+    NSString *githubMessage = nil;
+    NSMutableArray *details = [NSMutableArray array];
+    id errorJSON = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if ([errorJSON isKindOfClass:[NSDictionary class]]) {
+        id msg = errorJSON[@"message"];
+        if ([msg isKindOfClass:[NSString class]]) githubMessage = msg;
+
+        id errors = errorJSON[@"errors"];
+        for (id entry in [errors isKindOfClass:[NSArray class]] ? errors : @[]) {
+            if ([entry isKindOfClass:[NSString class]]) {
+                [details addObject:entry];
+                continue;
+            }
+            if (![entry isKindOfClass:[NSDictionary class]]) continue;
+            id entryMessage = entry[@"message"];
+            id field = entry[@"field"];
+            id code = entry[@"code"];
+            if ([entryMessage isKindOfClass:[NSString class]] && [entryMessage length] > 0) {
+                [details addObject:entryMessage];
+            } else if ([field isKindOfClass:[NSString class]] && [code isKindOfClass:[NSString class]]) {
+                [details addObject:[NSString stringWithFormat:@"%@: %@", field, code]];
+            }
+        }
+    }
+    if (details.count > 0) {
+        NSString *joined = [details componentsJoinedByString:@"; "];
+        githubMessage = githubMessage.length > 0 ? [NSString stringWithFormat:@"%@ (%@)", githubMessage, joined] : joined;
+    }
+
+    NSString *description = githubMessage.length > 0
+        ? [NSString stringWithFormat:@"HTTP %ld: %@", (long)httpResponse.statusCode, githubMessage]
+        : [NSString stringWithFormat:@"HTTP %ld", (long)httpResponse.statusCode];
+    return [NSError errorWithDomain:@"GHAPIClient"
+                               code:httpResponse.statusCode
+                           userInfo:@{NSLocalizedDescriptionKey: description}];
+}
+
+- (void)rawFileForOwner:(NSString *)owner repo:(NSString *)repo path:(NSString *)path completion:(GHTextCompletionBlock)completion {
+    NSString *apiPath = [self contentsAPIPathForOwner:owner repo:repo path:path];
+    NSMutableURLRequest *request = [self requestWithMethod:@"GET" path:apiPath accept:@"application/vnd.github.raw"];
+
+    [NSURLConnection sendAsynchronousRequest:request
+                                        queue:[NSOperationQueue mainQueue]
+                            completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
+        if (connectionError) {
+            if (completion) completion(nil, connectionError);
+            return;
+        }
+        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+        if (httpResponse.statusCode >= 400) {
+            if (completion) completion(nil, [self errorForHTTPResponse:httpResponse data:data]);
+            return;
+        }
+        NSString *text = [[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding];
+        if (text == nil) text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+        if (completion) completion(text ?: @"", nil);
+    }];
+}
+
+- (void)createIssueForOwner:(NSString *)owner repo:(NSString *)repo parameters:(NSDictionary *)parameters completion:(GHJSONCompletionBlock)completion {
+    if ([GHAuthManager sharedManager].accessToken.length == 0) {
+        NSError *authError = [NSError errorWithDomain:@"GHAPIClient"
+                                                   code:401
+                                               userInfo:@{NSLocalizedDescriptionKey: GHL(@"Чтобы создать задачу, войдите в аккаунт в настройках.")}];
+        if (completion) completion(nil, authError);
+        return;
+    }
+
+    NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/issues", owner, repo];
+    NSMutableURLRequest *request = [self requestWithMethod:@"POST" path:path accept:@"application/vnd.github.v3+json"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setTimeoutInterval:30.0];
+
+    NSError *encodeError = nil;
+    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:parameters ?: @{} options:0 error:&encodeError];
+    if (encodeError) {
+        if (completion) completion(nil, encodeError);
+        return;
+    }
+    request.HTTPBody = bodyData;
+
+    [NSURLConnection sendAsynchronousRequest:request
+                                        queue:[NSOperationQueue mainQueue]
+                            completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
+        if (connectionError) {
+            if (completion) completion(nil, connectionError);
+            return;
+        }
+        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+        if (httpResponse.statusCode >= 400) {
+            if (completion) completion(nil, [self errorForHTTPResponse:httpResponse data:data]);
+            return;
+        }
+        NSError *jsonError = nil;
+        id jsonObject = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
+        if (completion) completion(jsonObject, jsonError);
+    }];
 }
 
 - (void)commitsForOwner:(NSString *)owner repo:(NSString *)repo completion:(GHJSONCompletionBlock)completion {

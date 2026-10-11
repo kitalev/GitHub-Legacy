@@ -4,6 +4,8 @@ typedef void (^GHJSONCompletionBlock)(id jsonObject, NSError *error);
 
 typedef void (^GHStatusCompletionBlock)(NSInteger statusCode, NSString *message, NSError *error);
 
+typedef void (^GHTextCompletionBlock)(NSString *text, NSError *error);
+
 @interface GHAPIClient : NSObject
 
 + (instancetype)sharedClient;
@@ -58,6 +60,11 @@ typedef void (^GHStatusCompletionBlock)(NSInteger statusCode, NSString *message,
                           path:(NSString *)path
                     completion:(GHJSONCompletionBlock)completion;
 
+- (void)rawFileForOwner:(NSString *)owner
+                    repo:(NSString *)repo
+                    path:(NSString *)path
+              completion:(GHTextCompletionBlock)completion;
+
 - (void)commitsForOwner:(NSString *)owner
                     repo:(NSString *)repo
               completion:(GHJSONCompletionBlock)completion;
@@ -82,6 +89,11 @@ typedef void (^GHStatusCompletionBlock)(NSInteger statusCode, NSString *message,
                     repo:(NSString *)repo
                   number:(NSInteger)number
               completion:(GHJSONCompletionBlock)completion;
+
+- (void)createIssueForOwner:(NSString *)owner
+                         repo:(NSString *)repo
+                   parameters:(NSDictionary *)parameters
+                   completion:(GHJSONCompletionBlock)completion;
 
 - (void)commentsForOwner:(NSString *)owner
                       repo:(NSString *)repo
