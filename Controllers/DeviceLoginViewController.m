@@ -55,6 +55,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 @property (nonatomic, assign) BOOL waitingForCode;
 @property (nonatomic, assign) BOOL statusIsError;
 @property (nonatomic, assign) BOOL didAutoOpen;
+@property (nonatomic, assign) BOOL isViewVisible;
 @end
 
 @implementation DeviceLoginViewController
@@ -203,8 +204,18 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self layoutContent];
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    self.isViewVisible = YES;
+    if (self.opensInApp && !self.didAutoOpen && self.deviceCode.length > 0) {
+        self.didAutoOpen = YES;
+        [self openHereTapped];
+    }
+}
+
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
+    self.isViewVisible = NO;
     if ([self isMovingFromParentViewController]) {
         [self stopTimers];
     }
@@ -428,7 +439,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
                                                                       repeats:YES];
         [strongSelf layoutContent];
         [strongSelf schedulePollWithInterval:MAX(interval, 5)];
-        if (strongSelf.opensInApp && !strongSelf.didAutoOpen) {
+        if (strongSelf.opensInApp && !strongSelf.didAutoOpen && strongSelf.isViewVisible) {
             strongSelf.didAutoOpen = YES;
             [strongSelf openHereTapped];
         }
@@ -493,7 +504,8 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 
 - (void)openHereTapped {
     if (self.deviceCode.length == 0 || self.verificationURL == nil) return;
-    [UIPasteboard generalPasteboard].string = self.codeLabel.text;
+    if (self.navigationController.topViewController != self || !self.isViewVisible) return;
+    if (!self.opensInApp) [UIPasteboard generalPasteboard].string = self.codeLabel.text;
     WebLoginViewController *webVC = [[WebLoginViewController alloc] init];
     webVC.startURL = self.verificationURL;
     webVC.deviceUserCode = self.codeLabel.text;

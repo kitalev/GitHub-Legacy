@@ -123,8 +123,8 @@ static NSDictionary *GHTranslations(void) {
             @"Введите код из SMS.": @"Enter the code from the text message.",
             @"Введите код из письма, которое отправил GitHub.": @"Enter the code from the email GitHub sent you.",
             @"Введите один из кодов восстановления.": @"Enter one of your recovery codes.",
-            @"Подтверждение через GitHub Mobile здесь не работает. Выберите другой способ.":
-                @"Approval with GitHub Mobile doesn't work here. Choose another method.",
+            @"Выберите, как подтвердить вход.": @"Choose how to confirm the sign-in.",
+            @"Показать": @"Show",
             @"Устройство подтверждено. Завершаем вход…": @"Device approved. Finishing sign-in…",
             @"Подтверждаем устройство…": @"Approving the device…",
             @"Вход…": @"Signing in…",

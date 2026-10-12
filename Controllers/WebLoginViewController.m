@@ -219,6 +219,15 @@ static UITextField *GHWebLoginMakeField(void) {
     self.secondField.secureTextEntry = YES;
     self.secondField.placeholder = GHL(@"Пароль");
     self.secondField.returnKeyType = UIReturnKeyGo;
+    self.secondField.clearButtonMode = UITextFieldViewModeNever;
+    UIButton *revealButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    revealButton.titleLabel.font = [UIFont systemFontOfSize:14];
+    revealButton.frame = CGRectMake(0, 0, 84, 40);
+    revealButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    [revealButton setTitle:GHL(@"Показать") forState:UIControlStateNormal];
+    [revealButton addTarget:self action:@selector(togglePasswordVisibility:) forControlEvents:UIControlEventTouchUpInside];
+    self.secondField.rightView = revealButton;
+    self.secondField.rightViewMode = UITextFieldViewModeAlways;
     [self.fieldsCard addSubview:self.secondField];
 
     self.primaryButton = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -250,6 +259,14 @@ static UITextField *GHWebLoginMakeField(void) {
                                               selector:@selector(applyTheme)
                                                   name:kGHThemeDidChangeNotification
                                                 object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(keyboardWillShow:)
+                                                  name:UIKeyboardWillShowNotification
+                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(keyboardWillHide:)
+                                                  name:UIKeyboardWillHideNotification
+                                                object:nil];
     [self applyTheme];
     [self showLoadingWithMessage:GHL(@"Подключение к github.com…")];
     [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession signInURL]]];
@@ -271,6 +288,7 @@ static UITextField *GHWebLoginMakeField(void) {
     self.fieldsSeparator.backgroundColor = GHSeparatorColor();
     self.firstField.textColor = GHPrimaryTextColor();
     self.secondField.textColor = GHPrimaryTextColor();
+    [(UIButton *)self.secondField.rightView setTitleColor:GHTintColor() forState:UIControlStateNormal];
     [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage(GHTintColor(), nil) forState:UIControlStateNormal];
     [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage([GHTintColor() colorWithAlphaComponent:0.75], nil)
                                   forState:UIControlStateHighlighted];
@@ -297,6 +315,42 @@ static UITextField *GHWebLoginMakeField(void) {
 
 - (void)dismissKeyboard {
     [self.view endEditing:YES];
+}
+
+- (void)togglePasswordVisibility:(UIButton *)button {
+    BOOL wasEditing = self.secondField.isFirstResponder;
+    if (wasEditing) [self.secondField resignFirstResponder];
+    self.secondField.secureTextEntry = !self.secondField.secureTextEntry;
+    [button setTitle:self.secondField.secureTextEntry ? GHL(@"Показать") : GHL(@"Скрыть") forState:UIControlStateNormal];
+    if (wasEditing) [self.secondField becomeFirstResponder];
+}
+
+- (void)keyboardWillShow:(NSNotification *)notification {
+    CGRect keyboardFrame = [self.view convertRect:[notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];
+    CGFloat overlap = MAX(0, CGRectGetMaxY(self.view.bounds) - CGRectGetMinY(keyboardFrame));
+    UIEdgeInsets insets = self.scrollView.contentInset;
+    insets.bottom = overlap;
+    self.scrollView.contentInset = insets;
+    self.scrollView.scrollIndicatorInsets = insets;
+    [self scrollInputsIntoView];
+}
+
+- (void)keyboardWillHide:(NSNotification *)notification {
+    UIEdgeInsets insets = self.scrollView.contentInset;
+    insets.bottom = 0;
+    self.scrollView.contentInset = insets;
+    self.scrollView.scrollIndicatorInsets = insets;
+}
+
+- (void)scrollInputsIntoView {
+    if (self.fieldsCard.hidden) return;
+    CGRect target = self.fieldsCard.frame;
+    if (!self.primaryButton.hidden) target = CGRectUnion(target, self.primaryButton.frame);
+    [self.scrollView scrollRectToVisible:CGRectInset(target, 0, -12) animated:YES];
+}
+
+- (void)textFieldDidBeginEditing:(UITextField *)textField {
+    [self scrollInputsIntoView];
 }
 
 #pragma mark - Layout
@@ -377,33 +431,6 @@ static UITextField *GHWebLoginMakeField(void) {
            firstField:nil secondField:NO primary:nil methods:nil];
 }
 
-- (void)appendLogLine:(NSString *)line {
-    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-    NSString *path = [documents stringByAppendingPathComponent:@"GitHubLegacy-login-log.txt"];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) [[NSData data] writeToFile:path atomically:YES];
-    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
-    [handle seekToEndOfFile];
-    [handle writeData:[[line stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding]];
-    [handle closeFile];
-}
-
-- (void)saveDiagnostic:(NSString *)contents named:(NSString *)name {
-    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-    NSString *path = [documents stringByAppendingPathComponent:[@"GitHubLegacy-login-" stringByAppendingString:name]];
-    [contents writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-}
-
-- (void)saveUnrecognizedPage {
-    NSString *html = [self.webView stringByEvaluatingJavaScriptFromString:@"document.documentElement.outerHTML"];
-    if (html.length == 0) return;
-    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-    NSString *pagePath = self.webView.request.URL.path.length > 1 ? self.webView.request.URL.path : @"/root";
-    NSString *name = [[pagePath substringFromIndex:1] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
-    NSString *path = [documents stringByAppendingPathComponent:[NSString stringWithFormat:@"GitHubLegacy-login-%@.html", name]];
-    NSString *contents = [NSString stringWithFormat:@"<!-- %@ -->\n%@", self.webView.request.URL.absoluteString ?: @"", html];
-    [contents writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-}
-
 - (void)presentStep:(GHWebLoginStep)step
               title:(NSString *)title
             message:(NSString *)message
@@ -434,6 +461,8 @@ static UITextField *GHWebLoginMakeField(void) {
     if (!sameInput) self.firstField.text = @"";
     self.secondField.hidden = !showSecondField;
     self.secondField.text = @"";
+    self.secondField.secureTextEntry = YES;
+    [(UIButton *)self.secondField.rightView setTitle:GHL(@"Показать") forState:UIControlStateNormal];
     self.firstField.returnKeyType = showSecondField ? UIReturnKeyNext : UIReturnKeyGo;
 
     self.primaryButton.hidden = primaryTitle == nil;
@@ -617,7 +646,6 @@ static UITextField *GHWebLoginMakeField(void) {
         [self showPage];
         return;
     }
-    [self saveUnrecognizedPage];
 
     NSString *path = GHWebLoginString(page[@"path"]);
     NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
@@ -754,10 +782,9 @@ static UITextField *GHWebLoginMakeField(void) {
         methods = fallback;
     }
     if (methods.count > 0) {
-        [self saveUnrecognizedPage];
         [self presentStep:GHWebLoginStepChooseMethod
                     title:GHL(@"Двухфакторная проверка")
-                  message:GHL(@"Подтверждение через GitHub Mobile здесь не работает. Выберите другой способ.")
+                  message:GHL(@"Выберите, как подтвердить вход.")
                     error:error
                firstField:nil
               secondField:NO
@@ -819,10 +846,6 @@ static UITextField *GHWebLoginMakeField(void) {
 - (void)submitFormWithValues:(NSDictionary *)values loadingMessage:(NSString *)message {
     NSString *script = [NSString stringWithFormat:kGHWebLoginSubmitScript,
                         (long)self.formIndex, GHWebLoginJSON(values ?: @{}) ?: @"{}", (long)self.buttonIndex];
-    NSString *action = [self.webView stringByEvaluatingJavaScriptFromString:
-        [NSString stringWithFormat:@"(function(f){return f?f.getAttribute('action')+' '+f.method:'none';})(document.forms[%ld])", (long)self.formIndex]];
-    [self appendLogLine:[NSString stringWithFormat:@"%@ submit form %ld (%@) fields %@ button %ld",
-                         [NSDate date], (long)self.formIndex, action, [[values allKeys] componentsJoinedByString:@","], (long)self.buttonIndex]];
     [self showLoadingWithMessage:message];
     if (![[self.webView stringByEvaluatingJavaScriptFromString:script] isEqualToString:@"ok"]) [self.webView reload];
 }
@@ -962,7 +985,6 @@ static UITextField *GHWebLoginMakeField(void) {
     id json = body.length > 0 ? [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     NSString *status = [([json isKindOfClass:[NSDictionary class]] ? GHWebLoginString(json[@"status"]) : body) lowercaseString];
 
-    if ([status rangeOfString:@"active"].location == NSNotFound) [self saveDiagnostic:result named:@"mobile-poll.txt"];
 
     if ([status rangeOfString:@"approved"].location != NSNotFound && [status rangeOfString:@"not_approved"].location == NSNotFound) {
         [self.pollTimer invalidate];
@@ -1044,7 +1066,6 @@ static UITextField *GHWebLoginMakeField(void) {
                 navigationType:(UIWebViewNavigationType)navigationType {
     if (self.finished) return NO;
     if (request.URL == nil || ![request.mainDocumentURL isEqual:request.URL]) return YES;
-    [self appendLogLine:[NSString stringWithFormat:@"%@ %@ %@", [NSDate date], request.HTTPMethod ?: @"GET", request.URL.absoluteString]];
     return ![self finishIfSignedInAtURL:request.URL];
 }
 
