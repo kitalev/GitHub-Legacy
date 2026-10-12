@@ -22,15 +22,15 @@ static NSString * const kGHWebLoginAnalyzeScript =
      "function shown(e){if(!e||e.type=='hidden')return false;var s=window.getComputedStyle(e);"
      "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
      "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[],text:document.body?txt(document.body).substring(0,600):''};"
-     "var fl=document.querySelectorAll('.flash-error,.flash-warn,.js-flash-alert,[role=alert]');"
+     "var fl=document.querySelectorAll('.flash-error');"
      "for(var i=0;i<fl.length;i++){var t=txt(fl[i]);if(t&&t.indexOf('{{')<0&&shown(fl[i])&&r.errors.indexOf(t)<0)r.errors.push(t);}"
      "for(var i=0;i<document.forms.length;i++){var f=document.forms[i];"
      "var o={index:i,action:f.getAttribute('action')||'',inputs:[],buttons:[]};"
      "for(var j=0;j<f.elements.length;j++){var e=f.elements[j];var tag=e.tagName.toLowerCase();"
      "var ty=(e.getAttribute('type')||(tag=='button'?'submit':'text')).toLowerCase();"
-     "if((tag=='button'||tag=='input')&&ty=='submit'){if(shown(e))o.buttons.push({index:j,name:e.name||'',value:e.value||'',text:txt(e)||e.value||''});}"
-     "else if(tag=='input'&&(ty=='text'||ty=='password'||ty=='email'||ty=='tel'||ty=='number')&&shown(e)){"
-     "o.inputs.push({name:e.name||'',type:ty,value:e.value||'',auto:e.getAttribute('autocomplete')||''});}}"
+     "if((tag=='button'||tag=='input')&&ty=='submit'){o.buttons.push({index:j,name:e.name||'',value:e.value||'',text:txt(e)||e.value||'',visible:shown(e)});}"
+     "else if(tag=='input'&&(ty=='text'||ty=='password'||ty=='email'||ty=='tel'||ty=='number')){"
+     "o.inputs.push({name:e.name||'',type:ty,value:e.value||'',auto:e.getAttribute('autocomplete')||'',visible:shown(e)});}}"
      "r.forms.push(o);}"
      "var as=document.querySelectorAll('a[href]');"
      "for(var i=0;i<as.length;i++){var h=as[i].getAttribute('href')||'';"
@@ -40,7 +40,7 @@ static NSString * const kGHWebLoginAnalyzeScript =
 
 static NSString * const kGHWebLoginSubmitScript =
     @"(function(fi,vals,bi){var f=document.forms[fi];if(!f)return 'none';"
-     "for(var k in vals){var e=f.elements[k];if(e&&!e.tagName&&e.length)e=e[0];if(e)e.value=vals[k];}"
+     "for(var k in vals){var e=f.elements[k];if(e&&!e.tagName&&e.length)e=e[0];if(e){e.disabled=false;e.value=vals[k];}}"
      "var b=bi>=0?f.elements[bi]:null;"
      "if(b&&b.name){var h=document.createElement('input');h.type='hidden';h.name=b.name;h.value=b.value;f.appendChild(h);}"
      "f.submit();return 'ok';"
@@ -356,10 +356,37 @@ static UITextField *GHWebLoginMakeField(void) {
     return nil;
 }
 
+- (BOOL)isChallengeString:(NSString *)string {
+    for (NSString *marker in @[@"two-factor", @"sudo", @"otp", @"recovery", @"verified-device"]) {
+        if ([string rangeOfString:marker].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
 - (NSArray *)methodsFromPage:(NSDictionary *)page excludingKind:(NSString *)currentKind {
     NSMutableArray *methods = [NSMutableArray array];
     NSMutableSet *kinds = [NSMutableSet set];
     if (currentKind) [kinds addObject:currentKind];
+
+    for (NSDictionary *form in page[@"forms"]) {
+        NSString *action = GHWebLoginString(form[@"action"]);
+        if (![self isChallengeString:action]) continue;
+        NSDictionary *codeInput = [self inputOfForm:form type:@"text" visibleOnly:NO];
+        NSDictionary *passwordInput = [self inputOfForm:form type:@"password" visibleOnly:NO];
+        if (codeInput) {
+            NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", action, GHWebLoginString(codeInput[@"name"])]] ?: @"app";
+            NSString *title = [self titleForMethodKind:kind];
+            if (title == nil || [kinds containsObject:kind]) continue;
+            [kinds addObject:kind];
+            [methods addObject:@{@"title": title, @"codeForm": form[@"index"], @"input": GHWebLoginString(codeInput[@"name"]),
+                                 @"button": @([self submitButtonIndexOfForm:form preferring:nil]), @"kind": kind}];
+        } else if (passwordInput) {
+            if ([kinds containsObject:@"password"]) continue;
+            [kinds addObject:@"password"];
+            [methods addObject:@{@"title": GHL(@"Пароль"), @"passwordForm": form[@"index"], @"input": GHWebLoginString(passwordInput[@"name"]),
+                                 @"button": @([self submitButtonIndexOfForm:form preferring:nil])}];
+        }
+    }
 
     for (NSDictionary *link in page[@"links"]) {
         NSString *href = GHWebLoginString(link[@"href"]);
@@ -371,9 +398,7 @@ static UITextField *GHWebLoginMakeField(void) {
     }
     for (NSDictionary *form in page[@"forms"]) {
         NSString *action = GHWebLoginString(form[@"action"]);
-        if ([form[@"inputs"] count] > 0) continue;
-        if ([action rangeOfString:@"two-factor"].location == NSNotFound && [action rangeOfString:@"sudo"].location == NSNotFound
-            && [action rangeOfString:@"recovery"].location == NSNotFound && [action rangeOfString:@"verified-device"].location == NSNotFound) continue;
+        if ([form[@"inputs"] count] > 0 || ![self isChallengeString:action]) continue;
         for (NSDictionary *button in form[@"buttons"]) {
             NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", action, GHWebLoginString(button[@"text"])]];
             NSString *title = [self titleForMethodKind:kind];
@@ -392,12 +417,25 @@ static UITextField *GHWebLoginMakeField(void) {
     return nil;
 }
 
-- (NSDictionary *)inputOfForm:(NSDictionary *)form type:(NSString *)type {
+- (NSDictionary *)inputOfForm:(NSDictionary *)form type:(NSString *)type visibleOnly:(BOOL)visibleOnly {
     for (NSDictionary *input in form[@"inputs"]) {
+        if (visibleOnly && ![input[@"visible"] boolValue]) continue;
         BOOL isPassword = [input[@"type"] isEqualToString:@"password"];
         if ([type isEqualToString:@"password"] == isPassword) return input;
     }
     return nil;
+}
+
+- (NSDictionary *)inputOfForm:(NSDictionary *)form type:(NSString *)type {
+    return [self inputOfForm:form type:type visibleOnly:YES];
+}
+
+- (NSUInteger)visibleInputCountOfForm:(NSDictionary *)form {
+    NSUInteger count = 0;
+    for (NSDictionary *input in form[@"inputs"]) {
+        if ([input[@"visible"] boolValue]) count++;
+    }
+    return count;
 }
 
 - (NSInteger)submitButtonIndexOfForm:(NSDictionary *)form preferring:(NSString *)preferredValue {
@@ -406,6 +444,23 @@ static UITextField *GHWebLoginMakeField(void) {
         if (preferredValue && [GHWebLoginString(button[@"value"]) isEqualToString:preferredValue]) return [button[@"index"] integerValue];
     }
     return buttons.count > 0 ? [buttons[0][@"index"] integerValue] : -1;
+}
+
+- (void)presentCodeStepForKind:(NSString *)kind error:(NSString *)error methods:(NSArray *)methods {
+    NSString *message = GHL(@"Введите код подтверждения.");
+    if ([kind isEqualToString:@"app"]) message = GHL(@"Введите шестизначный код из приложения-аутентификатора.");
+    if ([kind isEqualToString:@"sms"]) message = GHL(@"Введите код из SMS.");
+    if ([kind isEqualToString:@"email"]) message = GHL(@"Введите код из письма, которое отправил GitHub.");
+    if ([kind isEqualToString:@"recovery"]) message = GHL(@"Введите один из кодов восстановления.");
+    self.firstField.keyboardType = [kind isEqualToString:@"recovery"] ? UIKeyboardTypeASCIICapable : UIKeyboardTypeNumberPad;
+    [self presentStep:GHWebLoginStepCode
+                title:GHL(@"Двухфакторная проверка")
+              message:message
+                error:error
+           firstField:GHL(@"Код")
+          secondField:NO
+              primary:GHL(@"Подтвердить")
+              methods:methods];
 }
 
 - (void)analyzePage {
@@ -454,7 +509,7 @@ static UITextField *GHWebLoginMakeField(void) {
 
     if (deviceMode && [path hasPrefix:@"/login/device"]) {
         NSDictionary *codeForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
-            return [GHWebLoginString(form[@"action"]) rangeOfString:@"/login/device"].location != NSNotFound && [form[@"inputs"] count] > 0;
+            return [GHWebLoginString(form[@"action"]) rangeOfString:@"/login/device"].location != NSNotFound && [self visibleInputCountOfForm:form] > 0;
         }];
         if (codeForm) {
             self.formIndex = [codeForm[@"index"] integerValue];
@@ -501,37 +556,22 @@ static UITextField *GHWebLoginMakeField(void) {
     NSDictionary *codeForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
         NSString *target = [NSString stringWithFormat:@"%@ %@", GHWebLoginString(form[@"action"]), path];
         if ([target rangeOfString:@"search"].location != NSNotFound) return NO;
-        BOOL challenge = [target rangeOfString:@"two-factor"].location != NSNotFound || [target rangeOfString:@"recovery"].location != NSNotFound
-            || [target rangeOfString:@"verified-device"].location != NSNotFound || [target rangeOfString:@"sudo"].location != NSNotFound
-            || [target rangeOfString:@"otp"].location != NSNotFound;
-        return challenge && [self inputOfForm:form type:@"text"] != nil;
+        return [self isChallengeString:target] && [self inputOfForm:form type:@"text"] != nil;
     }];
     if (codeForm) {
         self.formIndex = [codeForm[@"index"] integerValue];
         self.buttonIndex = [self submitButtonIndexOfForm:codeForm preferring:nil];
         self.firstFieldName = GHWebLoginString([self inputOfForm:codeForm type:@"text"][@"name"]);
         self.secondFieldName = nil;
-        NSString *message = GHL(@"Введите код подтверждения.");
-        if ([currentKind isEqualToString:@"app"]) message = GHL(@"Введите шестизначный код из приложения-аутентификатора.");
-        if ([currentKind isEqualToString:@"sms"]) message = GHL(@"Введите код из SMS.");
-        if ([currentKind isEqualToString:@"email"]) message = GHL(@"Введите код из письма, которое отправил GitHub.");
-        if ([currentKind isEqualToString:@"recovery"]) message = GHL(@"Введите один из кодов восстановления.");
-        self.firstField.keyboardType = [currentKind isEqualToString:@"recovery"] ? UIKeyboardTypeASCIICapable : UIKeyboardTypeNumberPad;
-        [self presentStep:GHWebLoginStepCode
-                    title:GHL(@"Двухфакторная проверка")
-                  message:message
-                    error:error
-               firstField:GHL(@"Код")
-              secondField:NO
-                  primary:GHL(@"Подтвердить")
-                  methods:[self methodsFromPage:page excludingKind:currentKind]];
+        NSString *codeKind = currentKind
+            ?: [self methodKindForString:[NSString stringWithFormat:@"%@ %@", GHWebLoginString(codeForm[@"action"]), self.firstFieldName]]
+            ?: @"app";
+        [self presentCodeStepForKind:codeKind error:error methods:[self methodsFromPage:page excludingKind:codeKind]];
         return;
     }
 
     NSArray *methods = [self methodsFromPage:page excludingKind:currentKind];
-    BOOL challengePage = [path rangeOfString:@"two-factor"].location != NSNotFound || [path rangeOfString:@"sudo"].location != NSNotFound
-        || [path rangeOfString:@"recovery"].location != NSNotFound || [path rangeOfString:@"verified-device"].location != NSNotFound;
-    if (methods.count > 0 && (challengePage || [path hasPrefix:@"/login"])) {
+    if (methods.count > 0) {
         [self presentStep:GHWebLoginStepChooseMethod
                     title:GHL(@"Двухфакторная проверка")
                   message:GHL(@"Подтверждение через GitHub Mobile здесь не работает. Выберите другой способ.")
@@ -569,9 +609,10 @@ static UITextField *GHWebLoginMakeField(void) {
     if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
     for (NSDictionary *form in page[@"forms"]) {
         NSString *action = GHWebLoginString(form[@"action"]);
-        if ([action rangeOfString:@"/login/device"].location == NSNotFound || [form[@"inputs"] count] > 0) continue;
+        if ([action rangeOfString:@"/login/device"].location == NSNotFound || [self visibleInputCountOfForm:form] > 0) continue;
         if ([self.autoSubmittedActions containsObject:action]) continue;
         for (NSDictionary *button in form[@"buttons"]) {
+            if (![button[@"visible"] boolValue]) continue;
             NSString *label = [[NSString stringWithFormat:@"%@ %@", GHWebLoginString(button[@"text"]), GHWebLoginString(button[@"value"])] lowercaseString];
             if ([label rangeOfString:@"different"].location != NSNotFound || [label rangeOfString:@"another"].location != NSNotFound
                 || [label rangeOfString:@"cancel"].location != NSNotFound || [label rangeOfString:@"sign out"].location != NSNotFound) continue;
@@ -641,6 +682,30 @@ static UITextField *GHWebLoginMakeField(void) {
 - (void)methodTapped:(UIButton *)button {
     if (button.tag < 0 || button.tag >= (NSInteger)self.methods.count) return;
     NSDictionary *method = self.methods[button.tag];
+    if (method[@"codeForm"] || method[@"passwordForm"]) {
+        BOOL password = method[@"passwordForm"] != nil;
+        self.formIndex = [(password ? method[@"passwordForm"] : method[@"codeForm"]) integerValue];
+        self.buttonIndex = [method[@"button"] integerValue];
+        NSMutableArray *others = [self.methods mutableCopy];
+        [others removeObject:method];
+        if (password) {
+            self.firstFieldName = nil;
+            self.secondFieldName = method[@"input"];
+            [self presentStep:GHWebLoginStepPassword
+                        title:GHL(@"Подтвердите пароль")
+                      message:GHL(@"GitHub просит ещё раз ввести пароль, чтобы подтвердить доступ.")
+                        error:nil
+                   firstField:nil
+                  secondField:YES
+                      primary:GHL(@"Подтвердить")
+                      methods:others];
+        } else {
+            self.firstFieldName = method[@"input"];
+            self.secondFieldName = nil;
+            [self presentCodeStepForKind:method[@"kind"] error:nil methods:others];
+        }
+        return;
+    }
     NSString *href = method[@"href"];
     if (href.length > 0) {
         NSURL *url = [[NSURL URLWithString:href relativeToURL:[GHWebSession baseURL]] absoluteURL];
