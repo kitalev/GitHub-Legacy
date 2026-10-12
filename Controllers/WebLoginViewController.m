@@ -1,13 +1,114 @@
 #import "WebLoginViewController.h"
+#import <QuartzCore/QuartzCore.h>
 #import "GHWebSession.h"
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
+#import "GHIconRenderer.h"
 
-@interface WebLoginViewController () <UIWebViewDelegate, UIActionSheetDelegate>
+typedef NS_ENUM(NSInteger, GHWebLoginStep) {
+    GHWebLoginStepLoading,
+    GHWebLoginStepCredentials,
+    GHWebLoginStepPassword,
+    GHWebLoginStepCode,
+    GHWebLoginStepChooseMethod,
+    GHWebLoginStepAuthorize,
+    GHWebLoginStepRetry,
+    GHWebLoginStepPage
+};
+
+static NSString * const kGHWebLoginAnalyzeScript =
+    @"(function(){"
+     "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
+     "function shown(e){if(!e||e.type=='hidden')return false;var s=window.getComputedStyle(e);"
+     "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
+     "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[]};"
+     "var fl=document.querySelectorAll('.flash-error,.flash-warn,.js-flash-alert,[role=alert]');"
+     "for(var i=0;i<fl.length;i++){var t=txt(fl[i]);if(t&&t.indexOf('{{')<0&&shown(fl[i])&&r.errors.indexOf(t)<0)r.errors.push(t);}"
+     "for(var i=0;i<document.forms.length;i++){var f=document.forms[i];"
+     "var o={index:i,action:f.getAttribute('action')||'',inputs:[],buttons:[]};"
+     "for(var j=0;j<f.elements.length;j++){var e=f.elements[j];var tag=e.tagName.toLowerCase();"
+     "var ty=(e.getAttribute('type')||(tag=='button'?'submit':'text')).toLowerCase();"
+     "if((tag=='button'||tag=='input')&&ty=='submit'){if(shown(e))o.buttons.push({index:j,name:e.name||'',value:e.value||'',text:txt(e)||e.value||''});}"
+     "else if(tag=='input'&&(ty=='text'||ty=='password'||ty=='email'||ty=='tel'||ty=='number')&&shown(e)){"
+     "o.inputs.push({name:e.name||'',type:ty,value:e.value||'',auto:e.getAttribute('autocomplete')||''});}}"
+     "r.forms.push(o);}"
+     "var as=document.querySelectorAll('a[href]');"
+     "for(var i=0;i<as.length;i++){var h=as[i].getAttribute('href')||'';"
+     "if(/two-factor|recovery|verified-device|sudo/.test(h))r.links.push({href:as[i].href,text:txt(as[i])});}"
+     "return JSON.stringify(r);"
+     "})()";
+
+static NSString * const kGHWebLoginSubmitScript =
+    @"(function(fi,vals,bi){var f=document.forms[fi];if(!f)return 'none';"
+     "for(var k in vals){var e=f.elements[k];if(e&&!e.tagName&&e.length)e=e[0];if(e)e.value=vals[k];}"
+     "var b=bi>=0?f.elements[bi]:null;"
+     "if(b&&b.name){var h=document.createElement('input');h.type='hidden';h.name=b.name;h.value=b.value;f.appendChild(h);}"
+     "f.submit();return 'ok';"
+     "})(%ld,%@,%ld)";
+
+static NSString * const kGHWebLoginDeviceCodeScript =
+    @"(function(fi,c,bi){var f=document.forms[fi];if(!f)return 'none';var ins=[];"
+     "for(var j=0;j<f.elements.length;j++){var e=f.elements[j];var t=(e.getAttribute('type')||'text').toLowerCase();"
+     "if(e.tagName.toLowerCase()=='input'&&(t=='text'||t=='tel')&&e.offsetParent!==null)ins.push(e);}"
+     "var s=c.replace(/-/g,'');"
+     "if(ins.length==1)ins[0].value=c;else for(var j=0;j<ins.length&&j<s.length;j++)ins[j].value=s.charAt(j);"
+     "var hs=f.querySelectorAll('input[type=hidden]');"
+     "for(var j=0;j<hs.length;j++){if(/user.?code/i.test(hs[j].name))hs[j].value=c;}"
+     "var b=bi>=0?f.elements[bi]:null;"
+     "if(b&&b.name){var h=document.createElement('input');h.type='hidden';h.name=b.name;h.value=b.value;f.appendChild(h);}"
+     "f.submit();return 'ok';"
+     "})(%ld,%@[0],%ld)";
+
+static NSString *GHWebLoginJSON(id object) {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
+    return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+}
+
+static NSString *GHWebLoginString(id value) {
+    return [value isKindOfClass:[NSString class]] ? value : @"";
+}
+
+static UILabel *GHWebLoginMakeLabel(UIFont *font) {
+    UILabel *label = [[UILabel alloc] init];
+    label.backgroundColor = [UIColor clearColor];
+    label.font = font;
+    label.textAlignment = NSTextAlignmentCenter;
+    label.numberOfLines = 0;
+    return label;
+}
+
+static UITextField *GHWebLoginMakeField(void) {
+    UITextField *field = [[UITextField alloc] init];
+    field.borderStyle = UITextBorderStyleRoundedRect;
+    field.font = [UIFont systemFontOfSize:17];
+    field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    field.autocorrectionType = UITextAutocorrectionTypeNo;
+    field.clearButtonMode = UITextFieldViewModeWhileEditing;
+    field.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+    return field;
+}
+
+@interface WebLoginViewController () <UIWebViewDelegate, UITextFieldDelegate>
 @property (nonatomic, strong) UIWebView *webView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
-@property (nonatomic, strong) UIBarButtonItem *spinnerItem;
-@property (nonatomic, strong) UIBarButtonItem *confirmItem;
+@property (nonatomic, strong) UIScrollView *scrollView;
+@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UILabel *messageLabel;
+@property (nonatomic, strong) UILabel *errorLabel;
+@property (nonatomic, strong) UITextField *firstField;
+@property (nonatomic, strong) UITextField *secondField;
+@property (nonatomic, strong) UIButton *primaryButton;
+@property (nonatomic, strong) UIActivityIndicatorView *progressSpinner;
+@property (nonatomic, strong) NSMutableArray *methodButtons;
+@property (nonatomic, copy) NSArray *methods;
+@property (nonatomic, assign) GHWebLoginStep step;
+@property (nonatomic, assign) GHWebLoginStep lastInputStep;
+@property (nonatomic, assign) NSInteger formIndex;
+@property (nonatomic, assign) NSInteger buttonIndex;
+@property (nonatomic, copy) NSString *firstFieldName;
+@property (nonatomic, copy) NSString *secondFieldName;
+@property (nonatomic, assign) BOOL submittedDeviceCode;
 @property (nonatomic, assign) BOOL finished;
 @end
 
@@ -15,23 +116,62 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    if (self.title.length == 0) self.title = GHL(@"Вход на github.com");
-    self.view.backgroundColor = GHBackgroundColor();
+    if (self.title.length == 0) self.title = GHL(@"Вход в GitHub");
 
     self.webView = [[UIWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.webView.delegate = self;
     self.webView.scalesPageToFit = YES;
+    self.webView.hidden = YES;
     [self.view addSubview:self.webView];
+
+    self.scrollView = [[UIScrollView alloc] initWithFrame:self.view.bounds];
+    self.scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.scrollView.alwaysBounceVertical = YES;
+    [self.view addSubview:self.scrollView];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
+    tap.cancelsTouchesInView = NO;
+    [self.scrollView addGestureRecognizer:tap];
+
+    self.iconView = [[UIImageView alloc] init];
+    self.iconView.contentMode = UIViewContentModeCenter;
+    [self.scrollView addSubview:self.iconView];
+
+    self.titleLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:21]);
+    [self.scrollView addSubview:self.titleLabel];
+
+    self.messageLabel = GHWebLoginMakeLabel([UIFont systemFontOfSize:15]);
+    [self.scrollView addSubview:self.messageLabel];
+
+    self.errorLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:14]);
+    [self.scrollView addSubview:self.errorLabel];
+
+    self.firstField = GHWebLoginMakeField();
+    self.firstField.delegate = self;
+    [self.scrollView addSubview:self.firstField];
+
+    self.secondField = GHWebLoginMakeField();
+    self.secondField.delegate = self;
+    self.secondField.secureTextEntry = YES;
+    self.secondField.placeholder = GHL(@"Пароль");
+    self.secondField.returnKeyType = UIReturnKeyGo;
+    [self.scrollView addSubview:self.secondField];
+
+    self.primaryButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.primaryButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    [self.primaryButton addTarget:self action:@selector(primaryTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.scrollView addSubview:self.primaryButton];
+
+    self.progressSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
+    self.progressSpinner.hidesWhenStopped = YES;
+    [self.scrollView addSubview:self.progressSpinner];
+
+    self.methodButtons = [NSMutableArray array];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
     self.spinner.hidesWhenStopped = YES;
-    self.spinnerItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
-    self.confirmItem = [[UIBarButtonItem alloc] initWithTitle:GHL(@"Другой способ")
-                                                        style:UIBarButtonItemStyleBordered
-                                                       target:self
-                                                       action:@selector(otherTwoFactorMethodTapped)];
-    self.navigationItem.rightBarButtonItem = self.spinnerItem;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
 
     NSArray *stack = self.navigationController.viewControllers;
     if (self.presentingViewController && stack.count > 0 && stack[0] == self) {
@@ -41,13 +181,458 @@
                                                                                 action:@selector(cancelTapped)];
     }
 
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(applyTheme)
+                                                  name:kGHThemeDidChangeNotification
+                                                object:nil];
+    [self applyTheme];
+    [self showLoadingWithMessage:GHL(@"Подключение к github.com…")];
     [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession signInURL]]];
+}
+
+- (void)applyTheme {
+    self.view.backgroundColor = GHBackgroundColor();
+    self.scrollView.backgroundColor = GHBackgroundColor();
+    self.iconView.image = [GHIconRenderer personIconWithColor:GHTintColor() size:56];
+    self.titleLabel.textColor = GHPrimaryTextColor();
+    self.messageLabel.textColor = GHSecondaryTextColor();
+    self.errorLabel.textColor = [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
+    self.progressSpinner.activityIndicatorViewStyle = GHSpinnerStyle();
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [self layoutContent];
 }
 
 - (void)cancelTapped {
     [self.webView stopLoading];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
+
+- (void)dismissKeyboard {
+    [self.view endEditing:YES];
+}
+
+#pragma mark - Layout
+
+- (CGFloat)heightForLabel:(UILabel *)label width:(CGFloat)width {
+    if (label.hidden || label.text.length == 0) return 0;
+    return ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
+}
+
+- (void)layoutContent {
+    CGFloat width = MIN(self.view.bounds.size.width - 30, 420);
+    CGFloat left = floor((self.view.bounds.size.width - width) / 2.0);
+    CGFloat y = 24;
+
+    self.iconView.frame = CGRectMake(left, y, width, 60);
+    y += 60 + 10;
+
+    CGFloat titleHeight = [self heightForLabel:self.titleLabel width:width];
+    self.titleLabel.frame = CGRectMake(left, y, width, titleHeight);
+    y += titleHeight + (titleHeight > 0 ? 8 : 0);
+
+    CGFloat messageHeight = [self heightForLabel:self.messageLabel width:width];
+    self.messageLabel.frame = CGRectMake(left, y, width, messageHeight);
+    y += messageHeight + (messageHeight > 0 ? 16 : 0);
+
+    if (self.progressSpinner.isAnimating) {
+        self.progressSpinner.frame = CGRectMake(left + floor((width - 20) / 2.0), y, 20, 20);
+        y += 20 + 16;
+    }
+
+    CGFloat errorHeight = [self heightForLabel:self.errorLabel width:width];
+    self.errorLabel.frame = CGRectMake(left, y, width, errorHeight);
+    y += errorHeight + (errorHeight > 0 ? 14 : 0);
+
+    if (!self.firstField.hidden) {
+        self.firstField.frame = CGRectMake(left, y, width, 44);
+        y += 44 + 10;
+    }
+    if (!self.secondField.hidden) {
+        self.secondField.frame = CGRectMake(left, y, width, 44);
+        y += 44 + 10;
+    }
+    if (!self.primaryButton.hidden) {
+        y += 6;
+        self.primaryButton.frame = CGRectMake(left, y, width, 46);
+        y += 46 + 18;
+    }
+    for (UIButton *button in self.methodButtons) {
+        button.frame = CGRectMake(left, y, width, 42);
+        y += 42 + 8;
+    }
+
+    self.scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, y + 20);
+}
+
+#pragma mark - Steps
+
+- (void)showLoadingWithMessage:(NSString *)message {
+    [self presentStep:GHWebLoginStepLoading title:nil message:message error:nil
+           firstField:nil secondField:NO primary:nil methods:nil];
+}
+
+- (void)presentStep:(GHWebLoginStep)step
+              title:(NSString *)title
+            message:(NSString *)message
+              error:(NSString *)error
+         firstField:(NSString *)firstPlaceholder
+        secondField:(BOOL)showSecondField
+            primary:(NSString *)primaryTitle
+            methods:(NSArray *)methods {
+    BOOL sameInput = firstPlaceholder != nil && self.lastInputStep == step;
+    if (firstPlaceholder != nil || showSecondField) self.lastInputStep = step;
+    self.step = step;
+    self.webView.hidden = step != GHWebLoginStepPage;
+    self.scrollView.hidden = step == GHWebLoginStepPage;
+
+    self.titleLabel.text = title;
+    self.messageLabel.text = message;
+    self.errorLabel.text = error;
+    self.errorLabel.hidden = error.length == 0;
+
+    self.firstField.hidden = firstPlaceholder == nil;
+    self.firstField.placeholder = firstPlaceholder;
+    if (!sameInput) self.firstField.text = @"";
+    self.secondField.hidden = !showSecondField;
+    self.secondField.text = @"";
+    self.firstField.returnKeyType = showSecondField ? UIReturnKeyNext : UIReturnKeyGo;
+
+    self.primaryButton.hidden = primaryTitle == nil;
+    [self.primaryButton setTitle:primaryTitle forState:UIControlStateNormal];
+
+    if (step == GHWebLoginStepLoading) {
+        [self.progressSpinner startAnimating];
+        [self dismissKeyboard];
+    } else {
+        [self.progressSpinner stopAnimating];
+    }
+
+    for (UIButton *button in self.methodButtons) [button removeFromSuperview];
+    [self.methodButtons removeAllObjects];
+    self.methods = methods;
+    for (NSUInteger i = 0; i < methods.count; i++) {
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+        button.titleLabel.font = [UIFont systemFontOfSize:16];
+        button.tag = (NSInteger)i;
+        [button setTitle:methods[i][@"title"] forState:UIControlStateNormal];
+        [button addTarget:self action:@selector(methodTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [self.scrollView addSubview:button];
+        [self.methodButtons addObject:button];
+    }
+
+    [self layoutContent];
+    if (!self.firstField.hidden && self.firstField.text.length > 0 && showSecondField) {
+        [self.secondField becomeFirstResponder];
+    } else if (!self.firstField.hidden) {
+        [self.firstField becomeFirstResponder];
+    } else if (showSecondField) {
+        [self.secondField becomeFirstResponder];
+    }
+}
+
+#pragma mark - Page analysis
+
+- (NSString *)methodKindForString:(NSString *)string {
+    NSString *value = [string lowercaseString];
+    if ([value rangeOfString:@"mobile"].location != NSNotFound) return @"mobile";
+    if ([value rangeOfString:@"webauthn"].location != NSNotFound || [value rangeOfString:@"passkey"].location != NSNotFound
+        || [value rangeOfString:@"security key"].location != NSNotFound) return @"webauthn";
+    if ([value rangeOfString:@"recovery"].location != NSNotFound) return @"recovery";
+    if ([value rangeOfString:@"sms"].location != NSNotFound || [value rangeOfString:@"text message"].location != NSNotFound) return @"sms";
+    if ([value rangeOfString:@"email"].location != NSNotFound || [value rangeOfString:@"verified-device"].location != NSNotFound) return @"email";
+    if ([value rangeOfString:@"two-factor/app"].location != NSNotFound || [value rangeOfString:@"authenticator"].location != NSNotFound) return @"app";
+    return nil;
+}
+
+- (NSString *)titleForMethodKind:(NSString *)kind {
+    if ([kind isEqualToString:@"app"]) return GHL(@"Код из приложения-аутентификатора");
+    if ([kind isEqualToString:@"sms"]) return GHL(@"Код из SMS");
+    if ([kind isEqualToString:@"email"]) return GHL(@"Код на почту");
+    if ([kind isEqualToString:@"recovery"]) return GHL(@"Код восстановления");
+    return nil;
+}
+
+- (NSArray *)methodsFromPage:(NSDictionary *)page excludingKind:(NSString *)currentKind {
+    NSMutableArray *methods = [NSMutableArray array];
+    NSMutableSet *kinds = [NSMutableSet set];
+    if (currentKind) [kinds addObject:currentKind];
+
+    for (NSDictionary *link in page[@"links"]) {
+        NSString *href = GHWebLoginString(link[@"href"]);
+        NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", href, GHWebLoginString(link[@"text"])]];
+        NSString *title = [self titleForMethodKind:kind];
+        if (title == nil || [kinds containsObject:kind]) continue;
+        [kinds addObject:kind];
+        [methods addObject:@{@"title": title, @"href": href}];
+    }
+    for (NSDictionary *form in page[@"forms"]) {
+        NSString *action = GHWebLoginString(form[@"action"]);
+        if ([form[@"inputs"] count] > 0) continue;
+        if ([action rangeOfString:@"two-factor"].location == NSNotFound && [action rangeOfString:@"sudo"].location == NSNotFound
+            && [action rangeOfString:@"recovery"].location == NSNotFound && [action rangeOfString:@"verified-device"].location == NSNotFound) continue;
+        for (NSDictionary *button in form[@"buttons"]) {
+            NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", action, GHWebLoginString(button[@"text"])]];
+            NSString *title = [self titleForMethodKind:kind];
+            if (title == nil || [kinds containsObject:kind]) continue;
+            [kinds addObject:kind];
+            [methods addObject:@{@"title": title, @"form": form[@"index"], @"button": button[@"index"]}];
+        }
+    }
+    return methods;
+}
+
+- (NSDictionary *)formInPage:(NSDictionary *)page matching:(BOOL (^)(NSDictionary *form))predicate {
+    for (NSDictionary *form in page[@"forms"]) {
+        if (predicate(form)) return form;
+    }
+    return nil;
+}
+
+- (NSDictionary *)inputOfForm:(NSDictionary *)form type:(NSString *)type {
+    for (NSDictionary *input in form[@"inputs"]) {
+        BOOL isPassword = [input[@"type"] isEqualToString:@"password"];
+        if ([type isEqualToString:@"password"] == isPassword) return input;
+    }
+    return nil;
+}
+
+- (NSInteger)submitButtonIndexOfForm:(NSDictionary *)form preferring:(NSString *)preferredValue {
+    NSArray *buttons = form[@"buttons"];
+    for (NSDictionary *button in buttons) {
+        if (preferredValue && [GHWebLoginString(button[@"value"]) isEqualToString:preferredValue]) return [button[@"index"] integerValue];
+    }
+    return buttons.count > 0 ? [buttons[0][@"index"] integerValue] : -1;
+}
+
+- (void)analyzePage {
+    NSString *json = [self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginAnalyzeScript];
+    NSDictionary *page = json.length > 0 ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    if (![page isKindOfClass:[NSDictionary class]]) {
+        [self showPage];
+        return;
+    }
+
+    NSString *path = GHWebLoginString(page[@"path"]);
+    NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
+    NSString *error = errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil;
+    BOOL deviceMode = self.deviceUserCode.length > 0;
+
+    NSDictionary *passwordForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
+        return [self inputOfForm:form type:@"password"] != nil;
+    }];
+    if (passwordForm) {
+        NSDictionary *loginInput = [self inputOfForm:passwordForm type:@"text"];
+        self.formIndex = [passwordForm[@"index"] integerValue];
+        self.buttonIndex = [self submitButtonIndexOfForm:passwordForm preferring:nil];
+        self.firstFieldName = loginInput ? GHWebLoginString(loginInput[@"name"]) : nil;
+        self.secondFieldName = GHWebLoginString([self inputOfForm:passwordForm type:@"password"][@"name"]);
+        if (loginInput) {
+            [self presentStep:GHWebLoginStepCredentials
+                        title:GHL(@"Вход в GitHub")
+                      message:GHL(@"Логин и пароль отправляются напрямую на github.com.")
+                        error:error
+                   firstField:GHL(@"Имя пользователя или email")
+                  secondField:YES
+                      primary:GHL(@"Войти")
+                      methods:nil];
+        } else {
+            [self presentStep:GHWebLoginStepPassword
+                        title:GHL(@"Подтвердите пароль")
+                      message:GHL(@"GitHub просит ещё раз ввести пароль, чтобы подтвердить доступ.")
+                        error:error
+                   firstField:nil
+                  secondField:YES
+                      primary:GHL(@"Подтвердить")
+                      methods:[self methodsFromPage:page excludingKind:nil]];
+        }
+        return;
+    }
+
+    if (deviceMode && [path hasPrefix:@"/login/device"]) {
+        NSDictionary *codeForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
+            return [GHWebLoginString(form[@"action"]) rangeOfString:@"/login/device"].location != NSNotFound && [form[@"inputs"] count] > 0;
+        }];
+        if (codeForm) {
+            self.formIndex = [codeForm[@"index"] integerValue];
+            self.buttonIndex = [self submitButtonIndexOfForm:codeForm preferring:nil];
+            if (!self.submittedDeviceCode && error == nil) {
+                [self submitDeviceCode];
+                return;
+            }
+            [self presentStep:GHWebLoginStepRetry
+                        title:GHL(@"Код устройства не принят")
+                      message:[NSString stringWithFormat:GHL(@"Код %@ не подошёл. Вернитесь назад и получите новый код или попробуйте ещё раз."), self.deviceUserCode]
+                        error:error
+                   firstField:nil
+                  secondField:NO
+                      primary:GHL(@"Попробовать ещё раз")
+                      methods:nil];
+            return;
+        }
+    }
+
+    NSDictionary *authorizeForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
+        NSString *action = GHWebLoginString(form[@"action"]);
+        if ([action rangeOfString:@"/login/"].location == NSNotFound) return NO;
+        for (NSDictionary *button in form[@"buttons"]) {
+            if ([GHWebLoginString(button[@"name"]) isEqualToString:@"authorize"]) return YES;
+        }
+        return NO;
+    }];
+    if (authorizeForm) {
+        self.formIndex = [authorizeForm[@"index"] integerValue];
+        self.buttonIndex = [self submitButtonIndexOfForm:authorizeForm preferring:@"1"];
+        [self presentStep:GHWebLoginStepAuthorize
+                    title:GHL(@"Разрешить доступ")
+                  message:GHL(@"Приложение получит доступ к вашему аккаунту GitHub: репозиториям, задачам и подпискам.")
+                    error:error
+               firstField:nil
+              secondField:NO
+                  primary:GHL(@"Разрешить")
+                  methods:nil];
+        return;
+    }
+
+    NSString *currentKind = [self methodKindForString:path];
+    NSDictionary *codeForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
+        NSString *target = [NSString stringWithFormat:@"%@ %@", GHWebLoginString(form[@"action"]), path];
+        if ([target rangeOfString:@"search"].location != NSNotFound) return NO;
+        BOOL challenge = [target rangeOfString:@"two-factor"].location != NSNotFound || [target rangeOfString:@"recovery"].location != NSNotFound
+            || [target rangeOfString:@"verified-device"].location != NSNotFound || [target rangeOfString:@"sudo"].location != NSNotFound
+            || [target rangeOfString:@"otp"].location != NSNotFound;
+        return challenge && [self inputOfForm:form type:@"text"] != nil;
+    }];
+    if (codeForm) {
+        self.formIndex = [codeForm[@"index"] integerValue];
+        self.buttonIndex = [self submitButtonIndexOfForm:codeForm preferring:nil];
+        self.firstFieldName = GHWebLoginString([self inputOfForm:codeForm type:@"text"][@"name"]);
+        self.secondFieldName = nil;
+        NSString *message = GHL(@"Введите код подтверждения.");
+        if ([currentKind isEqualToString:@"app"]) message = GHL(@"Введите шестизначный код из приложения-аутентификатора.");
+        if ([currentKind isEqualToString:@"sms"]) message = GHL(@"Введите код из SMS.");
+        if ([currentKind isEqualToString:@"email"]) message = GHL(@"Введите код из письма, которое отправил GitHub.");
+        if ([currentKind isEqualToString:@"recovery"]) message = GHL(@"Введите один из кодов восстановления.");
+        self.firstField.keyboardType = [currentKind isEqualToString:@"recovery"] ? UIKeyboardTypeASCIICapable : UIKeyboardTypeNumberPad;
+        [self presentStep:GHWebLoginStepCode
+                    title:GHL(@"Двухфакторная проверка")
+                  message:message
+                    error:error
+               firstField:GHL(@"Код")
+              secondField:NO
+                  primary:GHL(@"Подтвердить")
+                  methods:[self methodsFromPage:page excludingKind:currentKind]];
+        return;
+    }
+
+    NSArray *methods = [self methodsFromPage:page excludingKind:currentKind];
+    BOOL challengePage = [path rangeOfString:@"two-factor"].location != NSNotFound || [path rangeOfString:@"sudo"].location != NSNotFound
+        || [path rangeOfString:@"recovery"].location != NSNotFound || [path rangeOfString:@"verified-device"].location != NSNotFound;
+    if (methods.count > 0 && (challengePage || [path hasPrefix:@"/login"])) {
+        [self presentStep:GHWebLoginStepChooseMethod
+                    title:GHL(@"Двухфакторная проверка")
+                  message:GHL(@"Подтверждение через GitHub Mobile здесь не работает. Выберите другой способ.")
+                    error:error
+               firstField:nil
+              secondField:NO
+                  primary:nil
+                  methods:methods];
+        return;
+    }
+
+    if (deviceMode && [path hasPrefix:@"/login/device"]) {
+        [self showLoadingWithMessage:GHL(@"Устройство подтверждено. Завершаем вход…")];
+        return;
+    }
+    if (deviceMode && [GHWebSession isSignedIn] && ![path hasPrefix:@"/login/device"]) {
+        [self showLoadingWithMessage:GHL(@"Подтверждаем устройство…")];
+        [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL]];
+        return;
+    }
+
+    [self showPage];
+}
+
+- (void)showPage {
+    [self presentStep:GHWebLoginStepPage title:nil message:nil error:nil
+           firstField:nil secondField:NO primary:nil methods:nil];
+}
+
+#pragma mark - Actions
+
+- (void)submitFormWithValues:(NSDictionary *)values loadingMessage:(NSString *)message {
+    NSString *script = [NSString stringWithFormat:kGHWebLoginSubmitScript,
+                        (long)self.formIndex, GHWebLoginJSON(values ?: @{}) ?: @"{}", (long)self.buttonIndex];
+    [self showLoadingWithMessage:message];
+    if (![[self.webView stringByEvaluatingJavaScriptFromString:script] isEqualToString:@"ok"]) [self.webView reload];
+}
+
+- (void)submitDeviceCode {
+    self.submittedDeviceCode = YES;
+    NSString *script = [NSString stringWithFormat:kGHWebLoginDeviceCodeScript,
+                        (long)self.formIndex, GHWebLoginJSON(@[self.deviceUserCode]), (long)self.buttonIndex];
+    [self showLoadingWithMessage:GHL(@"Подтверждаем устройство…")];
+    if (![[self.webView stringByEvaluatingJavaScriptFromString:script] isEqualToString:@"ok"]) [self showPage];
+}
+
+- (void)primaryTapped {
+    NSString *first = [self.firstField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *second = self.secondField.text ?: @"";
+
+    switch (self.step) {
+        case GHWebLoginStepCredentials:
+            if (first.length == 0 || second.length == 0) return;
+            [self submitFormWithValues:@{self.firstFieldName ?: @"login": first, self.secondFieldName ?: @"password": second}
+                        loadingMessage:GHL(@"Вход…")];
+            break;
+        case GHWebLoginStepPassword:
+            if (second.length == 0) return;
+            [self submitFormWithValues:@{self.secondFieldName ?: @"password": second} loadingMessage:GHL(@"Проверка пароля…")];
+            break;
+        case GHWebLoginStepCode:
+            if (first.length == 0) return;
+            [self submitFormWithValues:@{self.firstFieldName ?: @"otp": first} loadingMessage:GHL(@"Проверка кода…")];
+            break;
+        case GHWebLoginStepAuthorize:
+            [self submitFormWithValues:nil loadingMessage:GHL(@"Подтверждаем устройство…")];
+            break;
+        case GHWebLoginStepRetry:
+            self.submittedDeviceCode = NO;
+            [self showLoadingWithMessage:GHL(@"Подключение к github.com…")];
+            [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession signInURL]]];
+            break;
+        default:
+            break;
+    }
+}
+
+- (void)methodTapped:(UIButton *)button {
+    if (button.tag < 0 || button.tag >= (NSInteger)self.methods.count) return;
+    NSDictionary *method = self.methods[button.tag];
+    NSString *href = method[@"href"];
+    if (href.length > 0) {
+        NSURL *url = [[NSURL URLWithString:href relativeToURL:[GHWebSession baseURL]] absoluteURL];
+        [self showLoadingWithMessage:GHL(@"Загрузка…")];
+        [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
+        return;
+    }
+    self.formIndex = [method[@"form"] integerValue];
+    self.buttonIndex = [method[@"button"] integerValue];
+    [self submitFormWithValues:nil loadingMessage:GHL(@"Загрузка…")];
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    if (textField == self.firstField && !self.secondField.hidden) {
+        [self.secondField becomeFirstResponder];
+    } else {
+        [self primaryTapped];
+    }
+    return NO;
+}
+
+#pragma mark - Completion
 
 - (BOOL)finishIfSignedInAtURL:(NSURL *)url {
     if (self.finished || !self.finishesOnSignIn) return self.finished;
@@ -70,87 +655,14 @@
 }
 
 - (void)webViewDidStartLoad:(UIWebView *)webView {
-    if (self.navigationItem.rightBarButtonItem != self.spinnerItem) self.navigationItem.rightBarButtonItem = self.spinnerItem;
     [self.spinner startAnimating];
 }
 
 - (void)webViewDidFinishLoad:(UIWebView *)webView {
-    if (!webView.isLoading) [self.spinner stopAnimating];
+    if (webView.isLoading) return;
+    [self.spinner stopAnimating];
     if ([self finishIfSignedInAtURL:webView.request.URL]) return;
-    [self updateConfirmItem];
-    [self enableAuthorizeButtonsIfNeeded];
-    [self fillDeviceUserCodeIfNeeded];
-}
-
-- (void)enableAuthorizeButtonsIfNeeded {
-    NSURL *url = self.webView.request.URL;
-    if (![[url.host lowercaseString] isEqualToString:@"github.com"]) return;
-    if (![url.path hasPrefix:@"/login/device"] && ![url.path hasPrefix:@"/login/oauth"]) return;
-    [self.webView stringByEvaluatingJavaScriptFromString:
-        @"(function(){"
-         "var bs=document.querySelectorAll('form button[disabled],form input[type=submit][disabled]');"
-         "for(var i=0;i<bs.length;i++){bs[i].removeAttribute('disabled');bs[i].disabled=false;}"
-         "})()"];
-}
-
-- (BOOL)isTwoFactorPage {
-    NSURL *url = self.webView.request.URL;
-    return [[url.host lowercaseString] isEqualToString:@"github.com"] && [url.path hasPrefix:@"/sessions/two-factor"];
-}
-
-- (void)updateConfirmItem {
-    UIBarButtonItem *item = [self isTwoFactorPage] ? self.confirmItem : self.spinnerItem;
-    if (self.navigationItem.rightBarButtonItem != item) [self.navigationItem setRightBarButtonItem:item animated:YES];
-}
-
-- (NSArray *)twoFactorMethods {
-    return @[@[GHL(@"Код из приложения-аутентификатора"), @"/sessions/two-factor/app"],
-             @[GHL(@"Код из SMS"), @"/sessions/two-factor/sms"],
-             @[GHL(@"Код восстановления"), @"/sessions/recovery"]];
-}
-
-- (void)otherTwoFactorMethodTapped {
-    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:nil
-                                                       delegate:self
-                                              cancelButtonTitle:nil
-                                         destructiveButtonTitle:nil
-                                              otherButtonTitles:nil];
-    for (NSArray *method in [self twoFactorMethods]) [sheet addButtonWithTitle:method[0]];
-    sheet.cancelButtonIndex = [sheet addButtonWithTitle:GHL(@"Отмена")];
-    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
-        [sheet showFromBarButtonItem:self.confirmItem animated:YES];
-    } else {
-        [sheet showInView:self.view];
-    }
-}
-
-- (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
-    NSArray *methods = [self twoFactorMethods];
-    if (buttonIndex == actionSheet.cancelButtonIndex || buttonIndex < 0 || buttonIndex >= (NSInteger)methods.count) return;
-    NSURL *url = [[NSURL URLWithString:methods[buttonIndex][1] relativeToURL:[GHWebSession baseURL]] absoluteURL];
-    [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
-}
-
-- (void)fillDeviceUserCodeIfNeeded {
-    NSURL *url = self.webView.request.URL;
-    if (self.deviceUserCode.length == 0 || ![[url.host lowercaseString] isEqualToString:@"github.com"]) return;
-    if (![url.path isEqualToString:@"/login/device"]) return;
-
-    NSData *codeJSON = [NSJSONSerialization dataWithJSONObject:@[self.deviceUserCode] options:0 error:nil];
-    NSString *codeArray = [[NSString alloc] initWithData:codeJSON encoding:NSUTF8StringEncoding];
-    if (codeArray.length == 0) return;
-    NSString *script = [NSString stringWithFormat:
-        @"(function(c){"
-         "var f=document.querySelector('form[action*=\"/login/device\"]');if(!f)return;"
-         "var ins=[].filter.call(f.querySelectorAll('input'),function(i){var t=(i.type||'text').toLowerCase();"
-         "return (t=='text'||t=='tel')&&!i.disabled&&i.offsetParent!==null;});"
-         "if(!ins.length)return;"
-         "function set(i,v){i.focus();i.value=v;['input','change','keyup'].forEach(function(n){"
-         "var e=document.createEvent('HTMLEvents');e.initEvent(n,true,true);i.dispatchEvent(e);});}"
-         "if(ins.length==1){set(ins[0],c);return;}"
-         "var s=c.replace(/-/g,'');ins.forEach(function(i,k){if(k<s.length)set(i,s.charAt(k));});"
-         "})(%@[0]);", codeArray];
-    [self.webView stringByEvaluatingJavaScriptFromString:script];
+    [self analyzePage];
 }
 
 - (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error {
@@ -158,15 +670,18 @@
     if (self.finished) return;
     if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) return;
     if ([error.domain isEqualToString:@"WebKitErrorDomain"] && error.code == 102) return;
-    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Не удалось открыть github.com")
-                                                     message:error.localizedDescription
-                                                    delegate:nil
-                                           cancelButtonTitle:@"OK"
-                                           otherButtonTitles:nil];
-    [alert show];
+    [self presentStep:GHWebLoginStepRetry
+                title:GHL(@"Не удалось открыть github.com")
+              message:error.localizedDescription
+                error:nil
+           firstField:nil
+          secondField:NO
+              primary:GHL(@"Попробовать ещё раз")
+              methods:nil];
 }
 
 - (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     self.webView.delegate = nil;
     [self.webView stopLoading];
 }
