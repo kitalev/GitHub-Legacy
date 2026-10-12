@@ -21,7 +21,7 @@ static NSString * const kGHWebLoginAnalyzeScript =
      "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
      "function shown(e){if(!e||e.type=='hidden')return false;var s=window.getComputedStyle(e);"
      "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
-     "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[]};"
+     "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[],text:document.body?txt(document.body).substring(0,600):''};"
      "var fl=document.querySelectorAll('.flash-error,.flash-warn,.js-flash-alert,[role=alert]');"
      "for(var i=0;i<fl.length;i++){var t=txt(fl[i]);if(t&&t.indexOf('{{')<0&&shown(fl[i])&&r.errors.indexOf(t)<0)r.errors.push(t);}"
      "for(var i=0;i<document.forms.length;i++){var f=document.forms[i];"
@@ -109,6 +109,7 @@ static UITextField *GHWebLoginMakeField(void) {
 @property (nonatomic, copy) NSString *firstFieldName;
 @property (nonatomic, copy) NSString *secondFieldName;
 @property (nonatomic, assign) BOOL submittedDeviceCode;
+@property (nonatomic, strong) NSMutableSet *autoSubmittedActions;
 @property (nonatomic, assign) BOOL finished;
 @end
 
@@ -543,16 +544,45 @@ static UITextField *GHWebLoginMakeField(void) {
     }
 
     if (deviceMode && [path hasPrefix:@"/login/device"]) {
-        [self showLoadingWithMessage:GHL(@"Устройство подтверждено. Завершаем вход…")];
-        return;
+        NSString *text = [GHWebLoginString(page[@"text"]) lowercaseString];
+        BOOL success = [path rangeOfString:@"success"].location != NSNotFound
+            || [text rangeOfString:@"congratulations"].location != NSNotFound
+            || [text rangeOfString:@"all set"].location != NSNotFound;
+        if (success) {
+            [self showLoadingWithMessage:GHL(@"Устройство подтверждено. Завершаем вход…")];
+            return;
+        }
+        if ([self autoSubmitContinueFormInPage:page]) return;
     }
-    if (deviceMode && [GHWebSession isSignedIn] && ![path hasPrefix:@"/login/device"]) {
+    if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
+    if (deviceMode && [GHWebSession isSignedIn] && ![path hasPrefix:@"/login/device"] && ![self.autoSubmittedActions containsObject:path]) {
+        [self.autoSubmittedActions addObject:path];
         [self showLoadingWithMessage:GHL(@"Подтверждаем устройство…")];
         [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL]];
         return;
     }
 
     [self showPage];
+}
+
+- (BOOL)autoSubmitContinueFormInPage:(NSDictionary *)page {
+    if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
+    for (NSDictionary *form in page[@"forms"]) {
+        NSString *action = GHWebLoginString(form[@"action"]);
+        if ([action rangeOfString:@"/login/device"].location == NSNotFound || [form[@"inputs"] count] > 0) continue;
+        if ([self.autoSubmittedActions containsObject:action]) continue;
+        for (NSDictionary *button in form[@"buttons"]) {
+            NSString *label = [[NSString stringWithFormat:@"%@ %@", GHWebLoginString(button[@"text"]), GHWebLoginString(button[@"value"])] lowercaseString];
+            if ([label rangeOfString:@"different"].location != NSNotFound || [label rangeOfString:@"another"].location != NSNotFound
+                || [label rangeOfString:@"cancel"].location != NSNotFound || [label rangeOfString:@"sign out"].location != NSNotFound) continue;
+            [self.autoSubmittedActions addObject:action];
+            self.formIndex = [form[@"index"] integerValue];
+            self.buttonIndex = [button[@"index"] integerValue];
+            [self submitFormWithValues:nil loadingMessage:GHL(@"Подтверждаем устройство…")];
+            return YES;
+        }
+    }
+    return NO;
 }
 
 - (void)showPage {
