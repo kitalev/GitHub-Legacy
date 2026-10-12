@@ -78,7 +78,19 @@
     if (!webView.isLoading) [self.spinner stopAnimating];
     if ([self finishIfSignedInAtURL:webView.request.URL]) return;
     [self updateConfirmItem];
+    [self enableAuthorizeButtonsIfNeeded];
     [self fillDeviceUserCodeIfNeeded];
+}
+
+- (void)enableAuthorizeButtonsIfNeeded {
+    NSURL *url = self.webView.request.URL;
+    if (![[url.host lowercaseString] isEqualToString:@"github.com"]) return;
+    if (![url.path hasPrefix:@"/login/device"] && ![url.path hasPrefix:@"/login/oauth"]) return;
+    [self.webView stringByEvaluatingJavaScriptFromString:
+        @"(function(){"
+         "var bs=document.querySelectorAll('form button[disabled],form input[type=submit][disabled]');"
+         "for(var i=0;i<bs.length;i++){bs[i].removeAttribute('disabled');bs[i].disabled=false;}"
+         "})()"];
 }
 
 - (BOOL)isTwoFactorPage {
