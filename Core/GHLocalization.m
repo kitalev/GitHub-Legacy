@@ -90,8 +90,9 @@ static NSDictionary *GHTranslations(void) {
             @"Код на почту": @"Email code",
             @"GitHub не отправил письмо с кодом (HTTP %ld).": @"GitHub didn't send the email with the code (HTTP %ld).",
             @"Вход в приложении": @"Sign in in the app",
-            @"Введите логин, пароль и код двухфакторной проверки прямо в приложении. Сразу можно прикреплять фото к задачам.":
-                @"Enter your username, password and two-factor code right in the app. Photos can be attached to issues right away.",
+            @"Логин, пароль и подтверждение входа вводятся прямо в приложении, без браузера. После входа можно прикреплять фото к задачам.":
+                @"Enter your username, password and sign-in confirmation right in the app, without a browser. After signing in you can attach photos to issues.",
+            @"Продолжить вход": @"Continue signing in",
             @"Подключение к github.com…": @"Connecting to github.com…",
             @"Логин и пароль отправляются напрямую на github.com.": @"Your username and password are sent directly to github.com.",
             @"Имя пользователя или email": @"Username or email",

@@ -98,7 +98,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self.scrollView addSubview:self.headerIconView];
 
     self.headerTitleLabel = GHDeviceLoginMakeLabel([UIFont boldSystemFontOfSize:19], NSTextAlignmentCenter);
-    self.headerTitleLabel.text = GHL(@"Введите код на github.com");
+    self.headerTitleLabel.text = self.opensInApp ? GHL(@"Вход в GitHub") : GHL(@"Введите код на github.com");
     [self.scrollView addSubview:self.headerTitleLabel];
 
     self.codeCard = [[UIView alloc] init];
@@ -143,7 +143,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self.stepsCard addSubview:self.stepsLabel];
 
     self.openHereButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-    [self.openHereButton setTitle:GHL(@"Открыть github.com здесь") forState:UIControlStateNormal];
+    [self.openHereButton setTitle:self.opensInApp ? GHL(@"Продолжить вход") : GHL(@"Открыть github.com здесь") forState:UIControlStateNormal];
     self.openHereButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.openHereButton addTarget:self action:@selector(openHereTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.scrollView addSubview:self.openHereButton];
@@ -259,6 +259,18 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.headerTitleLabel.frame = CGRectMake(left, y, width, titleHeight);
     y += titleHeight + 18;
 
+    if (self.opensInApp) {
+        CGFloat statusHeight = MAX([self heightForLabel:self.statusLabel width:width], 20);
+        self.spinner.frame = CGRectMake(left + floor((width - 20) / 2.0), y, 20, 20);
+        y += self.spinner.isAnimating ? 20 + 12 : 0;
+        self.statusLabel.frame = CGRectMake(left, y, width, statusHeight);
+        y += statusHeight + 18;
+        self.openHereButton.frame = CGRectMake(left, y, width, 44);
+        y += 44 + 20;
+        self.scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, y);
+        return;
+    }
+
     CGFloat expiryHeight = self.expiryLabel.text.length > 0 ? 18 : 0;
     CGFloat cardHeight = 20 + 48 + (expiryHeight > 0 ? 4 + expiryHeight : 0) + 16;
     self.codeCard.frame = CGRectMake(left, y, width, cardHeight);
@@ -308,7 +320,10 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.codeCard.hidden = hidden;
     self.codeCopyButton.hidden = hidden;
     self.refreshCodeButton.hidden = hidden;
-    self.stepsCard.hidden = hidden;
+    self.stepsCard.hidden = hidden || self.opensInApp;
+    self.codeCard.hidden = hidden || self.opensInApp;
+    self.codeCopyButton.hidden = hidden || self.opensInApp;
+    self.refreshCodeButton.hidden = hidden || self.opensInApp;
     self.openHereButton.hidden = hidden;
     self.statusLabel.hidden = hidden;
 }

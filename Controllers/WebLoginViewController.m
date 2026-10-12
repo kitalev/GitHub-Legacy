@@ -593,6 +593,7 @@ static UITextField *GHWebLoginMakeField(void) {
     }
 
     NSArray *methods = [self methodsFromPage:page excludingKind:currentKind];
+    if ([path rangeOfString:@"mobile"].location != NSNotFound) [self saveUnrecognizedPage];
     if (methods.count == 0 && [path hasPrefix:@"/sessions/two-factor"]) {
         NSMutableArray *fallback = [NSMutableArray array];
         for (NSArray *entry in @[@[@"app", @"/sessions/two-factor/app"], @[@"recovery", @"/sessions/recovery"]]) {

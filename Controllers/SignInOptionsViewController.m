@@ -221,7 +221,7 @@ static NSString * const kCellID = @"SignInOptionCell";
 
 - (NSString *)detailForOption:(NSInteger)option {
     switch (option) {
-        case 0: return GHL(@"Введите логин, пароль и код двухфакторной проверки прямо в приложении. Сразу можно прикреплять фото к задачам.");
+        case 0: return GHL(@"Логин, пароль и подтверждение входа вводятся прямо в приложении, без браузера. После входа можно прикреплять фото к задачам.");
         case 1: return GHL(@"Введите короткий код на github.com/login/device с компьютера или другого телефона. Пароль приложение не видит.");
         default: return GHL(@"Вставьте Personal Access Token, созданный вручную на github.com.");
     }
