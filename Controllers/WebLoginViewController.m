@@ -12,6 +12,7 @@ typedef NS_ENUM(NSInteger, GHWebLoginStep) {
     GHWebLoginStepCode,
     GHWebLoginStepChooseMethod,
     GHWebLoginStepAuthorize,
+    GHWebLoginStepMobile,
     GHWebLoginStepRetry,
     GHWebLoginStepPage
 };
@@ -24,6 +25,9 @@ static NSString * const kGHWebLoginAnalyzeScript =
      "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[],text:document.body?txt(document.body).substring(0,600):''};"
      "var so=document.querySelector('sudo-credential-options');var et=document.getElementById('sudo-credential-options-totp-email-csrf');"
      "if(so&&et){r.emailInitiateURL=so.getAttribute('totp-email-initiate-url')||'';r.emailInitiateToken=et.value||'';}"
+     "var mp=document.getElementById('github-mobile-authenticate-prompt');var mf=document.getElementById('github-mobile-authenticate-form');"
+     "if(mp&&mf&&location.pathname.indexOf('/sessions/two-factor')==0){var mt=mf.querySelector('.js-data-url-csrf');var md=mp.querySelector('.mobile-authentication-digits');"
+     "r.mobilePollURL=mp.getAttribute('data-poll-url')||'';r.mobileToken=mt?mt.value:'';r.mobileDigits=md?txt(md):'';}"
      "var fl=document.querySelectorAll('.flash-error');"
      "for(var i=0;i<fl.length;i++){var t=txt(fl[i]);if(t&&t.indexOf('{{')<0&&shown(fl[i])&&r.errors.indexOf(t)<0)r.errors.push(t);}"
      "for(var i=0;i<document.forms.length;i++){var f=document.forms[i];"
@@ -98,6 +102,12 @@ static UITextField *GHWebLoginMakeField(void) {
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *messageLabel;
 @property (nonatomic, strong) UILabel *errorLabel;
+@property (nonatomic, strong) UILabel *digitsLabel;
+@property (nonatomic, strong) NSTimer *pollTimer;
+@property (nonatomic, assign) NSTimeInterval pollStartedAt;
+@property (nonatomic, copy) NSString *mobilePollURL;
+@property (nonatomic, copy) NSString *mobileToken;
+@property (nonatomic, strong) NSURL *retryURL;
 @property (nonatomic, strong) UITextField *firstField;
 @property (nonatomic, strong) UITextField *secondField;
 @property (nonatomic, strong) UIButton *primaryButton;
@@ -150,6 +160,10 @@ static UITextField *GHWebLoginMakeField(void) {
     self.errorLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:14]);
     [self.scrollView addSubview:self.errorLabel];
 
+    self.digitsLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:56]);
+    self.digitsLabel.hidden = YES;
+    [self.scrollView addSubview:self.digitsLabel];
+
     self.firstField = GHWebLoginMakeField();
     self.firstField.delegate = self;
     [self.scrollView addSubview:self.firstField];
@@ -198,6 +212,7 @@ static UITextField *GHWebLoginMakeField(void) {
     self.scrollView.backgroundColor = GHBackgroundColor();
     self.iconView.image = [GHIconRenderer personIconWithColor:GHTintColor() size:56];
     self.titleLabel.textColor = GHPrimaryTextColor();
+    self.digitsLabel.textColor = GHPrimaryTextColor();
     self.messageLabel.textColor = GHSecondaryTextColor();
     self.errorLabel.textColor = [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
     self.progressSpinner.activityIndicatorViewStyle = GHSpinnerStyle();
@@ -239,6 +254,10 @@ static UITextField *GHWebLoginMakeField(void) {
     CGFloat messageHeight = [self heightForLabel:self.messageLabel width:width];
     self.messageLabel.frame = CGRectMake(left, y, width, messageHeight);
     y += messageHeight + (messageHeight > 0 ? 16 : 0);
+
+    CGFloat digitsHeight = [self heightForLabel:self.digitsLabel width:width];
+    self.digitsLabel.frame = CGRectMake(left, y, width, digitsHeight);
+    y += digitsHeight + (digitsHeight > 0 ? 16 : 0);
 
     if (self.progressSpinner.isAnimating) {
         self.progressSpinner.frame = CGRectMake(left + floor((width - 20) / 2.0), y, 20, 20);
@@ -300,6 +319,12 @@ static UITextField *GHWebLoginMakeField(void) {
     BOOL sameInput = firstPlaceholder != nil && self.lastInputStep == step;
     if (firstPlaceholder != nil || showSecondField) self.lastInputStep = step;
     self.step = step;
+    if (step != GHWebLoginStepMobile) {
+        [self.pollTimer invalidate];
+        self.pollTimer = nil;
+        self.digitsLabel.hidden = YES;
+    }
+    if (step != GHWebLoginStepRetry) self.retryURL = nil;
     self.webView.hidden = step != GHWebLoginStepPage;
     self.scrollView.hidden = step == GHWebLoginStepPage;
 
@@ -355,7 +380,7 @@ static UITextField *GHWebLoginMakeField(void) {
     if ([value rangeOfString:@"mobile"].location != NSNotFound) return @"mobile";
     if ([value rangeOfString:@"webauthn"].location != NSNotFound || [value rangeOfString:@"passkey"].location != NSNotFound
         || [value rangeOfString:@"security key"].location != NSNotFound) return @"webauthn";
-    if ([value rangeOfString:@"recovery"].location != NSNotFound) return @"recovery";
+    if ([value rangeOfString:@"recovery"].location != NSNotFound || [value rangeOfString:@"recover_prompt"].location != NSNotFound) return @"recovery";
     if ([value rangeOfString:@"sms"].location != NSNotFound || [value rangeOfString:@"text message"].location != NSNotFound) return @"sms";
     if ([value rangeOfString:@"email"].location != NSNotFound || [value rangeOfString:@"verified-device"].location != NSNotFound) return @"email";
     if ([value rangeOfString:@"two-factor/app"].location != NSNotFound || [value rangeOfString:@"authenticator"].location != NSNotFound
@@ -413,7 +438,7 @@ static UITextField *GHWebLoginMakeField(void) {
 
     for (NSDictionary *link in page[@"links"]) {
         NSString *href = GHWebLoginString(link[@"href"]);
-        NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", href, GHWebLoginString(link[@"text"])]];
+        NSString *kind = [self methodKindForString:GHWebLoginString(link[@"text"])] ?: [self methodKindForString:href];
         NSString *title = [self titleForMethodKind:kind];
         if (title == nil || [kinds containsObject:kind]) continue;
         [kinds addObject:kind];
@@ -498,6 +523,29 @@ static UITextField *GHWebLoginMakeField(void) {
     NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
     NSString *error = errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil;
     BOOL deviceMode = self.deviceUserCode.length > 0;
+
+    NSString *mobilePollURL = GHWebLoginString(page[@"mobilePollURL"]);
+    NSString *mobileToken = GHWebLoginString(page[@"mobileToken"]);
+    if (mobilePollURL.length > 0 && mobileToken.length > 0) {
+        self.mobilePollURL = mobilePollURL;
+        self.mobileToken = mobileToken;
+        NSString *digits = GHWebLoginString(page[@"mobileDigits"]);
+        [self presentStep:GHWebLoginStepMobile
+                    title:GHL(@"Подтвердите вход в GitHub Mobile")
+                  message:digits.length > 0 ? GHL(@"GitHub отправил запрос на вход в приложение GitHub Mobile. Введите там это число и нажмите «Approve»:")
+                                            : GHL(@"GitHub отправил запрос на вход в приложение GitHub Mobile. Подтвердите его на телефоне.")
+                    error:error
+               firstField:nil
+              secondField:NO
+                  primary:nil
+                  methods:[self methodsFromPage:page excludingKind:@"mobile"]];
+        self.digitsLabel.text = digits;
+        self.digitsLabel.hidden = digits.length == 0;
+        [self.progressSpinner startAnimating];
+        [self layoutContent];
+        [self startMobilePolling];
+        return;
+    }
 
     NSDictionary *passwordForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
         return [self inputOfForm:form type:@"password"] != nil;
@@ -595,7 +643,6 @@ static UITextField *GHWebLoginMakeField(void) {
     }
 
     NSArray *methods = [self methodsFromPage:page excludingKind:currentKind];
-    if ([path rangeOfString:@"mobile"].location != NSNotFound) [self saveUnrecognizedPage];
     if (methods.count == 0 && [path hasPrefix:@"/sessions/two-factor"]) {
         NSMutableArray *fallback = [NSMutableArray array];
         for (NSArray *entry in @[@[@"app", @"/sessions/two-factor/app"], @[@"recovery", @"/sessions/recovery"]]) {
@@ -704,9 +751,12 @@ static UITextField *GHWebLoginMakeField(void) {
             [self submitFormWithValues:nil loadingMessage:GHL(@"Подтверждаем устройство…")];
             break;
         case GHWebLoginStepRetry:
+        {
+            NSURL *url = self.retryURL ?: self.startURL ?: [GHWebSession signInURL];
             self.submittedDeviceCode = NO;
             [self showLoadingWithMessage:GHL(@"Подключение к github.com…")];
-            [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession signInURL]]];
+            [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
+        }
             break;
         default:
             break;
@@ -751,6 +801,78 @@ static UITextField *GHWebLoginMakeField(void) {
     self.formIndex = [method[@"form"] integerValue];
     self.buttonIndex = [method[@"button"] integerValue];
     [self submitFormWithValues:nil loadingMessage:GHL(@"Загрузка…")];
+}
+
+- (void)startMobilePolling {
+    [self.pollTimer invalidate];
+    self.pollStartedAt = [NSDate timeIntervalSinceReferenceDate];
+    [self.webView stringByEvaluatingJavaScriptFromString:@"window.__ghMobilePoll=null;window.__ghMobilePollBusy=0;"];
+    self.pollTimer = [NSTimer scheduledTimerWithTimeInterval:3.0
+                                                      target:self
+                                                    selector:@selector(mobilePollTick)
+                                                    userInfo:nil
+                                                     repeats:YES];
+}
+
+- (void)failMobileWithMessage:(NSString *)message {
+    [self presentStep:GHWebLoginStepRetry
+                title:GHL(@"Вход через GitHub Mobile не подтверждён")
+              message:message
+                error:nil
+           firstField:nil
+          secondField:NO
+              primary:GHL(@"Отправить запрос ещё раз")
+              methods:nil];
+    self.retryURL = [[NSURL URLWithString:@"/sessions/two-factor/mobile" relativeToURL:[GHWebSession baseURL]] absoluteURL];
+}
+
+- (void)mobilePollTick {
+    if (self.step != GHWebLoginStepMobile) {
+        [self.pollTimer invalidate];
+        self.pollTimer = nil;
+        return;
+    }
+    if ([NSDate timeIntervalSinceReferenceDate] - self.pollStartedAt > 300) {
+        [self failMobileWithMessage:GHL(@"Время на подтверждение истекло.")];
+        return;
+    }
+
+    NSString *script = [NSString stringWithFormat:
+        @"(function(u,t){var r=window.__ghMobilePoll;window.__ghMobilePoll=null;"
+         "if(!window.__ghMobilePollBusy){window.__ghMobilePollBusy=1;var x=new XMLHttpRequest();x.open('POST',u,true);"
+         "x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');"
+         "x.setRequestHeader('X-Requested-With','XMLHttpRequest');"
+         "x.setRequestHeader('GitHub-Verified-Fetch','true');"
+         "x.setRequestHeader('Accept','application/json');"
+         "x.onreadystatechange=function(){if(x.readyState==4){window.__ghMobilePollBusy=0;window.__ghMobilePoll=x.status+' '+x.responseText;}};"
+         "x.send('authenticity_token='+encodeURIComponent(t));}"
+         "return r||'';})(%@[0],%@[0])", GHWebLoginJSON(@[self.mobilePollURL]), GHWebLoginJSON(@[self.mobileToken])];
+    NSString *result = [self.webView stringByEvaluatingJavaScriptFromString:script];
+    if (result.length == 0) return;
+
+    NSRange space = [result rangeOfString:@" "];
+    NSInteger httpStatus = [(space.location != NSNotFound ? [result substringToIndex:space.location] : result) integerValue];
+    NSString *body = space.location != NSNotFound ? [result substringFromIndex:space.location + 1] : @"";
+    id json = body.length > 0 ? [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    NSString *status = [([json isKindOfClass:[NSDictionary class]] ? GHWebLoginString(json[@"status"]) : body) lowercaseString];
+
+    if ([status rangeOfString:@"approved"].location != NSNotFound && [status rangeOfString:@"not_approved"].location == NSNotFound) {
+        [self.pollTimer invalidate];
+        self.pollTimer = nil;
+        [self showLoadingWithMessage:GHL(@"Вход…")];
+        NSString *submitted = [self.webView stringByEvaluatingJavaScriptFromString:
+            @"(function(){var f=document.getElementById('github-mobile-authenticate-form');if(!f)return '';f.submit();return 'ok';})()"];
+        if (![submitted isEqualToString:@"ok"]) [self.webView reload];
+        return;
+    }
+    if ([status rangeOfString:@"rejected"].location != NSNotFound) {
+        [self failMobileWithMessage:GHL(@"Запрос на вход отклонён в GitHub Mobile.")];
+        return;
+    }
+    if ([status rangeOfString:@"expired"].location != NSNotFound || [status rangeOfString:@"not_found"].location != NSNotFound
+        || httpStatus >= 400) {
+        [self failMobileWithMessage:GHL(@"Время на подтверждение истекло.")];
+    }
 }
 
 - (NSString *)requestEmailCodeWithURL:(NSString *)url token:(NSString *)token {
@@ -824,8 +946,17 @@ static UITextField *GHWebLoginMakeField(void) {
               methods:nil];
 }
 
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    if ([self isMovingFromParentViewController] || [self isBeingDismissed] || self.navigationController.isBeingDismissed) {
+        [self.pollTimer invalidate];
+        self.pollTimer = nil;
+    }
+}
+
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [self.pollTimer invalidate];
     self.webView.delegate = nil;
     [self.webView stopLoading];
 }

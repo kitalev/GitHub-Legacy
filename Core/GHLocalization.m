@@ -93,6 +93,15 @@ static NSDictionary *GHTranslations(void) {
             @"Логин, пароль и подтверждение входа вводятся прямо в приложении, без браузера. После входа можно прикреплять фото к задачам.":
                 @"Enter your username, password and sign-in confirmation right in the app, without a browser. After signing in you can attach photos to issues.",
             @"Продолжить вход": @"Continue signing in",
+            @"Подтвердите вход в GitHub Mobile": @"Approve sign-in in GitHub Mobile",
+            @"GitHub отправил запрос на вход в приложение GitHub Mobile. Введите там это число и нажмите «Approve»:":
+                @"GitHub sent a sign-in request to the GitHub Mobile app. Enter this number there and tap \"Approve\":",
+            @"GitHub отправил запрос на вход в приложение GitHub Mobile. Подтвердите его на телефоне.":
+                @"GitHub sent a sign-in request to the GitHub Mobile app. Approve it on your phone.",
+            @"Вход через GitHub Mobile не подтверждён": @"GitHub Mobile sign-in not approved",
+            @"Отправить запрос ещё раз": @"Send the request again",
+            @"Время на подтверждение истекло.": @"The approval request expired.",
+            @"Запрос на вход отклонён в GitHub Mobile.": @"The sign-in request was rejected in GitHub Mobile.",
             @"Подключение к github.com…": @"Connecting to github.com…",
             @"Логин и пароль отправляются напрямую на github.com.": @"Your username and password are sent directly to github.com.",
             @"Имя пользователя или email": @"Username or email",
