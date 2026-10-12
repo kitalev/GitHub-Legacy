@@ -275,6 +275,16 @@ static UITextField *GHWebLoginMakeField(void) {
 - (void)showLoadingWithMessage:(NSString *)message {
     [self presentStep:GHWebLoginStepLoading title:nil message:message error:nil
            firstField:nil secondField:NO primary:nil methods:nil];
+    [self saveUnrecognizedPage];
+}
+
+- (void)saveUnrecognizedPage {
+    NSString *html = [self.webView stringByEvaluatingJavaScriptFromString:@"document.documentElement.outerHTML"];
+    if (html.length == 0) return;
+    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
+    NSString *path = [documents stringByAppendingPathComponent:@"GitHubLegacy-login-page.html"];
+    NSString *contents = [NSString stringWithFormat:@"<!-- %@ -->\n%@", self.webView.request.URL.absoluteString ?: @"", html];
+    [contents writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
 - (void)presentStep:(GHWebLoginStep)step
@@ -583,6 +593,15 @@ static UITextField *GHWebLoginMakeField(void) {
     }
 
     NSArray *methods = [self methodsFromPage:page excludingKind:currentKind];
+    if (methods.count == 0 && [path hasPrefix:@"/sessions/two-factor"]) {
+        NSMutableArray *fallback = [NSMutableArray array];
+        for (NSArray *entry in @[@[@"app", @"/sessions/two-factor/app"], @[@"recovery", @"/sessions/recovery"]]) {
+            if ([entry[0] isEqualToString:currentKind]) continue;
+            NSString *href = [[[NSURL URLWithString:entry[1] relativeToURL:[GHWebSession baseURL]] absoluteURL] absoluteString];
+            [fallback addObject:@{@"title": [self titleForMethodKind:entry[0]], @"href": href}];
+        }
+        methods = fallback;
+    }
     if (methods.count > 0) {
         [self presentStep:GHWebLoginStepChooseMethod
                     title:GHL(@"Двухфакторная проверка")
