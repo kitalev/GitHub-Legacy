@@ -282,7 +282,9 @@ static UITextField *GHWebLoginMakeField(void) {
     NSString *html = [self.webView stringByEvaluatingJavaScriptFromString:@"document.documentElement.outerHTML"];
     if (html.length == 0) return;
     NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-    NSString *path = [documents stringByAppendingPathComponent:@"GitHubLegacy-login-page.html"];
+    NSString *pagePath = self.webView.request.URL.path.length > 1 ? self.webView.request.URL.path : @"/root";
+    NSString *name = [[pagePath substringFromIndex:1] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    NSString *path = [documents stringByAppendingPathComponent:[NSString stringWithFormat:@"GitHubLegacy-login-%@.html", name]];
     NSString *contents = [NSString stringWithFormat:@"<!-- %@ -->\n%@", self.webView.request.URL.absoluteString ?: @"", html];
     [contents writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
