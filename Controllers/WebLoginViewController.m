@@ -297,6 +297,12 @@ static UITextField *GHWebLoginMakeField(void) {
     [self saveUnrecognizedPage];
 }
 
+- (void)saveDiagnostic:(NSString *)contents named:(NSString *)name {
+    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
+    NSString *path = [documents stringByAppendingPathComponent:[@"GitHubLegacy-login-" stringByAppendingString:name]];
+    [contents writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
 - (void)saveUnrecognizedPage {
     NSString *html = [self.webView stringByEvaluatingJavaScriptFromString:@"document.documentElement.outerHTML"];
     if (html.length == 0) return;
@@ -653,6 +659,7 @@ static UITextField *GHWebLoginMakeField(void) {
         methods = fallback;
     }
     if (methods.count > 0) {
+        [self saveUnrecognizedPage];
         [self presentStep:GHWebLoginStepChooseMethod
                     title:GHL(@"Двухфакторная проверка")
                   message:GHL(@"Подтверждение через GitHub Mobile здесь не работает. Выберите другой способ.")
@@ -856,10 +863,31 @@ static UITextField *GHWebLoginMakeField(void) {
     id json = body.length > 0 ? [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     NSString *status = [([json isKindOfClass:[NSDictionary class]] ? GHWebLoginString(json[@"status"]) : body) lowercaseString];
 
+    if ([status rangeOfString:@"active"].location == NSNotFound) [self saveDiagnostic:result named:@"mobile-poll.txt"];
+
     if ([status rangeOfString:@"approved"].location != NSNotFound && [status rangeOfString:@"not_approved"].location == NSNotFound) {
         [self.pollTimer invalidate];
         self.pollTimer = nil;
         [self showLoadingWithMessage:GHL(@"Вход…")];
+        NSString *redirect = nil;
+        if ([json isKindOfClass:[NSDictionary class]]) {
+            for (NSString *key in @[@"redirect_url", @"redirect_to", @"redirect", @"location", @"url"]) {
+                if (GHWebLoginString(json[key]).length > 0) {
+                    redirect = json[key];
+                    break;
+                }
+            }
+        }
+        NSURL *next = nil;
+        if (redirect.length > 0) {
+            next = [[NSURL URLWithString:redirect relativeToURL:[GHWebSession baseURL]] absoluteURL];
+        } else if ([GHWebSession isSignedIn]) {
+            next = self.startURL ?: [GHWebSession baseURL];
+        }
+        if (next) {
+            [self.webView loadRequest:[NSURLRequest requestWithURL:next]];
+            return;
+        }
         NSString *submitted = [self.webView stringByEvaluatingJavaScriptFromString:
             @"(function(){var f=document.getElementById('github-mobile-authenticate-form');if(!f)return '';f.submit();return 'ok';})()"];
         if (![submitted isEqualToString:@"ok"]) [self.webView reload];
