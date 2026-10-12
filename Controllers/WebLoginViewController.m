@@ -22,6 +22,8 @@ static NSString * const kGHWebLoginAnalyzeScript =
      "function shown(e){if(!e||e.type=='hidden')return false;var s=window.getComputedStyle(e);"
      "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
      "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[],text:document.body?txt(document.body).substring(0,600):''};"
+     "var so=document.querySelector('sudo-credential-options');var et=document.getElementById('sudo-credential-options-totp-email-csrf');"
+     "if(so&&et){r.emailInitiateURL=so.getAttribute('totp-email-initiate-url')||'';r.emailInitiateToken=et.value||'';}"
      "var fl=document.querySelectorAll('.flash-error');"
      "for(var i=0;i<fl.length;i++){var t=txt(fl[i]);if(t&&t.indexOf('{{')<0&&shown(fl[i])&&r.errors.indexOf(t)<0)r.errors.push(t);}"
      "for(var i=0;i<document.forms.length;i++){var f=document.forms[i];"
@@ -344,7 +346,8 @@ static UITextField *GHWebLoginMakeField(void) {
     if ([value rangeOfString:@"recovery"].location != NSNotFound) return @"recovery";
     if ([value rangeOfString:@"sms"].location != NSNotFound || [value rangeOfString:@"text message"].location != NSNotFound) return @"sms";
     if ([value rangeOfString:@"email"].location != NSNotFound || [value rangeOfString:@"verified-device"].location != NSNotFound) return @"email";
-    if ([value rangeOfString:@"two-factor/app"].location != NSNotFound || [value rangeOfString:@"authenticator"].location != NSNotFound) return @"app";
+    if ([value rangeOfString:@"two-factor/app"].location != NSNotFound || [value rangeOfString:@"authenticator"].location != NSNotFound
+        || [value rangeOfString:@"app_otp"].location != NSNotFound || [value rangeOfString:@"totp"].location != NSNotFound) return @"app";
     return nil;
 }
 
@@ -368,18 +371,26 @@ static UITextField *GHWebLoginMakeField(void) {
     NSMutableSet *kinds = [NSMutableSet set];
     if (currentKind) [kinds addObject:currentKind];
 
+    NSString *emailInitiateURL = GHWebLoginString(page[@"emailInitiateURL"]);
+    NSString *emailInitiateToken = GHWebLoginString(page[@"emailInitiateToken"]);
     for (NSDictionary *form in page[@"forms"]) {
         NSString *action = GHWebLoginString(form[@"action"]);
-        if (![self isChallengeString:action]) continue;
         NSDictionary *codeInput = [self inputOfForm:form type:@"text" visibleOnly:NO];
         NSDictionary *passwordInput = [self inputOfForm:form type:@"password" visibleOnly:NO];
+        NSString *codeName = GHWebLoginString(codeInput[@"name"]);
+        if (![self isChallengeString:action] && ![self isChallengeString:codeName]) continue;
         if (codeInput) {
-            NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", action, GHWebLoginString(codeInput[@"name"])]] ?: @"app";
+            NSString *kind = [self methodKindForString:codeName] ?: [self methodKindForString:action] ?: @"app";
             NSString *title = [self titleForMethodKind:kind];
             if (title == nil || [kinds containsObject:kind]) continue;
             [kinds addObject:kind];
-            [methods addObject:@{@"title": title, @"codeForm": form[@"index"], @"input": GHWebLoginString(codeInput[@"name"]),
-                                 @"button": @([self submitButtonIndexOfForm:form preferring:nil]), @"kind": kind}];
+            NSMutableDictionary *method = [@{@"title": title, @"codeForm": form[@"index"], @"input": codeName,
+                                             @"button": @([self submitButtonIndexOfForm:form preferring:nil]), @"kind": kind} mutableCopy];
+            if ([kind isEqualToString:@"email"] && emailInitiateURL.length > 0 && emailInitiateToken.length > 0) {
+                method[@"initiateURL"] = emailInitiateURL;
+                method[@"initiateToken"] = emailInitiateToken;
+            }
+            [methods addObject:method];
         } else if (passwordInput) {
             if ([kinds containsObject:@"password"]) continue;
             [kinds addObject:@"password"];
@@ -554,9 +565,10 @@ static UITextField *GHWebLoginMakeField(void) {
 
     NSString *currentKind = [self methodKindForString:path];
     NSDictionary *codeForm = [self formInPage:page matching:^BOOL(NSDictionary *form) {
-        NSString *target = [NSString stringWithFormat:@"%@ %@", GHWebLoginString(form[@"action"]), path];
-        if ([target rangeOfString:@"search"].location != NSNotFound) return NO;
-        return [self isChallengeString:target] && [self inputOfForm:form type:@"text"] != nil;
+        NSDictionary *input = [self inputOfForm:form type:@"text"];
+        NSString *target = [NSString stringWithFormat:@"%@ %@ %@", GHWebLoginString(form[@"action"]), path, GHWebLoginString(input[@"name"])];
+        if (input == nil || [target rangeOfString:@"search"].location != NSNotFound) return NO;
+        return [self isChallengeString:target];
     }];
     if (codeForm) {
         self.formIndex = [codeForm[@"index"] integerValue];
@@ -702,7 +714,8 @@ static UITextField *GHWebLoginMakeField(void) {
         } else {
             self.firstFieldName = method[@"input"];
             self.secondFieldName = nil;
-            [self presentCodeStepForKind:method[@"kind"] error:nil methods:others];
+            NSString *error = method[@"initiateURL"] ? [self requestEmailCodeWithURL:method[@"initiateURL"] token:method[@"initiateToken"]] : nil;
+            [self presentCodeStepForKind:method[@"kind"] error:error methods:others];
         }
         return;
     }
@@ -716,6 +729,20 @@ static UITextField *GHWebLoginMakeField(void) {
     self.formIndex = [method[@"form"] integerValue];
     self.buttonIndex = [method[@"button"] integerValue];
     [self submitFormWithValues:nil loadingMessage:GHL(@"Загрузка…")];
+}
+
+- (NSString *)requestEmailCodeWithURL:(NSString *)url token:(NSString *)token {
+    NSString *script = [NSString stringWithFormat:
+        @"(function(u,t){try{var x=new XMLHttpRequest();x.open('POST',u,false);"
+         "x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');"
+         "x.setRequestHeader('X-Requested-With','XMLHttpRequest');"
+         "x.setRequestHeader('GitHub-Verified-Fetch','true');"
+         "x.setRequestHeader('Accept','application/json');"
+         "x.send('authenticity_token='+encodeURIComponent(t));return String(x.status);}catch(e){return '0';}"
+         "})(%@[0],%@[0])", GHWebLoginJSON(@[url]), GHWebLoginJSON(@[token])];
+    NSInteger status = [[self.webView stringByEvaluatingJavaScriptFromString:script] integerValue];
+    if (status >= 200 && status < 300) return nil;
+    return [NSString stringWithFormat:GHL(@"GitHub не отправил письмо с кодом (HTTP %ld)."), (long)status];
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {

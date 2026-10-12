@@ -88,6 +88,7 @@ static NSDictionary *GHTranslations(void) {
             @"Код из SMS": @"SMS code",
             @"Код восстановления": @"Recovery code",
             @"Код на почту": @"Email code",
+            @"GitHub не отправил письмо с кодом (HTTP %ld).": @"GitHub didn't send the email with the code (HTTP %ld).",
             @"Вход в приложении": @"Sign in in the app",
             @"Введите логин, пароль и код двухфакторной проверки прямо в приложении. Сразу можно прикреплять фото к задачам.":
                 @"Enter your username, password and two-factor code right in the app. Photos can be attached to issues right away.",
