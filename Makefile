@@ -62,6 +62,7 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Controllers/DeviceLoginViewController.m \
 	Controllers/SignInOptionsViewController.m \
 	Core/GHLocalization.m \
+	Core/GHQRCode.m \
 	Controllers/LanguageViewController.m
 
 GitHubLegacy_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore

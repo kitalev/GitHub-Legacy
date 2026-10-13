@@ -8,8 +8,11 @@
 #import "GHIconRenderer.h"
 #import "GHLoginSuccessView.h"
 #import "WebLoginViewController.h"
+#import "GHQRCode.h"
 
 static NSString * const kGHDeviceLoginScope = @"repo user:follow";
+static NSString * const kGHDeviceLoginURL = @"https://github.com/login/device";
+static const CGFloat kGHDeviceLoginQRSize = 168;
 
 static UIColor *GHDeviceLoginErrorColor(void) {
     return [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
@@ -38,6 +41,10 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 @property (nonatomic, strong) UILabel *expiryLabel;
 @property (nonatomic, strong) UIButton *codeCopyButton;
 @property (nonatomic, strong) UIButton *refreshCodeButton;
+@property (nonatomic, strong) UIView *qrCard;
+@property (nonatomic, strong) UIImageView *qrImageView;
+@property (nonatomic, strong) UILabel *qrCaptionLabel;
+@property (nonatomic, copy) NSString *qrString;
 @property (nonatomic, strong) UIView *stepsCard;
 @property (nonatomic, strong) UILabel *stepsLabel;
 @property (nonatomic, strong) UIButton *openHereButton;
@@ -62,7 +69,8 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = self.opensInApp ? GHL(@"Вход в приложении") : GHL(@"Вход через github.com");
+    self.title = self.usesGoogle ? GHL(@"Вход через Google")
+               : self.opensInApp ? GHL(@"Вход в приложении") : GHL(@"Вход через github.com");
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                               selector:@selector(applyTheme)
@@ -134,17 +142,34 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self.refreshCodeButton addTarget:self action:@selector(refreshCodeTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.scrollView addSubview:self.refreshCodeButton];
 
+    self.qrCard = [[UIView alloc] init];
+    self.qrCard.layer.cornerRadius = 12.0;
+    self.qrCard.layer.borderWidth = 1.0;
+    [self.scrollView addSubview:self.qrCard];
+
+    self.qrImageView = [[UIImageView alloc] init];
+    self.qrImageView.contentMode = UIViewContentModeCenter;
+    self.qrImageView.backgroundColor = [UIColor whiteColor];
+    self.qrImageView.layer.cornerRadius = 8.0;
+    self.qrImageView.clipsToBounds = YES;
+    [self.qrCard addSubview:self.qrImageView];
+
+    self.qrCaptionLabel = GHDeviceLoginMakeLabel([UIFont systemFontOfSize:13], NSTextAlignmentCenter);
+    self.qrCaptionLabel.text = GHL(@"Отсканируйте камерой другого устройства, чтобы открыть github.com/login/device");
+    [self.qrCard addSubview:self.qrCaptionLabel];
+    [self updateQRCodeForURL:[NSURL URLWithString:kGHDeviceLoginURL]];
+
     self.stepsCard = [[UIView alloc] init];
     self.stepsCard.layer.cornerRadius = 12.0;
     self.stepsCard.layer.borderWidth = 1.0;
     [self.scrollView addSubview:self.stepsCard];
 
     self.stepsLabel = GHDeviceLoginMakeLabel([UIFont systemFontOfSize:15], NSTextAlignmentLeft);
-    self.stepsLabel.text = GHL(@"1. Нажмите «Открыть github.com здесь» — код скопируется сам. Или откройте github.com/login/device на другом устройстве\n2. Войдите в аккаунт и вставьте код\n3. Нажмите «Authorize» — этот экран обновится сам");
+    self.stepsLabel.text = GHL(@"1. Отсканируйте QR-код или откройте github.com/login/device на компьютере или другом телефоне\n2. Войдите в аккаунт и введите код\n3. Нажмите «Authorize» — этот экран обновится сам");
     [self.stepsCard addSubview:self.stepsLabel];
 
     self.openHereButton = GHMakeButton(GHButtonStylePrimary);
-    [self.openHereButton setTitle:self.opensInApp ? GHL(@"Продолжить вход") : GHL(@"Открыть github.com здесь") forState:UIControlStateNormal];
+    [self.openHereButton setTitle:GHL(@"Продолжить вход") forState:UIControlStateNormal];
     self.openHereButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.openHereButton addTarget:self action:@selector(openHereTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.scrollView addSubview:self.openHereButton];
@@ -192,6 +217,10 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.codeCard.layer.borderColor = GHSeparatorColor().CGColor;
     self.codeLabel.textColor = GHPrimaryTextColor();
     self.expiryLabel.textColor = GHSecondaryTextColor();
+
+    self.qrCard.backgroundColor = GHCellBackgroundColor();
+    self.qrCard.layer.borderColor = GHSeparatorColor().CGColor;
+    self.qrCaptionLabel.textColor = GHSecondaryTextColor();
 
     self.stepsCard.backgroundColor = GHCellBackgroundColor();
     self.stepsCard.layer.borderColor = GHSeparatorColor().CGColor;
@@ -309,13 +338,17 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.refreshCodeButton.frame = CGRectMake(left + width - buttonWidth, y, buttonWidth, 40);
     y += 40 + 18;
 
+    CGFloat qrSide = kGHDeviceLoginQRSize;
+    CGFloat captionHeight = [self heightForLabel:self.qrCaptionLabel width:width - 28];
+    self.qrCard.frame = CGRectMake(left, y, width, 16 + qrSide + 10 + captionHeight + 14);
+    self.qrImageView.frame = CGRectMake(floor((width - qrSide) / 2.0), 16, qrSide, qrSide);
+    self.qrCaptionLabel.frame = CGRectMake(14, 16 + qrSide + 10, width - 28, captionHeight);
+    y += self.qrCard.frame.size.height + 12;
+
     CGFloat stepsHeight = [self heightForLabel:self.stepsLabel width:width - 28];
     self.stepsCard.frame = CGRectMake(left, y, width, stepsHeight + 28);
     self.stepsLabel.frame = CGRectMake(14, 14, width - 28, stepsHeight);
-    y += stepsHeight + 28 + 12;
-
-    self.openHereButton.frame = CGRectMake(left, y, width, 44);
-    y += 44 + 20;
+    y += stepsHeight + 28 + 20;
 
     CGFloat statusHeight = [self heightForLabel:self.statusLabel width:width - 30];
     if (self.spinner.isAnimating && self.retryButton.hidden) {
@@ -347,10 +380,11 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.codeCopyButton.hidden = hidden;
     self.refreshCodeButton.hidden = hidden;
     self.stepsCard.hidden = hidden || self.opensInApp;
+    self.qrCard.hidden = hidden || self.opensInApp;
     self.codeCard.hidden = hidden || self.opensInApp;
     self.codeCopyButton.hidden = hidden || self.opensInApp;
     self.refreshCodeButton.hidden = hidden || self.opensInApp;
-    self.openHereButton.hidden = hidden;
+    self.openHereButton.hidden = hidden || !self.opensInApp;
     self.statusLabel.hidden = hidden;
 }
 
@@ -440,7 +474,8 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
         strongSelf.codeLabel.alpha = 1.0;
         strongSelf.codeCopyButton.enabled = YES;
         strongSelf.verificationURL = (verificationURI.length > 0 ? [NSURL URLWithString:verificationURI] : nil)
-            ?: [NSURL URLWithString:@"https://github.com/login/device"];
+            ?: [NSURL URLWithString:kGHDeviceLoginURL];
+        [strongSelf updateQRCodeForURL:strongSelf.verificationURL];
         strongSelf.openHereButton.enabled = YES;
         NSInteger lifetime = expiresIn;
         if (lifetime % 60 >= 55) lifetime += 60 - lifetime % 60;
@@ -459,6 +494,15 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
             [strongSelf openHereTapped];
         }
     }];
+}
+
+- (void)updateQRCodeForURL:(NSURL *)url {
+    NSString *string = url.absoluteString;
+    if (string.length == 0 || [string isEqualToString:self.qrString]) return;
+    UIImage *image = [GHQRCode imageForString:string size:kGHDeviceLoginQRSize - 8];
+    if (!image) return;
+    self.qrString = string;
+    self.qrImageView.image = image;
 }
 
 - (void)updateExpiryLabel {
@@ -524,6 +568,8 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     WebLoginViewController *webVC = [[WebLoginViewController alloc] init];
     webVC.startURL = self.verificationURL;
     webVC.deviceUserCode = self.codeLabel.text;
+    webVC.prefersGoogle = self.usesGoogle;
+    if (self.usesGoogle) webVC.title = GHL(@"Вход через Google");
     [self.navigationController pushViewController:webVC animated:YES];
 }
 

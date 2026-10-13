@@ -69,8 +69,15 @@ static NSDictionary *GHTranslations(void) {
             @"Скопировать": @"Copy",
             @"Скопировано": @"Copied",
             @"Новый код": @"New code",
-            @"1. Нажмите «Открыть github.com здесь» — код скопируется сам. Или откройте github.com/login/device на другом устройстве\n2. Войдите в аккаунт и вставьте код\n3. Нажмите «Authorize» — этот экран обновится сам":
-                @"1. Tap \"Open github.com here\" — the code is copied automatically. Or open github.com/login/device on another device\n2. Sign in and paste the code\n3. Tap \"Authorize\" — this screen will update on its own",
+            @"1. Отсканируйте QR-код или откройте github.com/login/device на компьютере или другом телефоне\n2. Войдите в аккаунт и введите код\n3. Нажмите «Authorize» — этот экран обновится сам":
+                @"1. Scan the QR code or open github.com/login/device on a computer or another phone\n2. Sign in and enter the code\n3. Tap \"Authorize\" — this screen will update on its own",
+            @"Отсканируйте камерой другого устройства, чтобы открыть github.com/login/device":
+                @"Scan with another device's camera to open github.com/login/device",
+            @"Войти через Google": @"Sign in with Google",
+            @"Вход через Google": @"Sign in with Google",
+            @"Вход через аккаунт Google, привязанный к GitHub. Всё происходит прямо в приложении.":
+                @"Use the Google account linked to your GitHub. Everything happens right in the app.",
+            @"Переход к Google…": @"Opening Google…",
             @"Открыть github.com здесь": @"Open github.com here",
             @"Не удалось открыть github.com": @"Couldn't open github.com",
             @"Ожидание подтверждения…": @"Waiting for confirmation…",
@@ -171,7 +178,6 @@ static NSDictionary *GHTranslations(void) {
             @"Как получить токен": @"How to get a token",
             @"1. Откройте github.com/settings/tokens — удобнее с компьютера\n2. Generate new token → Generate new token (classic)\n3. Note — любое название, например «iPhone 4S»\n4. Expiration — срок действия; по истечении нужен новый токен\n5. Scopes — отметьте «repo» и «user:follow». Если приватные репозитории не нужны, вместо «repo» хватит «public_repo»\n6. Generate token — скопируйте токен и вставьте выше. GitHub покажет его только один раз":
                 @"1. Open github.com/settings/tokens — easier from a computer\n2. Generate new token → Generate new token (classic)\n3. Note — any name, e.g. \"iPhone 4S\"\n4. Expiration — how long it stays valid; you'll need a new token after that\n5. Scopes — check \"repo\" and \"user:follow\". If you don't need private repositories, \"public_repo\" is enough instead of \"repo\"\n6. Generate token — copy it and paste it above. GitHub shows it only once",
-            @"Открыть github.com/settings/tokens": @"Open github.com/settings/tokens",
             @"В буфере обмена ничего нет.": @"The clipboard is empty.",
             @"Проверка токена…": @"Checking token…",
             @"Не удалось войти — проверьте правильность токена и его срок действия.":

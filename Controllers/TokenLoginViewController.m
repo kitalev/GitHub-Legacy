@@ -7,8 +7,6 @@
 #import "GHIconRenderer.h"
 #import "GHLoginSuccessView.h"
 
-static NSString * const kGHTokenSettingsURL = @"https://github.com/settings/tokens";
-
 static UIColor *GHTokenLoginErrorColor(void) {
     return [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
 }
@@ -39,7 +37,6 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
 @property (nonatomic, strong) UILabel *stepsTitleLabel;
 @property (nonatomic, strong) UIView *stepsCard;
 @property (nonatomic, strong) UILabel *stepsLabel;
-@property (nonatomic, strong) UIButton *openSettingsButton;
 
 @property (nonatomic, strong) GHLoginSuccessView *successView;
 @property (nonatomic, assign) BOOL statusIsError;
@@ -137,12 +134,6 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     self.stepsLabel.text = GHL(@"1. Откройте github.com/settings/tokens — удобнее с компьютера\n2. Generate new token → Generate new token (classic)\n3. Note — любое название, например «iPhone 4S»\n4. Expiration — срок действия; по истечении нужен новый токен\n5. Scopes — отметьте «repo» и «user:follow». Если приватные репозитории не нужны, вместо «repo» хватит «public_repo»\n6. Generate token — скопируйте токен и вставьте выше. GitHub покажет его только один раз");
     [self.stepsCard addSubview:self.stepsLabel];
 
-    self.openSettingsButton = GHMakeButton(GHButtonStyleSecondary);
-    [self.openSettingsButton setTitle:GHL(@"Открыть github.com/settings/tokens") forState:UIControlStateNormal];
-    self.openSettingsButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-    self.openSettingsButton.titleLabel.adjustsFontSizeToFitWidth = YES;
-    [self.openSettingsButton addTarget:self action:@selector(openSettingsTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.scrollView addSubview:self.openSettingsButton];
 
     self.successView = [[GHLoginSuccessView alloc] initWithFrame:self.view.bounds];
     self.successView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -169,7 +160,6 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     self.tokenField.textColor = GHPrimaryTextColor();
     GHStyleButton(self.pasteButton, GHButtonStyleSecondary);
     GHStyleButton(self.loginButton, GHButtonStylePrimary);
-    GHStyleButton(self.openSettingsButton, GHButtonStyleSecondary);
 
     self.stepsTitleLabel.textColor = GHPrimaryTextColor();
     self.stepsCard.backgroundColor = GHCellBackgroundColor();
@@ -209,7 +199,8 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     y += subtitleHeight + 18;
 
     self.fieldCard.frame = CGRectMake(left, y, width, 50);
-    CGFloat pasteWidth = 86;
+    CGSize pasteTitleSize = [[self.pasteButton titleForState:UIControlStateNormal] sizeWithFont:self.pasteButton.titleLabel.font];
+    CGFloat pasteWidth = MIN(MAX(86, ceil(pasteTitleSize.width) + 36), floor(width / 2.0));
     self.pasteButton.frame = CGRectMake(width - pasteWidth - 7, 8, pasteWidth, 34);
     self.tokenField.frame = CGRectMake(12, 5, width - pasteWidth - 7 - 12 - 8, 40);
     y += 50 + 12;
@@ -237,10 +228,7 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     CGFloat stepsHeight = [self heightForLabel:self.stepsLabel width:width - 28];
     self.stepsCard.frame = CGRectMake(left, y, width, stepsHeight + 28);
     self.stepsLabel.frame = CGRectMake(14, 14, width - 28, stepsHeight);
-    y += stepsHeight + 28 + 12;
-
-    self.openSettingsButton.frame = CGRectMake(left, y, width, 40);
-    y += 40 + 24;
+    y += stepsHeight + 28 + 24;
 
     self.scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, y);
 }
@@ -272,9 +260,6 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     [self tokenChanged];
 }
 
-- (void)openSettingsTapped {
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:kGHTokenSettingsURL]];
-}
 
 - (void)dismissKeyboard {
     [self.tokenField resignFirstResponder];

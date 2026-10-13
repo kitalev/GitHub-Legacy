@@ -43,7 +43,7 @@ static NSString * const kGHWebLoginAnalyzeScript =
      "r.forms.push(o);}"
      "var as=document.querySelectorAll('a[href]');"
      "for(var i=0;i<as.length;i++){var h=as[i].getAttribute('href')||'';"
-     "if(/two-factor|recovery|verified-device|sudo/.test(h))r.links.push({href:as[i].href,text:txt(as[i])});}"
+     "if(/two-factor|recovery|verified-device|sudo|google/.test(h))r.links.push({href:as[i].href,text:txt(as[i])});}"
      "return JSON.stringify(r);"
      "})()";
 
@@ -67,6 +67,9 @@ static NSString * const kGHWebLoginDeviceCodeScript =
      "if(b&&b.name){var h=document.createElement('input');h.type='hidden';h.name=b.name;h.value=b.value;f.appendChild(h);}"
      "f.submit();return 'ok';"
      "})(%ld,%@[0],%ld)";
+
+static NSString * const kGHWebLoginGoogleUserAgent =
+    @"Mozilla/5.0 (iPhone; CPU iPhone OS 12_5_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Mobile/15E148 Safari/604.1";
 
 static const NSInteger kGHWebLoginRowIconTag = 1001;
 static const NSInteger kGHWebLoginRowTitleTag = 1002;
@@ -191,6 +194,7 @@ static UIView *GHWebLoginMakeCard(void) {
 @property (nonatomic, assign) BOOL submittedDeviceCode;
 @property (nonatomic, strong) NSMutableSet *autoSubmittedActions;
 @property (nonatomic, assign) BOOL finished;
+@property (nonatomic, assign) BOOL startedGoogle;
 @end
 
 @implementation WebLoginViewController
@@ -1017,6 +1021,8 @@ static UIView *GHWebLoginMakeCard(void) {
     NSString *error = errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil;
     BOOL deviceMode = self.deviceUserCode.length > 0;
 
+    if (self.prefersGoogle && [self handleGoogleInPage:page]) return;
+
     NSString *mobilePollURL = GHWebLoginString(page[@"mobilePollURL"]);
     NSString *mobileToken = GHWebLoginString(page[@"mobileToken"]);
     if (mobilePollURL.length > 0 && mobileToken.length > 0) {
@@ -1179,6 +1185,53 @@ static UIView *GHWebLoginMakeCard(void) {
     }
 
     [self showPage];
+}
+
+- (BOOL)isGoogleURL:(NSURL *)url {
+    NSString *host = [url.host lowercaseString];
+    return [host isEqualToString:@"google.com"] || [host hasSuffix:@".google.com"]
+        || [host isEqualToString:@"gstatic.com"] || [host hasSuffix:@".gstatic.com"];
+}
+
+- (BOOL)handleGoogleInPage:(NSDictionary *)page {
+    NSString *host = [GHWebLoginString(page[@"host"]) lowercaseString];
+    if (![host isEqualToString:@"github.com"]) {
+        [self showPage];
+        return YES;
+    }
+
+    BOOL loginPage = [self formInPage:page matching:^BOOL(NSDictionary *form) {
+        return [self inputOfForm:form type:@"password"] != nil && [self inputOfForm:form type:@"text"] != nil;
+    }] != nil;
+    if (!loginPage) return NO;
+    if (self.startedGoogle) {
+        [self showPage];
+        return YES;
+    }
+
+    for (NSDictionary *form in page[@"forms"]) {
+        NSString *action = [GHWebLoginString(form[@"action"]) lowercaseString];
+        for (NSDictionary *button in form[@"buttons"]) {
+            NSString *text = [GHWebLoginString(button[@"text"]) lowercaseString];
+            if ([action rangeOfString:@"google"].location == NSNotFound && [text rangeOfString:@"google"].location == NSNotFound) continue;
+            self.startedGoogle = YES;
+            self.formIndex = [form[@"index"] integerValue];
+            self.buttonIndex = [button[@"index"] integerValue];
+            [self submitFormWithValues:nil loadingMessage:GHL(@"Переход к Google…")];
+            return YES;
+        }
+    }
+    for (NSDictionary *link in page[@"links"]) {
+        NSString *href = GHWebLoginString(link[@"href"]);
+        if ([[href lowercaseString] rangeOfString:@"google"].location == NSNotFound) continue;
+        self.startedGoogle = YES;
+        [self showLoadingWithMessage:GHL(@"Переход к Google…")];
+        [self.webView loadRequest:[NSURLRequest requestWithURL:[[NSURL URLWithString:href relativeToURL:[GHWebSession baseURL]] absoluteURL]]];
+        return YES;
+    }
+
+    [self showPage];
+    return YES;
 }
 
 - (BOOL)autoSubmitContinueFormInPage:(NSDictionary *)page {
@@ -1431,6 +1484,13 @@ static UIView *GHWebLoginMakeCard(void) {
                 navigationType:(UIWebViewNavigationType)navigationType {
     if (self.finished) return NO;
     if (request.URL == nil || ![request.mainDocumentURL isEqual:request.URL]) return YES;
+    if (self.prefersGoogle && [self isGoogleURL:request.URL]
+        && ![[request valueForHTTPHeaderField:@"User-Agent"] isEqualToString:kGHWebLoginGoogleUserAgent]) {
+        NSMutableURLRequest *spoofed = [request mutableCopy];
+        [spoofed setValue:kGHWebLoginGoogleUserAgent forHTTPHeaderField:@"User-Agent"];
+        [webView loadRequest:spoofed];
+        return NO;
+    }
     return ![self finishIfSignedInAtURL:request.URL];
 }
 

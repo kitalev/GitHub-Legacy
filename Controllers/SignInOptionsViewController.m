@@ -7,6 +7,18 @@
 
 static NSString * const kCellID = @"SignInOptionCell";
 
+static UIImage *GHGoogleIcon(CGFloat size) {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0);
+    UIFont *font = [UIFont boldSystemFontOfSize:floor(size * 0.72)];
+    NSString *letter = @"G";
+    CGSize textSize = [letter sizeWithFont:font];
+    [[UIColor colorWithRed:0.26 green:0.52 blue:0.96 alpha:1.0] setFill];
+    [letter drawAtPoint:CGPointMake(floor((size - textSize.width) / 2.0), floor((size - textSize.height) / 2.0)) withFont:font];
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
 @interface GHSignInOptionCell : UITableViewCell
 @property (nonatomic, strong) UIImageView *iconView;
 @property (nonatomic, strong) UILabel *titleLabel;
@@ -186,7 +198,7 @@ static NSString * const kCellID = @"SignInOptionCell";
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? 1 : 2;
+    return section == 0 ? 1 : 3;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -214,7 +226,8 @@ static NSString * const kCellID = @"SignInOptionCell";
 - (NSString *)titleForOption:(NSInteger)option {
     switch (option) {
         case 0: return GHL(@"Войти в приложении");
-        case 1: return GHL(@"Войти через github.com");
+        case 1: return GHL(@"Войти через Google");
+        case 2: return GHL(@"Войти через github.com");
         default: return GHL(@"Войти по токену");
     }
 }
@@ -222,7 +235,8 @@ static NSString * const kCellID = @"SignInOptionCell";
 - (NSString *)detailForOption:(NSInteger)option {
     switch (option) {
         case 0: return GHL(@"Логин и пароль вводятся прямо в приложении. Вход подтверждается через GitHub Mobile, кодом из приложения-аутентификатора или кодом восстановления.");
-        case 1: return GHL(@"Введите короткий код на github.com/login/device с компьютера или другого телефона. Пароль приложение не видит.");
+        case 1: return GHL(@"Вход через аккаунт Google, привязанный к GitHub. Всё происходит прямо в приложении.");
+        case 2: return GHL(@"Введите короткий код на github.com/login/device с компьютера или другого телефона. Пароль приложение не видит.");
         default: return GHL(@"Вставьте Personal Access Token, созданный вручную на github.com.");
     }
 }
@@ -230,7 +244,8 @@ static NSString * const kCellID = @"SignInOptionCell";
 - (UIImage *)iconForOption:(NSInteger)option {
     switch (option) {
         case 0: return [GHIconRenderer personIconWithColor:GHTintColor() size:36];
-        case 1: return [GHIconRenderer devicesIconWithColor:GHSecondaryTextColor() size:36];
+        case 1: return GHGoogleIcon(36);
+        case 2: return [GHIconRenderer devicesIconWithColor:GHSecondaryTextColor() size:36];
         default: return [GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:36];
     }
 }
@@ -259,9 +274,10 @@ static NSString * const kCellID = @"SignInOptionCell";
 
     __weak typeof(self) weakSelf = self;
     NSInteger option = [self optionAtIndexPath:indexPath];
-    if (option < 2) {
+    if (option < 3) {
         DeviceLoginViewController *deviceVC = [[DeviceLoginViewController alloc] init];
-        deviceVC.opensInApp = option == 0;
+        deviceVC.opensInApp = option < 2;
+        deviceVC.usesGoogle = option == 1;
         deviceVC.onLoggedIn = ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (strongSelf.onLoggedIn) strongSelf.onLoggedIn();

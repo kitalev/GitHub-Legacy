@@ -5,6 +5,7 @@
 @property (nonatomic, strong) NSURL *startURL;
 @property (nonatomic, assign) BOOL finishesOnSignIn;
 @property (nonatomic, copy) NSString *deviceUserCode;
+@property (nonatomic, assign) BOOL prefersGoogle;
 @property (nonatomic, copy) void (^onSignedIn)(void);
 
 @end
