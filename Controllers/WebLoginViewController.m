@@ -68,11 +68,11 @@ static NSString * const kGHWebLoginDeviceCodeScript =
      "f.submit();return 'ok';"
      "})(%ld,%@[0],%ld)";
 
-static const NSInteger kGHWebLoginRowIconTag = 1;
-static const NSInteger kGHWebLoginRowTitleTag = 2;
-static const NSInteger kGHWebLoginRowSubtitleTag = 3;
-static const NSInteger kGHWebLoginRowChevronTag = 4;
-static const NSInteger kGHWebLoginRowSeparatorTag = 5;
+static const NSInteger kGHWebLoginRowIconTag = 1001;
+static const NSInteger kGHWebLoginRowTitleTag = 1002;
+static const NSInteger kGHWebLoginRowSubtitleTag = 1003;
+static const NSInteger kGHWebLoginRowChevronTag = 1004;
+static const NSInteger kGHWebLoginRowSeparatorTag = 1005;
 
 static NSString *GHWebLoginJSON(id object) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
