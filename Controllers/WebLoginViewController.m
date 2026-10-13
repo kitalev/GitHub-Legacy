@@ -68,6 +68,12 @@ static NSString * const kGHWebLoginDeviceCodeScript =
      "f.submit();return 'ok';"
      "})(%ld,%@[0],%ld)";
 
+static const NSInteger kGHWebLoginRowIconTag = 1;
+static const NSInteger kGHWebLoginRowTitleTag = 2;
+static const NSInteger kGHWebLoginRowSubtitleTag = 3;
+static const NSInteger kGHWebLoginRowChevronTag = 4;
+static const NSInteger kGHWebLoginRowSeparatorTag = 5;
+
 static NSString *GHWebLoginJSON(id object) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
     return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
@@ -87,7 +93,7 @@ static UILabel *GHWebLoginMakeLabel(UIFont *font) {
 }
 
 static UIImage *GHWebLoginRoundedImage(UIColor *fill, UIColor *stroke) {
-    CGFloat radius = 10;
+    CGFloat radius = 12;
     CGSize size = CGSizeMake(radius * 2 + 1, radius * 2 + 1);
     UIGraphicsBeginImageContextWithOptions(size, NO, 0);
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(CGRectMake(0, 0, size.width, size.height), 0.5, 0.5)
@@ -104,6 +110,15 @@ static UIImage *GHWebLoginRoundedImage(UIColor *fill, UIColor *stroke) {
     return [image resizableImageWithCapInsets:UIEdgeInsetsMake(radius, radius, radius, radius)];
 }
 
+static UIImage *GHWebLoginSolidImage(UIColor *color) {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(1, 1), NO, 0);
+    [color setFill];
+    UIRectFill(CGRectMake(0, 0, 1, 1));
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
 static UIColor *GHWebLoginErrorColor(void) {
     return [UIColor colorWithRed:0.84 green:0.23 blue:0.23 alpha:1.0];
 }
@@ -116,32 +131,56 @@ static UITextField *GHWebLoginMakeField(void) {
     field.autocorrectionType = UITextAutocorrectionTypeNo;
     field.clearButtonMode = UITextFieldViewModeWhileEditing;
     field.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+    UIImageView *leftIcon = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 32, 32)];
+    leftIcon.contentMode = UIViewContentModeLeft;
+    field.leftView = leftIcon;
+    field.leftViewMode = UITextFieldViewModeAlways;
     return field;
+}
+
+static UIView *GHWebLoginMakeCard(void) {
+    UIView *card = [[UIView alloc] init];
+    card.layer.cornerRadius = 12;
+    card.layer.borderWidth = 1;
+    card.clipsToBounds = YES;
+    return card;
 }
 
 @interface WebLoginViewController () <UIWebViewDelegate, UITextFieldDelegate>
 @property (nonatomic, strong) UIWebView *webView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UIScrollView *scrollView;
-@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UIView *contentView;
+@property (nonatomic, strong) NSArray *progressSegments;
+@property (nonatomic, strong) UILabel *stepLabel;
 @property (nonatomic, strong) UIView *iconBackground;
-@property (nonatomic, strong) UIView *fieldsCard;
-@property (nonatomic, strong) UIView *fieldsSeparator;
-@property (nonatomic, strong) UIView *errorBox;
+@property (nonatomic, strong) UIImageView *iconView;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *messageLabel;
-@property (nonatomic, strong) UILabel *errorLabel;
+@property (nonatomic, strong) UIView *digitsCard;
 @property (nonatomic, strong) UILabel *digitsLabel;
+@property (nonatomic, strong) UIActivityIndicatorView *progressSpinner;
+@property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UIView *errorBox;
+@property (nonatomic, strong) UILabel *errorLabel;
+@property (nonatomic, strong) UIView *fieldsCard;
+@property (nonatomic, strong) UIView *fieldsSeparator;
+@property (nonatomic, strong) UITextField *firstField;
+@property (nonatomic, strong) UITextField *secondField;
+@property (nonatomic, strong) UIButton *primaryButton;
+@property (nonatomic, strong) UIButton *secondaryButton;
+@property (nonatomic, strong) UILabel *sectionLabel;
+@property (nonatomic, strong) UIView *listCard;
+@property (nonatomic, strong) NSMutableArray *listRows;
+@property (nonatomic, strong) UILabel *footerLabel;
+@property (nonatomic, assign) BOOL keyboardVisible;
+@property (nonatomic, assign) NSInteger phase;
+@property (nonatomic, copy) NSString *codeKind;
 @property (nonatomic, strong) NSTimer *pollTimer;
 @property (nonatomic, assign) NSTimeInterval pollStartedAt;
 @property (nonatomic, copy) NSString *mobilePollURL;
 @property (nonatomic, copy) NSString *mobileToken;
 @property (nonatomic, strong) NSURL *retryURL;
-@property (nonatomic, strong) UITextField *firstField;
-@property (nonatomic, strong) UITextField *secondField;
-@property (nonatomic, strong) UIButton *primaryButton;
-@property (nonatomic, strong) UIActivityIndicatorView *progressSpinner;
-@property (nonatomic, strong) NSMutableArray *methodButtons;
 @property (nonatomic, copy) NSArray *methods;
 @property (nonatomic, assign) GHWebLoginStep step;
 @property (nonatomic, assign) GHWebLoginStep lastInputStep;
@@ -172,40 +211,62 @@ static UITextField *GHWebLoginMakeField(void) {
     self.scrollView.alwaysBounceVertical = YES;
     [self.view addSubview:self.scrollView];
 
+    self.contentView = [[UIView alloc] init];
+    [self.scrollView addSubview:self.contentView];
+
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
     tap.cancelsTouchesInView = NO;
     [self.scrollView addGestureRecognizer:tap];
 
+    NSMutableArray *segments = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 3; i++) {
+        UIView *segment = [[UIView alloc] init];
+        segment.layer.cornerRadius = 2;
+        [self.contentView addSubview:segment];
+        [segments addObject:segment];
+    }
+    self.progressSegments = segments;
+
+    self.stepLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:12]);
+    [self.contentView addSubview:self.stepLabel];
+
     self.iconBackground = [[UIView alloc] init];
-    self.iconBackground.layer.cornerRadius = 42;
-    [self.scrollView addSubview:self.iconBackground];
+    self.iconBackground.layer.cornerRadius = 40;
+    [self.contentView addSubview:self.iconBackground];
 
     self.iconView = [[UIImageView alloc] init];
     self.iconView.contentMode = UIViewContentModeCenter;
-    [self.scrollView addSubview:self.iconView];
+    [self.contentView addSubview:self.iconView];
 
-    self.titleLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:23]);
-    [self.scrollView addSubview:self.titleLabel];
+    self.titleLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:24]);
+    [self.contentView addSubview:self.titleLabel];
 
     self.messageLabel = GHWebLoginMakeLabel([UIFont systemFontOfSize:15]);
-    [self.scrollView addSubview:self.messageLabel];
+    [self.contentView addSubview:self.messageLabel];
 
-    self.errorBox = [[UIView alloc] init];
-    self.errorBox.layer.cornerRadius = 10;
-    self.errorBox.layer.borderWidth = 1;
-    [self.scrollView addSubview:self.errorBox];
+    self.digitsCard = GHWebLoginMakeCard();
+    [self.contentView addSubview:self.digitsCard];
+
+    UIFont *digitsFont = [UIFont fontWithName:@"Menlo-Bold" size:60] ?: [UIFont boldSystemFontOfSize:60];
+    self.digitsLabel = GHWebLoginMakeLabel(digitsFont);
+    [self.digitsCard addSubview:self.digitsLabel];
+
+    self.progressSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
+    self.progressSpinner.hidesWhenStopped = YES;
+    [self.contentView addSubview:self.progressSpinner];
+
+    self.statusLabel = GHWebLoginMakeLabel([UIFont systemFontOfSize:14]);
+    [self.contentView addSubview:self.statusLabel];
+
+    self.errorBox = GHWebLoginMakeCard();
+    [self.contentView addSubview:self.errorBox];
 
     self.errorLabel = GHWebLoginMakeLabel([UIFont systemFontOfSize:14]);
+    self.errorLabel.textAlignment = NSTextAlignmentLeft;
     [self.errorBox addSubview:self.errorLabel];
 
-    self.digitsLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:56]);
-    self.digitsLabel.hidden = YES;
-    [self.scrollView addSubview:self.digitsLabel];
-
-    self.fieldsCard = [[UIView alloc] init];
-    self.fieldsCard.layer.cornerRadius = 10;
-    self.fieldsCard.layer.borderWidth = 1;
-    [self.scrollView addSubview:self.fieldsCard];
+    self.fieldsCard = GHWebLoginMakeCard();
+    [self.contentView addSubview:self.fieldsCard];
 
     self.fieldsSeparator = [[UIView alloc] init];
     [self.fieldsCard addSubview:self.fieldsSeparator];
@@ -221,7 +282,7 @@ static UITextField *GHWebLoginMakeField(void) {
     self.secondField.returnKeyType = UIReturnKeyGo;
     self.secondField.clearButtonMode = UITextFieldViewModeNever;
     UIButton *revealButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    revealButton.titleLabel.font = [UIFont systemFontOfSize:14];
+    revealButton.titleLabel.font = [UIFont boldSystemFontOfSize:14];
     revealButton.frame = CGRectMake(0, 0, 84, 40);
     revealButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
     [revealButton setTitle:GHL(@"Показать") forState:UIControlStateNormal];
@@ -235,13 +296,23 @@ static UITextField *GHWebLoginMakeField(void) {
     [self.primaryButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [self.primaryButton setTitleColor:[UIColor colorWithWhite:1.0 alpha:0.7] forState:UIControlStateHighlighted];
     [self.primaryButton addTarget:self action:@selector(primaryTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.scrollView addSubview:self.primaryButton];
+    [self.contentView addSubview:self.primaryButton];
 
-    self.progressSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
-    self.progressSpinner.hidesWhenStopped = YES;
-    [self.scrollView addSubview:self.progressSpinner];
+    self.secondaryButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.secondaryButton.titleLabel.font = [UIFont systemFontOfSize:16];
+    [self.secondaryButton addTarget:self action:@selector(secondaryTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.contentView addSubview:self.secondaryButton];
 
-    self.methodButtons = [NSMutableArray array];
+    self.sectionLabel = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:12]);
+    self.sectionLabel.textAlignment = NSTextAlignmentLeft;
+    [self.contentView addSubview:self.sectionLabel];
+
+    self.listCard = GHWebLoginMakeCard();
+    [self.contentView addSubview:self.listCard];
+    self.listRows = [NSMutableArray array];
+
+    self.footerLabel = GHWebLoginMakeLabel([UIFont systemFontOfSize:12]);
+    [self.contentView addSubview:self.footerLabel];
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
     self.spinner.hidesWhenStopped = YES;
@@ -272,14 +343,63 @@ static UITextField *GHWebLoginMakeField(void) {
     [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession signInURL]]];
 }
 
+#pragma mark - Appearance
+
+- (NSInteger)phaseCount {
+    return self.deviceUserCode.length > 0 ? 3 : 2;
+}
+
+- (UIColor *)accentColor {
+    return self.step == GHWebLoginStepRetry ? GHWebLoginErrorColor() : GHTintColor();
+}
+
+- (UIImage *)iconForKind:(NSString *)kind color:(UIColor *)color size:(CGFloat)size {
+    if ([kind isEqualToString:@"sms"]) return [GHIconRenderer commentIconWithColor:color size:size];
+    if ([kind isEqualToString:@"email"]) return [GHIconRenderer mailIconWithColor:color size:size];
+    if ([kind isEqualToString:@"recovery"] || [kind isEqualToString:@"password"]) return [GHIconRenderer keyIconWithColor:color size:size];
+    if ([kind isEqualToString:@"repo"]) return [GHIconRenderer repoIconWithColor:color size:size];
+    if ([kind isEqualToString:@"person"]) return [GHIconRenderer personIconWithColor:color size:size];
+    return [GHIconRenderer devicesIconWithColor:color size:size];
+}
+
+- (UIImage *)stepIcon {
+    UIColor *color = [self accentColor];
+    switch (self.step) {
+        case GHWebLoginStepPassword:
+        case GHWebLoginStepChooseMethod:
+            return [GHIconRenderer keyIconWithColor:color size:36];
+        case GHWebLoginStepCode:
+            return [self iconForKind:self.codeKind color:color size:36];
+        case GHWebLoginStepMobile:
+            return [GHIconRenderer devicesIconWithColor:color size:36];
+        case GHWebLoginStepAuthorize:
+            return [GHIconRenderer linkIconWithColor:color size:36];
+        case GHWebLoginStepRetry:
+            return [GHIconRenderer infoIconWithColor:color size:36];
+        default:
+            return self.phase >= 3 ? [GHIconRenderer linkIconWithColor:color size:36]
+                 : self.phase == 2 ? [GHIconRenderer keyIconWithColor:color size:36]
+                                   : [GHIconRenderer personIconWithColor:color size:36];
+    }
+}
+
 - (void)applyTheme {
+    UIColor *accent = [self accentColor];
     self.view.backgroundColor = GHBackgroundColor();
     self.scrollView.backgroundColor = GHBackgroundColor();
-    self.iconView.image = [GHIconRenderer personIconWithColor:GHTintColor() size:44];
-    self.iconBackground.backgroundColor = [GHTintColor() colorWithAlphaComponent:0.14];
+    for (NSUInteger i = 0; i < self.progressSegments.count; i++) {
+        BOOL active = (NSInteger)i < self.phase;
+        [self.progressSegments[i] setBackgroundColor:active ? GHTintColor() : GHSeparatorColor()];
+    }
+    self.stepLabel.textColor = GHTintColor();
+    self.iconBackground.backgroundColor = [accent colorWithAlphaComponent:0.14];
+    self.iconView.image = [self stepIcon];
     self.titleLabel.textColor = GHPrimaryTextColor();
-    self.digitsLabel.textColor = GHTintColor();
     self.messageLabel.textColor = GHSecondaryTextColor();
+    self.digitsCard.backgroundColor = [GHTintColor() colorWithAlphaComponent:0.1];
+    self.digitsCard.layer.borderColor = [GHTintColor() colorWithAlphaComponent:0.35].CGColor;
+    self.digitsLabel.textColor = GHTintColor();
+    self.statusLabel.textColor = GHSecondaryTextColor();
     self.errorLabel.textColor = GHWebLoginErrorColor();
     self.errorBox.backgroundColor = [GHWebLoginErrorColor() colorWithAlphaComponent:0.1];
     self.errorBox.layer.borderColor = [GHWebLoginErrorColor() colorWithAlphaComponent:0.4].CGColor;
@@ -288,19 +408,81 @@ static UITextField *GHWebLoginMakeField(void) {
     self.fieldsSeparator.backgroundColor = GHSeparatorColor();
     self.firstField.textColor = GHPrimaryTextColor();
     self.secondField.textColor = GHPrimaryTextColor();
+    [(UIImageView *)self.firstField.leftView setImage:[self iconForKind:self.step == GHWebLoginStepCode ? self.codeKind : @"person"
+                                                                  color:GHSecondaryTextColor() size:18]];
+    [(UIImageView *)self.secondField.leftView setImage:[GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:18]];
     [(UIButton *)self.secondField.rightView setTitleColor:GHTintColor() forState:UIControlStateNormal];
-    [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage(GHTintColor(), nil) forState:UIControlStateNormal];
-    [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage([GHTintColor() colorWithAlphaComponent:0.75], nil)
+    [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage(accent, nil) forState:UIControlStateNormal];
+    [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage([accent colorWithAlphaComponent:0.75], nil)
                                   forState:UIControlStateHighlighted];
-    for (UIButton *button in self.methodButtons) [self styleMethodButton:button];
+    [self.secondaryButton setTitleColor:GHTintColor() forState:UIControlStateNormal];
+    [self.secondaryButton setTitleColor:[GHTintColor() colorWithAlphaComponent:0.5] forState:UIControlStateHighlighted];
+    self.sectionLabel.textColor = GHSecondaryTextColor();
+    self.listCard.backgroundColor = GHCellBackgroundColor();
+    self.listCard.layer.borderColor = GHSeparatorColor().CGColor;
+    for (UIButton *row in self.listRows) [self styleRow:row];
+    self.footerLabel.textColor = GHSecondaryTextColor();
     self.progressSpinner.activityIndicatorViewStyle = GHSpinnerStyle();
 }
 
-- (void)styleMethodButton:(UIButton *)button {
-    [button setBackgroundImage:GHWebLoginRoundedImage(GHCellBackgroundColor(), GHSeparatorColor()) forState:UIControlStateNormal];
-    [button setBackgroundImage:GHWebLoginRoundedImage([GHTintColor() colorWithAlphaComponent:0.15], GHSeparatorColor())
-                      forState:UIControlStateHighlighted];
-    [button setTitleColor:GHTintColor() forState:UIControlStateNormal];
+- (UIButton *)makeRowWithItem:(NSDictionary *)item index:(NSUInteger)index tappable:(BOOL)tappable {
+    UIButton *row = [UIButton buttonWithType:UIButtonTypeCustom];
+    row.tag = (NSInteger)index;
+    row.userInteractionEnabled = tappable;
+    if (tappable) [row addTarget:self action:@selector(methodTapped:) forControlEvents:UIControlEventTouchUpInside];
+
+    UIImageView *icon = [[UIImageView alloc] init];
+    icon.tag = kGHWebLoginRowIconTag;
+    icon.contentMode = UIViewContentModeCenter;
+    [row addSubview:icon];
+
+    UILabel *title = GHWebLoginMakeLabel([UIFont boldSystemFontOfSize:16]);
+    title.tag = kGHWebLoginRowTitleTag;
+    title.textAlignment = NSTextAlignmentLeft;
+    title.numberOfLines = 1;
+    title.adjustsFontSizeToFitWidth = YES;
+    title.text = item[@"title"];
+    [row addSubview:title];
+
+    UILabel *subtitle = GHWebLoginMakeLabel([UIFont systemFontOfSize:13]);
+    subtitle.tag = kGHWebLoginRowSubtitleTag;
+    subtitle.textAlignment = NSTextAlignmentLeft;
+    subtitle.text = item[@"subtitle"];
+    [row addSubview:subtitle];
+
+    UIImageView *chevron = [[UIImageView alloc] init];
+    chevron.tag = kGHWebLoginRowChevronTag;
+    chevron.contentMode = UIViewContentModeCenter;
+    chevron.hidden = !tappable;
+    [row addSubview:chevron];
+
+    UIView *separator = [[UIView alloc] init];
+    separator.tag = kGHWebLoginRowSeparatorTag;
+    separator.hidden = index == 0;
+    [row addSubview:separator];
+
+    [self styleRow:row];
+    return row;
+}
+
+- (void)styleRow:(UIButton *)row {
+    NSDictionary *item = row.tag < (NSInteger)self.rowItems.count ? self.rowItems[row.tag] : nil;
+    [(UIImageView *)[row viewWithTag:kGHWebLoginRowIconTag] setImage:[self iconForKind:item[@"kind"] color:GHTintColor() size:22]];
+    [(UILabel *)[row viewWithTag:kGHWebLoginRowTitleTag] setTextColor:GHPrimaryTextColor()];
+    [(UILabel *)[row viewWithTag:kGHWebLoginRowSubtitleTag] setTextColor:GHSecondaryTextColor()];
+    [(UIImageView *)[row viewWithTag:kGHWebLoginRowChevronTag] setImage:[GHIconRenderer disclosureChevronWithColor:GHSecondaryTextColor()
+                                                                                                             size:CGSizeMake(9, 14)]];
+    [[row viewWithTag:kGHWebLoginRowSeparatorTag] setBackgroundColor:GHSeparatorColor()];
+    [row setBackgroundImage:GHWebLoginSolidImage([GHTintColor() colorWithAlphaComponent:0.12]) forState:UIControlStateHighlighted];
+}
+
+- (NSArray *)rowItems {
+    return self.step == GHWebLoginStepAuthorize ? [self permissionItems] : self.methods;
+}
+
+- (NSArray *)permissionItems {
+    return @[@{@"kind": @"repo", @"title": GHL(@"Репозитории"), @"subtitle": GHL(@"Чтение и запись, включая приватные")},
+             @{@"kind": @"person", @"title": GHL(@"Подписки на пользователей"), @"subtitle": GHL(@"Подписываться на людей и отписываться")}];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -311,6 +493,16 @@ static UITextField *GHWebLoginMakeField(void) {
 - (void)cancelTapped {
     [self.webView stopLoading];
     [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)secondaryTapped {
+    [self.webView stopLoading];
+    NSArray *stack = self.navigationController.viewControllers;
+    if (self.presentingViewController && stack.count > 0 && stack[0] == self) {
+        [self dismissViewControllerAnimated:YES completion:nil];
+    } else {
+        [self.navigationController popViewControllerAnimated:YES];
+    }
 }
 
 - (void)dismissKeyboard {
@@ -332,6 +524,8 @@ static UITextField *GHWebLoginMakeField(void) {
     insets.bottom = overlap;
     self.scrollView.contentInset = insets;
     self.scrollView.scrollIndicatorInsets = insets;
+    self.keyboardVisible = YES;
+    [self layoutContent];
     [self scrollInputsIntoView];
 }
 
@@ -340,12 +534,17 @@ static UITextField *GHWebLoginMakeField(void) {
     insets.bottom = 0;
     self.scrollView.contentInset = insets;
     self.scrollView.scrollIndicatorInsets = insets;
+    self.keyboardVisible = NO;
+    [UIView animateWithDuration:0.25 animations:^{
+        [self layoutContent];
+    }];
 }
 
 - (void)scrollInputsIntoView {
     if (self.fieldsCard.hidden) return;
     CGRect target = self.fieldsCard.frame;
     if (!self.primaryButton.hidden) target = CGRectUnion(target, self.primaryButton.frame);
+    target = [self.contentView convertRect:target toView:self.scrollView];
     [self.scrollView scrollRectToVisible:CGRectInset(target, 0, -12) animated:YES];
 }
 
@@ -361,74 +560,182 @@ static UITextField *GHWebLoginMakeField(void) {
 }
 
 - (void)layoutContent {
-    CGFloat width = MIN(self.view.bounds.size.width - 30, 420);
+    CGFloat width = MIN(self.view.bounds.size.width - 32, 420);
     CGFloat left = floor((self.view.bounds.size.width - width) / 2.0);
-    CGFloat y = 28;
+    CGFloat y = 20;
 
-    self.iconBackground.frame = CGRectMake(left + floor((width - 84) / 2.0), y, 84, 84);
+    NSInteger phaseCount = [self phaseCount];
+    BOOL showProgress = self.phase > 0;
+    CGFloat segmentGap = 6;
+    CGFloat segmentWidth = floor((width - segmentGap * (phaseCount - 1)) / phaseCount);
+    for (NSUInteger i = 0; i < self.progressSegments.count; i++) {
+        UIView *segment = self.progressSegments[i];
+        segment.hidden = !showProgress || (NSInteger)i >= phaseCount;
+        segment.frame = CGRectMake(left + i * (segmentWidth + segmentGap), y, segmentWidth, 4);
+    }
+    if (showProgress) {
+        y += 4 + 10;
+        self.stepLabel.text = [[NSString stringWithFormat:GHL(@"Шаг %ld из %ld"), (long)MIN(self.phase, phaseCount), (long)phaseCount] uppercaseString];
+        self.stepLabel.hidden = NO;
+        self.stepLabel.frame = CGRectMake(left, y, width, 16);
+        y += 16 + 22;
+    } else {
+        self.stepLabel.hidden = YES;
+        y += 16;
+    }
+
+    self.iconBackground.frame = CGRectMake(left + floor((width - 80) / 2.0), y, 80, 80);
     self.iconView.frame = self.iconBackground.frame;
-    y += 84 + 18;
+    y += 80 + 18;
 
     CGFloat titleHeight = [self heightForLabel:self.titleLabel width:width];
     self.titleLabel.frame = CGRectMake(left, y, width, titleHeight);
     y += titleHeight + (titleHeight > 0 ? 8 : 0);
 
-    CGFloat messageHeight = [self heightForLabel:self.messageLabel width:width - 10];
-    self.messageLabel.frame = CGRectMake(left + 5, y, width - 10, messageHeight);
-    y += messageHeight + (messageHeight > 0 ? 20 : 0);
+    CGFloat messageHeight = [self heightForLabel:self.messageLabel width:width - 16];
+    self.messageLabel.frame = CGRectMake(left + 8, y, width - 16, messageHeight);
+    y += messageHeight + (messageHeight > 0 ? 22 : 0);
 
-    CGFloat digitsHeight = [self heightForLabel:self.digitsLabel width:width];
-    self.digitsLabel.frame = CGRectMake(left, y, width, digitsHeight);
-    y += digitsHeight + (digitsHeight > 0 ? 20 : 0);
-
-    if (self.progressSpinner.isAnimating) {
-        self.progressSpinner.frame = CGRectMake(left + floor((width - 20) / 2.0), y, 20, 20);
-        y += 20 + 20;
+    if (!self.digitsCard.hidden) {
+        CGFloat cardWidth = MIN(width, 220);
+        self.digitsCard.frame = CGRectMake(left + floor((width - cardWidth) / 2.0), y, cardWidth, 100);
+        self.digitsLabel.frame = self.digitsCard.bounds;
+        y += 100 + 18;
     }
 
-    self.errorBox.hidden = self.errorLabel.hidden;
+    if (self.progressSpinner.isAnimating) {
+        CGFloat statusWidth = MIN(ceil([self.statusLabel sizeThatFits:CGSizeMake(width - 40, CGFLOAT_MAX)].width), width - 40);
+        CGFloat statusHeight = MAX([self heightForLabel:self.statusLabel width:statusWidth], 20);
+        if (self.step == GHWebLoginStepLoading) {
+            self.progressSpinner.frame = CGRectMake(left + floor((width - 20) / 2.0), y, 20, 20);
+            y += 20 + 12;
+            self.statusLabel.frame = CGRectMake(left, y, width, statusHeight);
+        } else {
+            CGFloat rowWidth = 20 + 8 + statusWidth;
+            CGFloat rowLeft = left + floor((width - rowWidth) / 2.0);
+            self.progressSpinner.frame = CGRectMake(rowLeft, y + floor((statusHeight - 20) / 2.0), 20, 20);
+            self.statusLabel.frame = CGRectMake(rowLeft + 28, y, statusWidth, statusHeight);
+            self.statusLabel.textAlignment = NSTextAlignmentLeft;
+        }
+        if (self.step == GHWebLoginStepLoading) self.statusLabel.textAlignment = NSTextAlignmentCenter;
+        self.statusLabel.hidden = self.statusLabel.text.length == 0;
+        y += statusHeight + 22;
+    } else {
+        self.statusLabel.hidden = YES;
+    }
+
+    self.errorBox.hidden = self.errorLabel.text.length == 0;
     if (!self.errorBox.hidden) {
-        CGFloat errorHeight = [self heightForLabel:self.errorLabel width:width - 24];
-        self.errorBox.frame = CGRectMake(left, y, width, errorHeight + 20);
-        self.errorLabel.frame = CGRectMake(12, 10, width - 24, errorHeight);
-        y += errorHeight + 20 + 16;
+        CGFloat errorHeight = [self heightForLabel:self.errorLabel width:width - 28];
+        self.errorBox.frame = CGRectMake(left, y, width, errorHeight + 24);
+        self.errorLabel.frame = CGRectMake(14, 12, width - 28, errorHeight);
+        y += errorHeight + 24 + 16;
     }
 
     NSUInteger fieldCount = (self.firstField.hidden ? 0 : 1) + (self.secondField.hidden ? 0 : 1);
     self.fieldsCard.hidden = fieldCount == 0;
     if (fieldCount > 0) {
+        CGFloat fieldHeight = self.step == GHWebLoginStepCode ? 58 : 50;
         CGFloat fieldY = 0;
         if (!self.firstField.hidden) {
-            self.firstField.frame = CGRectMake(14, fieldY, width - 28, 48);
-            fieldY += 48;
+            self.firstField.frame = CGRectMake(14, fieldY, width - 28, fieldHeight);
+            fieldY += fieldHeight;
         }
         self.fieldsSeparator.hidden = fieldCount < 2;
-        self.fieldsSeparator.frame = CGRectMake(14, fieldY, width - 14, 1);
+        self.fieldsSeparator.frame = CGRectMake(46, fieldY, width - 46, 1);
         if (!self.secondField.hidden) {
             fieldY += fieldCount > 1 ? 1 : 0;
-            self.secondField.frame = CGRectMake(14, fieldY, width - 28, 48);
-            fieldY += 48;
+            self.secondField.frame = CGRectMake(14, fieldY, width - 28, fieldHeight);
+            fieldY += fieldHeight;
         }
         self.fieldsCard.frame = CGRectMake(left, y, width, fieldY);
         y += fieldY + 18;
     }
+
     if (!self.primaryButton.hidden) {
-        self.primaryButton.frame = CGRectMake(left, y, width, 48);
-        y += 48 + 24;
+        self.primaryButton.frame = CGRectMake(left, y, width, 50);
+        y += 50 + 8;
     }
-    for (UIButton *button in self.methodButtons) {
-        button.frame = CGRectMake(left, y, width, 46);
-        y += 46 + 10;
+    if (!self.secondaryButton.hidden) {
+        self.secondaryButton.frame = CGRectMake(left, y, width, 40);
+        y += 40;
+    }
+    if (!self.primaryButton.hidden || !self.secondaryButton.hidden) y += 18;
+
+    self.sectionLabel.hidden = self.sectionLabel.text.length == 0 || self.listRows.count == 0;
+    if (!self.sectionLabel.hidden) {
+        self.sectionLabel.frame = CGRectMake(left + 14, y, width - 28, 16);
+        y += 16 + 8;
     }
 
-    self.scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, y + 20);
+    self.listCard.hidden = self.listRows.count == 0;
+    if (!self.listCard.hidden) {
+        CGFloat rowY = 0;
+        for (UIButton *row in self.listRows) {
+            UILabel *subtitle = (UILabel *)[row viewWithTag:kGHWebLoginRowSubtitleTag];
+            CGFloat textWidth = width - 52 - 34;
+            CGFloat subtitleHeight = [self heightForLabel:subtitle width:textWidth];
+            CGFloat rowHeight = MAX(54, 12 + 20 + (subtitleHeight > 0 ? 2 + subtitleHeight : 0) + 12);
+            row.frame = CGRectMake(0, rowY, width, rowHeight);
+            [row viewWithTag:kGHWebLoginRowIconTag].frame = CGRectMake(14, 0, 26, rowHeight);
+            CGFloat textTop = floor((rowHeight - 20 - (subtitleHeight > 0 ? 2 + subtitleHeight : 0)) / 2.0);
+            [row viewWithTag:kGHWebLoginRowTitleTag].frame = CGRectMake(52, textTop, textWidth, 20);
+            subtitle.frame = CGRectMake(52, textTop + 22, textWidth, subtitleHeight);
+            [row viewWithTag:kGHWebLoginRowChevronTag].frame = CGRectMake(width - 30, 0, 16, rowHeight);
+            [row viewWithTag:kGHWebLoginRowSeparatorTag].frame = CGRectMake(52, 0, width - 52, 1);
+            rowY += rowHeight;
+        }
+        self.listCard.frame = CGRectMake(left, y, width, rowY);
+        y += rowY + 18;
+    }
+
+    CGFloat footerHeight = [self heightForLabel:self.footerLabel width:width - 20];
+    self.footerLabel.frame = CGRectMake(left + 10, y, width - 20, footerHeight);
+    y += footerHeight + (footerHeight > 0 ? 12 : 0);
+
+    CGFloat contentHeight = y + 12;
+    CGFloat visibleHeight = self.scrollView.bounds.size.height;
+    CGFloat top = self.keyboardVisible ? 0 : MAX(0, floor((visibleHeight - contentHeight) / 2.0) - 20);
+    self.contentView.frame = CGRectMake(0, top, self.view.bounds.size.width, contentHeight);
+    self.scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, top + contentHeight);
 }
 
 #pragma mark - Steps
 
 - (void)showLoadingWithMessage:(NSString *)message {
-    [self presentStep:GHWebLoginStepLoading title:nil message:message error:nil
+    [self presentStep:GHWebLoginStepLoading title:nil message:nil error:nil
            firstField:nil secondField:NO primary:nil methods:nil];
+    self.statusLabel.text = message;
+    [self layoutContent];
+}
+
+- (NSInteger)phaseForStep:(GHWebLoginStep)step {
+    switch (step) {
+        case GHWebLoginStepCredentials:
+            return 1;
+        case GHWebLoginStepPassword:
+        case GHWebLoginStepCode:
+        case GHWebLoginStepChooseMethod:
+        case GHWebLoginStepMobile:
+            return 2;
+        case GHWebLoginStepAuthorize:
+            return 3;
+        default:
+            return self.phase;
+    }
+}
+
+- (NSString *)footerForStep:(GHWebLoginStep)step {
+    switch (step) {
+        case GHWebLoginStepCredentials:
+            return GHL(@"Пароль передаётся только на github.com и не сохраняется в приложении.");
+        case GHWebLoginStepAuthorize:
+            return GHL(@"Доступ можно отозвать на github.com в Settings → Applications.");
+        case GHWebLoginStepMobile:
+            return GHL(@"Число нужно, чтобы убедиться, что входите именно вы.");
+        default:
+            return nil;
+    }
 }
 
 - (void)presentStep:(GHWebLoginStep)step
@@ -439,25 +746,41 @@ static UITextField *GHWebLoginMakeField(void) {
         secondField:(BOOL)showSecondField
             primary:(NSString *)primaryTitle
             methods:(NSArray *)methods {
+    BOOL stepChanged = self.step != step;
     BOOL sameInput = firstPlaceholder != nil && self.lastInputStep == step;
     if (firstPlaceholder != nil || showSecondField) self.lastInputStep = step;
     self.step = step;
+    self.phase = [self phaseForStep:step];
     if (step != GHWebLoginStepMobile) {
         [self.pollTimer invalidate];
         self.pollTimer = nil;
-        self.digitsLabel.hidden = YES;
     }
     if (step != GHWebLoginStepRetry) self.retryURL = nil;
     self.webView.hidden = step != GHWebLoginStepPage;
     self.scrollView.hidden = step == GHWebLoginStepPage;
 
+    if (stepChanged) {
+        CATransition *transition = [CATransition animation];
+        transition.type = kCATransitionFade;
+        transition.duration = 0.2;
+        [self.contentView.layer addAnimation:transition forKey:@"step"];
+    }
+
     self.titleLabel.text = title;
     self.messageLabel.text = message;
     self.errorLabel.text = error;
-    self.errorLabel.hidden = error.length == 0;
+    self.digitsCard.hidden = YES;
+    self.statusLabel.text = nil;
 
+    BOOL codeStep = step == GHWebLoginStepCode;
     self.firstField.hidden = firstPlaceholder == nil;
     self.firstField.placeholder = firstPlaceholder;
+    self.firstField.font = codeStep ? ([UIFont fontWithName:@"Menlo-Bold" size:22] ?: [UIFont boldSystemFontOfSize:22])
+                                    : [UIFont systemFontOfSize:17];
+    self.firstField.textAlignment = codeStep ? NSTextAlignmentCenter : NSTextAlignmentLeft;
+    self.firstField.leftViewMode = codeStep ? UITextFieldViewModeNever : UITextFieldViewModeAlways;
+    self.firstField.clearButtonMode = codeStep ? UITextFieldViewModeNever : UITextFieldViewModeWhileEditing;
+    if (!codeStep) self.firstField.keyboardType = UIKeyboardTypeEmailAddress;
     if (!sameInput) self.firstField.text = @"";
     self.secondField.hidden = !showSecondField;
     self.secondField.text = @"";
@@ -467,30 +790,36 @@ static UITextField *GHWebLoginMakeField(void) {
 
     self.primaryButton.hidden = primaryTitle == nil;
     [self.primaryButton setTitle:primaryTitle forState:UIControlStateNormal];
+    self.secondaryButton.hidden = step != GHWebLoginStepAuthorize;
+    [self.secondaryButton setTitle:GHL(@"Отмена") forState:UIControlStateNormal];
 
-    if (step == GHWebLoginStepLoading) {
+    if (step == GHWebLoginStepLoading || step == GHWebLoginStepMobile) {
         [self.progressSpinner startAnimating];
-        [self dismissKeyboard];
     } else {
         [self.progressSpinner stopAnimating];
     }
+    if (step == GHWebLoginStepLoading) [self dismissKeyboard];
 
-    for (UIButton *button in self.methodButtons) [button removeFromSuperview];
-    [self.methodButtons removeAllObjects];
     self.methods = methods;
-    for (NSUInteger i = 0; i < methods.count; i++) {
-        UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-        button.titleLabel.font = [UIFont systemFontOfSize:16];
-        button.titleLabel.adjustsFontSizeToFitWidth = YES;
-        button.contentEdgeInsets = UIEdgeInsetsMake(0, 12, 0, 12);
-        button.tag = (NSInteger)i;
-        [self styleMethodButton:button];
-        [button setTitle:methods[i][@"title"] forState:UIControlStateNormal];
-        [button addTarget:self action:@selector(methodTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [self.scrollView addSubview:button];
-        [self.methodButtons addObject:button];
+    for (UIButton *row in self.listRows) [row removeFromSuperview];
+    [self.listRows removeAllObjects];
+    BOOL tappable = step != GHWebLoginStepAuthorize;
+    NSArray *items = [self rowItems];
+    for (NSUInteger i = 0; i < items.count; i++) {
+        UIButton *row = [self makeRowWithItem:items[i] index:i tappable:tappable];
+        [self.listCard addSubview:row];
+        [self.listRows addObject:row];
     }
+    if (step == GHWebLoginStepAuthorize) {
+        self.sectionLabel.text = [GHL(@"Приложение сможет") uppercaseString];
+    } else if (step == GHWebLoginStepChooseMethod) {
+        self.sectionLabel.text = nil;
+    } else {
+        self.sectionLabel.text = [GHL(@"Другие способы") uppercaseString];
+    }
+    self.footerLabel.text = [self footerForStep:step];
 
+    [self applyTheme];
     [self layoutContent];
     if (!self.firstField.hidden && self.firstField.text.length > 0 && showSecondField) {
         [self.secondField becomeFirstResponder];
@@ -498,6 +827,8 @@ static UITextField *GHWebLoginMakeField(void) {
         [self.firstField becomeFirstResponder];
     } else if (showSecondField) {
         [self.secondField becomeFirstResponder];
+    } else {
+        [self dismissKeyboard];
     }
 }
 
@@ -517,11 +848,30 @@ static UITextField *GHWebLoginMakeField(void) {
 }
 
 - (NSString *)titleForMethodKind:(NSString *)kind {
-    if ([kind isEqualToString:@"app"]) return GHL(@"Код из приложения-аутентификатора");
+    if ([kind isEqualToString:@"app"]) return GHL(@"Приложение-аутентификатор");
     if ([kind isEqualToString:@"sms"]) return GHL(@"Код из SMS");
     if ([kind isEqualToString:@"email"]) return GHL(@"Код на почту");
     if ([kind isEqualToString:@"recovery"]) return GHL(@"Код восстановления");
+    if ([kind isEqualToString:@"password"]) return GHL(@"Пароль");
     return nil;
+}
+
+- (NSString *)subtitleForMethodKind:(NSString *)kind {
+    if ([kind isEqualToString:@"app"]) return GHL(@"Шестизначный код из Google Authenticator, 1Password и т. п.");
+    if ([kind isEqualToString:@"sms"]) return GHL(@"Код придёт на привязанный номер телефона");
+    if ([kind isEqualToString:@"email"]) return GHL(@"GitHub отправит код на почту аккаунта");
+    if ([kind isEqualToString:@"recovery"]) return GHL(@"Одноразовый код из сохранённого списка");
+    if ([kind isEqualToString:@"password"]) return GHL(@"Пароль от аккаунта GitHub");
+    return nil;
+}
+
+- (NSMutableDictionary *)methodWithKind:(NSString *)kind {
+    NSMutableDictionary *method = [NSMutableDictionary dictionary];
+    method[@"kind"] = kind;
+    method[@"title"] = [self titleForMethodKind:kind];
+    NSString *subtitle = [self subtitleForMethodKind:kind];
+    if (subtitle) method[@"subtitle"] = subtitle;
+    return method;
 }
 
 - (BOOL)isChallengeString:(NSString *)string {
@@ -546,11 +896,12 @@ static UITextField *GHWebLoginMakeField(void) {
         if (![self isChallengeString:action] && ![self isChallengeString:codeName]) continue;
         if (codeInput) {
             NSString *kind = [self methodKindForString:codeName] ?: [self methodKindForString:action] ?: @"app";
-            NSString *title = [self titleForMethodKind:kind];
-            if (title == nil || [kinds containsObject:kind]) continue;
+            if ([self titleForMethodKind:kind] == nil || [kinds containsObject:kind]) continue;
             [kinds addObject:kind];
-            NSMutableDictionary *method = [@{@"title": title, @"codeForm": form[@"index"], @"input": codeName,
-                                             @"button": @([self submitButtonIndexOfForm:form preferring:nil]), @"kind": kind} mutableCopy];
+            NSMutableDictionary *method = [self methodWithKind:kind];
+            method[@"codeForm"] = form[@"index"];
+            method[@"input"] = codeName;
+            method[@"button"] = @([self submitButtonIndexOfForm:form preferring:nil]);
             if ([kind isEqualToString:@"email"] && emailInitiateURL.length > 0 && emailInitiateToken.length > 0) {
                 method[@"initiateURL"] = emailInitiateURL;
                 method[@"initiateToken"] = emailInitiateToken;
@@ -559,28 +910,34 @@ static UITextField *GHWebLoginMakeField(void) {
         } else if (passwordInput) {
             if ([kinds containsObject:@"password"]) continue;
             [kinds addObject:@"password"];
-            [methods addObject:@{@"title": GHL(@"Пароль"), @"passwordForm": form[@"index"], @"input": GHWebLoginString(passwordInput[@"name"]),
-                                 @"button": @([self submitButtonIndexOfForm:form preferring:nil])}];
+            NSMutableDictionary *method = [self methodWithKind:@"password"];
+            method[@"passwordForm"] = form[@"index"];
+            method[@"input"] = GHWebLoginString(passwordInput[@"name"]);
+            method[@"button"] = @([self submitButtonIndexOfForm:form preferring:nil]);
+            [methods addObject:method];
         }
     }
 
     for (NSDictionary *link in page[@"links"]) {
         NSString *href = GHWebLoginString(link[@"href"]);
         NSString *kind = [self methodKindForString:GHWebLoginString(link[@"text"])] ?: [self methodKindForString:href];
-        NSString *title = [self titleForMethodKind:kind];
-        if (title == nil || [kinds containsObject:kind]) continue;
+        if ([self titleForMethodKind:kind] == nil || [kinds containsObject:kind]) continue;
         [kinds addObject:kind];
-        [methods addObject:@{@"title": title, @"href": href}];
+        NSMutableDictionary *method = [self methodWithKind:kind];
+        method[@"href"] = href;
+        [methods addObject:method];
     }
     for (NSDictionary *form in page[@"forms"]) {
         NSString *action = GHWebLoginString(form[@"action"]);
         if ([form[@"inputs"] count] > 0 || ![self isChallengeString:action]) continue;
         for (NSDictionary *button in form[@"buttons"]) {
             NSString *kind = [self methodKindForString:[NSString stringWithFormat:@"%@ %@", action, GHWebLoginString(button[@"text"])]];
-            NSString *title = [self titleForMethodKind:kind];
-            if (title == nil || [kinds containsObject:kind]) continue;
+            if ([self titleForMethodKind:kind] == nil || [kinds containsObject:kind]) continue;
             [kinds addObject:kind];
-            [methods addObject:@{@"title": title, @"form": form[@"index"], @"button": button[@"index"]}];
+            NSMutableDictionary *method = [self methodWithKind:kind];
+            method[@"form"] = form[@"index"];
+            method[@"button"] = button[@"index"];
+            [methods addObject:method];
         }
     }
     return methods;
@@ -624,16 +981,24 @@ static UITextField *GHWebLoginMakeField(void) {
 
 - (void)presentCodeStepForKind:(NSString *)kind error:(NSString *)error methods:(NSArray *)methods {
     NSString *message = GHL(@"Введите код подтверждения.");
-    if ([kind isEqualToString:@"app"]) message = GHL(@"Введите шестизначный код из приложения-аутентификатора.");
-    if ([kind isEqualToString:@"sms"]) message = GHL(@"Введите код из SMS.");
-    if ([kind isEqualToString:@"email"]) message = GHL(@"Введите код из письма, которое отправил GitHub.");
-    if ([kind isEqualToString:@"recovery"]) message = GHL(@"Введите один из кодов восстановления.");
+    NSString *placeholder = @"000000";
+    if ([kind isEqualToString:@"app"]) message = GHL(@"Откройте приложение-аутентификатор и введите шестизначный код для GitHub.");
+    if ([kind isEqualToString:@"sms"]) message = GHL(@"Введите код из SMS, которое отправил GitHub.");
+    if ([kind isEqualToString:@"email"]) {
+        message = GHL(@"Введите код из письма, которое отправил GitHub.");
+        placeholder = @"00000000";
+    }
+    if ([kind isEqualToString:@"recovery"]) {
+        message = GHL(@"Введите один из сохранённых кодов восстановления. Каждый код работает только один раз.");
+        placeholder = @"xxxxx-xxxxx";
+    }
+    self.codeKind = kind;
     self.firstField.keyboardType = [kind isEqualToString:@"recovery"] ? UIKeyboardTypeASCIICapable : UIKeyboardTypeNumberPad;
     [self presentStep:GHWebLoginStepCode
-                title:GHL(@"Двухфакторная проверка")
+                title:[self titleForMethodKind:kind] ?: GHL(@"Двухфакторная проверка")
               message:message
                 error:error
-           firstField:GHL(@"Код")
+           firstField:placeholder
           secondField:NO
               primary:GHL(@"Подтвердить")
               methods:methods];
@@ -659,17 +1024,17 @@ static UITextField *GHWebLoginMakeField(void) {
         self.mobileToken = mobileToken;
         NSString *digits = GHWebLoginString(page[@"mobileDigits"]);
         [self presentStep:GHWebLoginStepMobile
-                    title:GHL(@"Подтвердите вход в GitHub Mobile")
-                  message:digits.length > 0 ? GHL(@"GitHub отправил запрос на вход в приложение GitHub Mobile. Введите там это число и нажмите «Approve»:")
-                                            : GHL(@"GitHub отправил запрос на вход в приложение GitHub Mobile. Подтвердите его на телефоне.")
+                    title:GHL(@"Подтвердите вход")
+                  message:digits.length > 0 ? GHL(@"Откройте GitHub Mobile на телефоне, введите это число и нажмите «Approve».")
+                                            : GHL(@"Откройте GitHub Mobile на телефоне и подтвердите запрос на вход.")
                     error:error
                firstField:nil
               secondField:NO
                   primary:nil
                   methods:[self methodsFromPage:page excludingKind:@"mobile"]];
         self.digitsLabel.text = digits;
-        self.digitsLabel.hidden = digits.length == 0;
-        [self.progressSpinner startAnimating];
+        self.digitsCard.hidden = digits.length == 0;
+        self.statusLabel.text = GHL(@"Ожидаем подтверждения…");
         [self layoutContent];
         [self startMobilePolling];
         return;
@@ -688,7 +1053,7 @@ static UITextField *GHWebLoginMakeField(void) {
             NSArray *notices = [page[@"notices"] isKindOfClass:[NSArray class]] ? page[@"notices"] : @[];
             [self presentStep:GHWebLoginStepCredentials
                         title:GHL(@"Вход в GitHub")
-                      message:GHL(@"Логин и пароль отправляются напрямую на github.com.")
+                      message:GHL(@"Войдите в аккаунт, чтобы подключить его к приложению.")
                         error:error ?: (notices.count > 0 ? [notices componentsJoinedByString:@"\n"] : nil)
                    firstField:GHL(@"Имя пользователя или email")
                   secondField:YES
@@ -702,7 +1067,7 @@ static UITextField *GHWebLoginMakeField(void) {
                    firstField:nil
                   secondField:YES
                       primary:GHL(@"Подтвердить")
-                      methods:[self methodsFromPage:page excludingKind:nil]];
+                      methods:[self methodsFromPage:page excludingKind:@"password"]];
         }
         return;
     }
@@ -743,7 +1108,7 @@ static UITextField *GHWebLoginMakeField(void) {
         self.buttonIndex = [self submitButtonIndexOfForm:authorizeForm preferring:@"1"];
         [self presentStep:GHWebLoginStepAuthorize
                     title:GHL(@"Разрешить доступ")
-                  message:GHL(@"Приложение получит доступ к вашему аккаунту GitHub: репозиториям, задачам и подпискам.")
+                  message:GHL(@"Подтвердите, что это устройство можно подключить к вашему аккаунту GitHub.")
                     error:error
                firstField:nil
               secondField:NO
@@ -776,15 +1141,16 @@ static UITextField *GHWebLoginMakeField(void) {
         NSMutableArray *fallback = [NSMutableArray array];
         for (NSArray *entry in @[@[@"app", @"/sessions/two-factor/app"], @[@"recovery", @"/sessions/recovery"]]) {
             if ([entry[0] isEqualToString:currentKind]) continue;
-            NSString *href = [[[NSURL URLWithString:entry[1] relativeToURL:[GHWebSession baseURL]] absoluteURL] absoluteString];
-            [fallback addObject:@{@"title": [self titleForMethodKind:entry[0]], @"href": href}];
+            NSMutableDictionary *method = [self methodWithKind:entry[0]];
+            method[@"href"] = [[[NSURL URLWithString:entry[1] relativeToURL:[GHWebSession baseURL]] absoluteURL] absoluteString];
+            [fallback addObject:method];
         }
         methods = fallback;
     }
     if (methods.count > 0) {
         [self presentStep:GHWebLoginStepChooseMethod
-                    title:GHL(@"Двухфакторная проверка")
-                  message:GHL(@"Выберите, как подтвердить вход.")
+                    title:GHL(@"Подтвердите вход")
+                  message:GHL(@"Выберите, как подтвердить, что это вы.")
                     error:error
                firstField:nil
               secondField:NO
@@ -945,7 +1311,7 @@ static UITextField *GHWebLoginMakeField(void) {
 
 - (void)failMobileWithMessage:(NSString *)message {
     [self presentStep:GHWebLoginStepRetry
-                title:GHL(@"Вход через GitHub Mobile не подтверждён")
+                title:GHL(@"Вход не подтверждён")
               message:message
                 error:nil
            firstField:nil
@@ -984,7 +1350,6 @@ static UITextField *GHWebLoginMakeField(void) {
     NSString *body = space.location != NSNotFound ? [result substringFromIndex:space.location + 1] : @"";
     id json = body.length > 0 ? [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     NSString *status = [([json isKindOfClass:[NSDictionary class]] ? GHWebLoginString(json[@"status"]) : body) lowercaseString];
-
 
     if ([status rangeOfString:@"approved"].location != NSNotFound && [status rangeOfString:@"not_approved"].location == NSNotFound) {
         [self.pollTimer invalidate];

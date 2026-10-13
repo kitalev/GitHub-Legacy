@@ -183,7 +183,9 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self.successView applyTheme];
 
     self.clientIDExplanationLabel.textColor = GHSecondaryTextColor();
-    self.headerIconView.image = [GHIconRenderer devicesIconWithColor:GHTintColor() size:56];
+    self.headerIconView.image = self.opensInApp ? [GHIconRenderer personIconWithColor:GHTintColor() size:44]
+                                                : [GHIconRenderer devicesIconWithColor:GHTintColor() size:56];
+    self.headerIconView.backgroundColor = self.opensInApp ? [GHTintColor() colorWithAlphaComponent:0.14] : [UIColor clearColor];
     self.headerTitleLabel.textColor = GHPrimaryTextColor();
 
     self.codeCard.backgroundColor = GHCellBackgroundColor();
@@ -263,8 +265,15 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
         return;
     }
 
-    self.headerIconView.frame = CGRectMake(left, y, width, 60);
-    y += 60 + 8;
+    if (self.opensInApp) {
+        y += 20;
+        self.headerIconView.layer.cornerRadius = 40;
+        self.headerIconView.frame = CGRectMake(left + floor((width - 80) / 2.0), y, 80, 80);
+        y += 80 + 18;
+    } else {
+        self.headerIconView.frame = CGRectMake(left, y, width, 60);
+        y += 60 + 8;
+    }
 
     CGFloat titleHeight = [self heightForLabel:self.headerTitleLabel width:width];
     self.headerTitleLabel.frame = CGRectMake(left, y, width, titleHeight);
