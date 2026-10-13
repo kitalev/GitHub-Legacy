@@ -97,14 +97,13 @@
     message.numberOfLines = 0;
     [header addSubview:message];
 
-    UIButton *openSettingsButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-    openSettingsButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    UIButton *openSettingsButton = GHMakeButton(GHButtonStylePrimary);
+    openSettingsButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
     [openSettingsButton setTitle:GHL(@"Открыть настройки") forState:UIControlStateNormal];
     [openSettingsButton addTarget:self action:@selector(openSettings) forControlEvents:UIControlEventTouchUpInside];
     [openSettingsButton sizeToFit];
-    CGRect buttonFrame = openSettingsButton.frame;
-    buttonFrame.origin = CGPointMake((width - buttonFrame.size.width) / 2.0, blockTop + blockHeight);
-    openSettingsButton.frame = buttonFrame;
+    CGFloat buttonWidth = MIN(MAX(openSettingsButton.frame.size.width + 32, 200), width - 40);
+    openSettingsButton.frame = CGRectMake(floor((width - buttonWidth) / 2.0), blockTop + blockHeight + 4, buttonWidth, 44);
     [header addSubview:openSettingsButton];
 
     self.tableView.tableHeaderView = header;

@@ -88,7 +88,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.clientIDField.delegate = self;
     [self.scrollView addSubview:self.clientIDField];
 
-    self.clientIDContinueButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.clientIDContinueButton = GHMakeButton(GHButtonStylePrimary);
     [self.clientIDContinueButton setTitle:GHL(@"Продолжить") forState:UIControlStateNormal];
     self.clientIDContinueButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.clientIDContinueButton addTarget:self action:@selector(clientIDContinueTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -122,13 +122,13 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.expiryLabel.numberOfLines = 1;
     [self.codeCard addSubview:self.expiryLabel];
 
-    self.codeCopyButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.codeCopyButton = GHMakeButton(GHButtonStyleSecondary);
     [self.codeCopyButton setTitle:GHL(@"Скопировать") forState:UIControlStateNormal];
     self.codeCopyButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
     [self.codeCopyButton addTarget:self action:@selector(codeCopyTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.scrollView addSubview:self.codeCopyButton];
 
-    self.refreshCodeButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.refreshCodeButton = GHMakeButton(GHButtonStyleSecondary);
     [self.refreshCodeButton setTitle:GHL(@"Новый код") forState:UIControlStateNormal];
     self.refreshCodeButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
     [self.refreshCodeButton addTarget:self action:@selector(refreshCodeTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -143,7 +143,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.stepsLabel.text = GHL(@"1. Нажмите «Открыть github.com здесь» — код скопируется сам. Или откройте github.com/login/device на другом устройстве\n2. Войдите в аккаунт и вставьте код\n3. Нажмите «Authorize» — этот экран обновится сам");
     [self.stepsCard addSubview:self.stepsLabel];
 
-    self.openHereButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.openHereButton = GHMakeButton(GHButtonStylePrimary);
     [self.openHereButton setTitle:self.opensInApp ? GHL(@"Продолжить вход") : GHL(@"Открыть github.com здесь") forState:UIControlStateNormal];
     self.openHereButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.openHereButton addTarget:self action:@selector(openHereTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -156,7 +156,7 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     self.statusLabel = GHDeviceLoginMakeLabel([UIFont systemFontOfSize:14], NSTextAlignmentCenter);
     [self.scrollView addSubview:self.statusLabel];
 
-    self.retryButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.retryButton = GHMakeButton(GHButtonStyleSecondary);
     self.retryButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.retryButton addTarget:self action:@selector(retryTapped) forControlEvents:UIControlEventTouchUpInside];
     self.retryButton.hidden = YES;
@@ -199,6 +199,12 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
 
     self.spinner.activityIndicatorViewStyle = GHSpinnerStyle();
     self.statusLabel.textColor = self.statusIsError ? GHDeviceLoginErrorColor() : GHSecondaryTextColor();
+
+    GHStyleButton(self.clientIDContinueButton, GHButtonStylePrimary);
+    GHStyleButton(self.codeCopyButton, GHButtonStyleSecondary);
+    GHStyleButton(self.refreshCodeButton, GHButtonStyleSecondary);
+    GHStyleButton(self.openHereButton, GHButtonStylePrimary);
+    GHStyleButton(self.retryButton, GHButtonStyleSecondary);
 }
 
 - (void)viewDidLayoutSubviews {

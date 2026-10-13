@@ -28,6 +28,14 @@ UIColor *GHReactionSelectedBackgroundColor(void);
 UIActivityIndicatorViewStyle GHSpinnerStyle(void);
 UIColor *GHSettingsIconColor(void);
 
+typedef NS_ENUM(NSInteger, GHButtonStyle) {
+    GHButtonStylePrimary,
+    GHButtonStyleSecondary
+};
+
+UIButton *GHMakeButton(GHButtonStyle style);
+void GHStyleButton(UIButton *button, GHButtonStyle style);
+
 void GHApplyDisclosureIndicator(UITableViewCell *cell);
 
 UIView *GHThemedSectionHeaderView(NSString *title);

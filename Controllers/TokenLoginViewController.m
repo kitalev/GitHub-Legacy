@@ -105,13 +105,13 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     [self.tokenField addTarget:self action:@selector(tokenChanged) forControlEvents:UIControlEventEditingChanged];
     [self.fieldCard addSubview:self.tokenField];
 
-    self.pasteButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.pasteButton = GHMakeButton(GHButtonStyleSecondary);
     [self.pasteButton setTitle:GHL(@"Вставить") forState:UIControlStateNormal];
     self.pasteButton.titleLabel.font = [UIFont boldSystemFontOfSize:14];
     [self.pasteButton addTarget:self action:@selector(pasteTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.fieldCard addSubview:self.pasteButton];
 
-    self.loginButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.loginButton = GHMakeButton(GHButtonStylePrimary);
     [self.loginButton setTitle:GHL(@"Войти") forState:UIControlStateNormal];
     self.loginButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.loginButton addTarget:self action:@selector(loginTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -137,7 +137,7 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     self.stepsLabel.text = GHL(@"1. Откройте github.com/settings/tokens — удобнее с компьютера\n2. Generate new token → Generate new token (classic)\n3. Note — любое название, например «iPhone 4S»\n4. Expiration — срок действия; по истечении нужен новый токен\n5. Scopes — отметьте «repo» и «user:follow». Если приватные репозитории не нужны, вместо «repo» хватит «public_repo»\n6. Generate token — скопируйте токен и вставьте выше. GitHub покажет его только один раз");
     [self.stepsCard addSubview:self.stepsLabel];
 
-    self.openSettingsButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.openSettingsButton = GHMakeButton(GHButtonStyleSecondary);
     [self.openSettingsButton setTitle:GHL(@"Открыть github.com/settings/tokens") forState:UIControlStateNormal];
     self.openSettingsButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
     self.openSettingsButton.titleLabel.adjustsFontSizeToFitWidth = YES;
@@ -167,6 +167,9 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
     self.fieldCard.backgroundColor = GHCellBackgroundColor();
     self.fieldCard.layer.borderColor = GHSeparatorColor().CGColor;
     self.tokenField.textColor = GHPrimaryTextColor();
+    GHStyleButton(self.pasteButton, GHButtonStyleSecondary);
+    GHStyleButton(self.loginButton, GHButtonStylePrimary);
+    GHStyleButton(self.openSettingsButton, GHButtonStyleSecondary);
 
     self.stepsTitleLabel.textColor = GHPrimaryTextColor();
     self.stepsCard.backgroundColor = GHCellBackgroundColor();

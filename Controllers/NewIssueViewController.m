@@ -322,7 +322,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         [self.rows addObject:bodyRow];
     }
 
-    self.submitButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    self.submitButton = GHMakeButton(GHButtonStylePrimary);
     [self.submitButton setTitle:GHL(@"Создать задачу") forState:UIControlStateNormal];
     self.submitButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.submitButton addTarget:self action:@selector(submitTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -485,8 +485,8 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
             [row.card addSubview:row.textView];
 
             if (field.render.length == 0) {
-                row.attachButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-                row.attachButton.titleLabel.font = [UIFont systemFontOfSize:14];
+                row.attachButton = GHMakeButton(GHButtonStyleSecondary);
+                row.attachButton.titleLabel.font = [UIFont boldSystemFontOfSize:14];
                 row.attachButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
                 [row.attachButton setTitle:GHL(@"Прикрепить фото или файл…") forState:UIControlStateNormal];
                 [row.attachButton addTarget:self action:@selector(attachTapped:) forControlEvents:UIControlEventTouchUpInside];
@@ -564,8 +564,10 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     self.repoLabel.textColor = GHSecondaryTextColor();
     self.templateLabel.textColor = GHPrimaryTextColor();
     self.spinner.activityIndicatorViewStyle = GHSpinnerStyle();
+    GHStyleButton(self.submitButton, GHButtonStylePrimary);
 
     for (GHIssueFieldRow *row in self.rows) {
+        if (row.attachButton) GHStyleButton(row.attachButton, GHButtonStyleSecondary);
         row.markdownLabel.textColor = GHPrimaryTextColor();
         row.captionLabel.textColor = GHPrimaryTextColor();
         row.descriptionLabel.textColor = GHSecondaryTextColor();
@@ -606,8 +608,8 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         y = [self layoutRow:row atY:y left:left width:width];
     }
 
-    self.submitButton.frame = CGRectMake(left, y + 4, width, 44);
-    y += 4 + 44 + 24;
+    self.submitButton.frame = CGRectMake(left, y + 4, width, 50);
+    y += 4 + 50 + 24;
 
     self.scrollView.contentSize = CGSizeMake(self.view.bounds.size.width, y);
 }
@@ -671,8 +673,8 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     y += cardHeight;
 
     if (row.attachButton) {
-        row.attachButton.frame = CGRectMake(left + 2, y + 4, width - 4, 30);
-        y += 4 + 30;
+        row.attachButton.frame = CGRectMake(left, y + 8, width, 38);
+        y += 8 + 38;
     }
     return y + 20;
 }

@@ -244,6 +244,53 @@ CGFloat GHThemedSectionHeaderHeight(NSString *title) {
     return title.length > 0 ? 30 : 8;
 }
 
+static UIImage *GHButtonBackgroundImage(UIColor *fill, UIColor *stroke) {
+    CGFloat radius = 12;
+    CGSize size = CGSizeMake(radius * 2 + 1, radius * 2 + 1);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 0);
+    UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(CGRectMake(0, 0, size.width, size.height), 0.5, 0.5)
+                                                    cornerRadius:radius];
+    [fill setFill];
+    [path fill];
+    if (stroke) {
+        [stroke setStroke];
+        path.lineWidth = 1;
+        [path stroke];
+    }
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return [image resizableImageWithCapInsets:UIEdgeInsetsMake(radius, radius, radius, radius)];
+}
+
+void GHStyleButton(UIButton *button, GHButtonStyle style) {
+    UIColor *tint = GHTintColor();
+    if (style == GHButtonStylePrimary) {
+        [button setBackgroundImage:GHButtonBackgroundImage(tint, nil) forState:UIControlStateNormal];
+        [button setBackgroundImage:GHButtonBackgroundImage([tint colorWithAlphaComponent:0.75], nil) forState:UIControlStateHighlighted];
+        [button setBackgroundImage:GHButtonBackgroundImage([tint colorWithAlphaComponent:0.35], nil) forState:UIControlStateDisabled];
+        [button setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        [button setTitleColor:[UIColor colorWithWhite:1.0 alpha:0.75] forState:UIControlStateHighlighted];
+        [button setTitleColor:[UIColor colorWithWhite:1.0 alpha:0.8] forState:UIControlStateDisabled];
+    } else {
+        UIColor *fill = GHCellBackgroundColor();
+        UIColor *stroke = GHSeparatorColor();
+        [button setBackgroundImage:GHButtonBackgroundImage(fill, stroke) forState:UIControlStateNormal];
+        [button setBackgroundImage:GHButtonBackgroundImage([tint colorWithAlphaComponent:0.15], stroke) forState:UIControlStateHighlighted];
+        [button setBackgroundImage:GHButtonBackgroundImage(fill, stroke) forState:UIControlStateDisabled];
+        [button setTitleColor:tint forState:UIControlStateNormal];
+        [button setTitleColor:tint forState:UIControlStateHighlighted];
+        [button setTitleColor:GHSecondaryTextColor() forState:UIControlStateDisabled];
+    }
+}
+
+UIButton *GHMakeButton(GHButtonStyle style) {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    button.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    button.contentEdgeInsets = UIEdgeInsetsMake(0, 14, 0, 14);
+    GHStyleButton(button, style);
+    return button;
+}
+
 UIView *GHSignInPlaceholderView(NSString *message, CGFloat width, id target, SEL action) {
     CGFloat labelWidth = width - 40;
     UIFont *messageFont = [UIFont systemFontOfSize:15];
@@ -253,7 +300,7 @@ UIView *GHSignInPlaceholderView(NSString *message, CGFloat width, id target, SEL
     CGFloat labelHeight = ceil(messageSize.height);
 
     CGFloat buttonY = 24 + labelHeight + 16;
-    CGFloat headerHeight = buttonY + 30 + 16;
+    CGFloat headerHeight = buttonY + 44 + 16;
 
     UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, headerHeight)];
     header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -269,14 +316,13 @@ UIView *GHSignInPlaceholderView(NSString *message, CGFloat width, id target, SEL
     messageLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [header addSubview:messageLabel];
 
-    UIButton *openSettingsButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-    openSettingsButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    UIButton *openSettingsButton = GHMakeButton(GHButtonStylePrimary);
+    openSettingsButton.titleLabel.font = [UIFont boldSystemFontOfSize:16];
     [openSettingsButton setTitle:GHL(@"Открыть настройки") forState:UIControlStateNormal];
     [openSettingsButton addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
     [openSettingsButton sizeToFit];
-    CGRect buttonFrame = openSettingsButton.frame;
-    buttonFrame.origin = CGPointMake((width - buttonFrame.size.width) / 2.0, buttonY);
-    openSettingsButton.frame = buttonFrame;
+    CGFloat buttonWidth = MIN(MAX(openSettingsButton.frame.size.width + 32, 200), width - 40);
+    openSettingsButton.frame = CGRectMake(floor((width - buttonWidth) / 2.0), buttonY, buttonWidth, 44);
     openSettingsButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
     [header addSubview:openSettingsButton];
 

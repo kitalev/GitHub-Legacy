@@ -43,7 +43,7 @@
         _subtitleLabel.numberOfLines = 0;
         [self addSubview:_subtitleLabel];
 
-        _doneButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+        _doneButton = GHMakeButton(GHButtonStylePrimary);
         [_doneButton setTitle:GHL(@"Готово") forState:UIControlStateNormal];
         _doneButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
         [_doneButton addTarget:self action:@selector(doneTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -58,6 +58,7 @@
     self.backgroundColor = GHBackgroundColor();
     self.titleLabel.textColor = GHPrimaryTextColor();
     self.subtitleLabel.textColor = GHSecondaryTextColor();
+    GHStyleButton(self.doneButton, GHButtonStylePrimary);
 }
 
 - (CGFloat)heightForLabel:(UILabel *)label width:(CGFloat)width {
@@ -75,7 +76,7 @@
     CGFloat subtitleHeight = [self heightForLabel:self.subtitleLabel width:width];
     BOOL hasAvatar = !self.avatarView.hidden;
 
-    CGFloat total = 88 + 22 + titleHeight + 8 + (hasAvatar ? 44 + 10 : 0) + subtitleHeight + 30 + 44;
+    CGFloat total = 88 + 22 + titleHeight + 8 + (hasAvatar ? 44 + 10 : 0) + subtitleHeight + 30 + 50;
     CGFloat y = MAX(20, floor((self.bounds.size.height - total) / 2.0) - 20);
 
     self.badgeView.bounds = CGRectMake(0, 0, 88, 88);
@@ -93,7 +94,7 @@
     self.subtitleLabel.frame = CGRectMake(left, y, width, subtitleHeight);
     y += subtitleHeight + 30;
 
-    self.doneButton.frame = CGRectMake(left, y, width, 44);
+    self.doneButton.frame = CGRectMake(left, y, width, 50);
 }
 
 - (void)presentForLogin:(NSString *)login avatarURL:(NSString *)avatarURL {
