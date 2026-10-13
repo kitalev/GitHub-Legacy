@@ -154,7 +154,11 @@ static NSInteger GHQRDataCodewords(NSInteger ver) {
     NSInteger capacityBits = dataCapacity * 8;
     append(0, MIN(4, capacityBits - bitLength));
     append(0, (8 - bitLength % 8) % 8);
-    for (uint8_t pad = 0xEC; bitLength < capacityBits; pad ^= 0xEC ^ 0x11) append(pad, 8);
+    uint8_t pad = 0xEC;
+    while (bitLength < capacityBits) {
+        append(pad, 8);
+        pad ^= 0xEC ^ 0x11;
+    }
 
     NSInteger numBlocks = kGHQRNumBlocks[ver];
     NSInteger eccLen = kGHQREccPerBlock[ver];
