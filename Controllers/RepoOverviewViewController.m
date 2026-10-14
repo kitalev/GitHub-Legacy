@@ -407,8 +407,8 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
                             NSString *balancedFirstChunk = [GHMarkdownRenderer autoCloseUnclosedTagsInHTML:chunkBodies[0]];
                             [body appendFormat:@"<div class=\"readme-clip\">%@</div>", balancedFirstChunk];
                             [body appendFormat:
-                                @"<a href=\"app://readme-full\" class=\"show-more\">%@</a>",
-                                GHL(@"Открыть README полностью →")];
+                                @"<a href=\"app://readme-full\" class=\"show-more\"><span class=\"show-more-icon\"></span>%@<span class=\"show-more-chev\"></span></a>",
+                                GHL(@"Открыть README полностью")];
                         } else {
                             [body appendString:chunkBodies[0]];
                         }

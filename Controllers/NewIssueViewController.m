@@ -450,6 +450,11 @@ static UIImage *GHNewIssueRemoveBadge(void) {
         return;
     }
     self.attachTargetRow = row;
+    if (![[NSFileManager defaultManager] isReadableFileAtPath:path]) {
+        [self showAttachmentError:[NSString stringWithFormat:GHL(@"Файловый менеджер передал не копию, а сам файл «%@», а он доступен только root.\n\nВ файловом менеджере откройте свойства этого файла и разрешите чтение для всех (Others → Read, права 644). Затем снова нажмите «Открыть в…» → GitHub Legacy."),
+                                   path.lastPathComponent]];
+        return;
+    }
     [self handlePickedFileAtPath:path forRow:row];
 }
 
