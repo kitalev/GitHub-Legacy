@@ -82,7 +82,6 @@ static NSDictionary *GHTranslations(void) {
             @"Не удалось войти через Google": @"Couldn't sign in with Google",
             @"Проверьте, что аккаунт Google привязан к GitHub, и попробуйте ещё раз.":
                 @"Make sure your Google account is linked to GitHub, then try again.",
-            @"GitHub не показал кнопку входа через Google.": @"GitHub didn't show the Google sign-in button.",
             @"Email или телефон": @"Email or phone",
             @"Далее": @"Next",
             @"Открыть github.com здесь": @"Open github.com here",

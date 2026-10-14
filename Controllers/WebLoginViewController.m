@@ -69,20 +69,6 @@ static NSString * const kGHWebLoginDeviceCodeScript =
      "f.submit();return 'ok';"
      "})(%ld,%@[0],%ld)";
 
-static NSString * const kGHWebLoginGoogleStartScript =
-    @"(function(){"
-     "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ');}"
-     "var els=document.querySelectorAll('a,button,input[type=submit],[role=button]');"
-     "for(var i=0;i<els.length;i++){var e=els[i];var f=e.form;"
-     "var s=(txt(e)+' '+(e.getAttribute('href')||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.value||'')+' '+((f&&f.getAttribute('action'))||'')).toLowerCase();"
-     "if(s.indexOf('google')<0)continue;"
-     "var href=e.getAttribute('href')||'';"
-     "if(e.tagName.toLowerCase()=='a'&&href&&href.charAt(0)!='#'){location.href=e.href;return 'ok';}"
-     "if(f){if(e.name){var h=document.createElement('input');h.type='hidden';h.name=e.name;h.value=e.value;f.appendChild(h);}f.submit();return 'ok';}"
-     "var ev=document.createEvent('MouseEvents');ev.initMouseEvent('click',true,true,window,1,0,0,0,0,false,false,false,false,0,null);e.dispatchEvent(ev);return 'ok';}"
-     "return '';"
-     "})()";
-
 static NSString * const kGHWebLoginGoogleAnalyzeScript =
     @"(function(){"
      "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
@@ -247,7 +233,6 @@ static UIView *GHWebLoginMakeCard(void) {
 @property (nonatomic, strong) NSMutableSet *autoSubmittedActions;
 @property (nonatomic, assign) BOOL finished;
 @property (nonatomic, assign) BOOL startedGoogle;
-@property (nonatomic, assign) NSInteger googleStartAttempts;
 @property (nonatomic, strong) NSTimer *googlePollTimer;
 @property (nonatomic, copy) NSString *googleSignature;
 @property (nonatomic, assign) NSInteger googlePrimaryIndex;
@@ -1255,7 +1240,12 @@ static UIView *GHWebLoginMakeCard(void) {
     if (![host isEqualToString:@"github.com"]) {
         self.googleSignature = nil;
         if (!self.googlePollTimer) [self startGooglePolling];
-        [self presentGooglePage];
+        [self presentGooglePageAllowingGitHub:YES];
+        return YES;
+    }
+
+    if ([GHWebLoginString(page[@"path"]) hasPrefix:@"/sessions/social/"]) {
+        if (self.step != GHWebLoginStepLoading) [self showLoadingWithMessage:GHL(@"Переход к Google…")];
         return YES;
     }
 
@@ -1270,22 +1260,17 @@ static UIView *GHWebLoginMakeCard(void) {
         return YES;
     }
 
-    if ([[self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginGoogleStartScript] isEqualToString:@"ok"]) {
-        self.startedGoogle = YES;
-        [self showLoadingWithMessage:GHL(@"Переход к Google…")];
-        [self startGooglePolling];
-        return YES;
+    NSString *returnTo = @"/";
+    if (self.startURL.path.length > 0) {
+        returnTo = self.startURL.query.length > 0 ? [NSString stringWithFormat:@"%@?%@", self.startURL.path, self.startURL.query] : self.startURL.path;
     }
-
-    if (self.googleStartAttempts < 10) {
-        self.googleStartAttempts++;
-        [self showLoadingWithMessage:GHL(@"Переход к Google…")];
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(analyzePage) object:nil];
-        [self performSelector:@selector(analyzePage) withObject:nil afterDelay:1.0];
-        return YES;
-    }
-
-    [self presentGoogleFailure:GHL(@"GitHub не показал кнопку входа через Google.")];
+    NSString *encoded = (__bridge_transfer NSString *)CFURLCreateStringByAddingPercentEscapes(NULL, (__bridge CFStringRef)returnTo, NULL,
+                                                                                               CFSTR(":/?#[]@!$&'()*+,;="), kCFStringEncodingUTF8);
+    NSString *initiate = [NSString stringWithFormat:@"/sessions/social/google/initiate?return_to=%@&disable_signup=true", encoded];
+    self.startedGoogle = YES;
+    [self showLoadingWithMessage:GHL(@"Переход к Google…")];
+    [self startGooglePolling];
+    [self.webView loadRequest:[NSURLRequest requestWithURL:[[NSURL URLWithString:initiate relativeToURL:[GHWebSession baseURL]] absoluteURL]]];
     return YES;
 }
 
@@ -1313,7 +1298,7 @@ static UIView *GHWebLoginMakeCard(void) {
 
 - (void)googlePollTick {
     if (self.finished || self.webView.isLoading) return;
-    [self presentGooglePage];
+    [self presentGooglePageAllowingGitHub:NO];
 }
 
 - (BOOL)isGoogleNextTitle:(NSString *)title {
@@ -1325,11 +1310,11 @@ static UIView *GHWebLoginMakeCard(void) {
     return NO;
 }
 
-- (void)presentGooglePage {
+- (void)presentGooglePageAllowingGitHub:(BOOL)allowGitHub {
     NSString *json = [self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginGoogleAnalyzeScript];
     NSDictionary *page = json.length > 0 ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     if (![page isKindOfClass:[NSDictionary class]]) return;
-    if ([[GHWebLoginString(page[@"host"]) lowercaseString] isEqualToString:@"github.com"]) return;
+    if (!allowGitHub && [[GHWebLoginString(page[@"host"]) lowercaseString] isEqualToString:@"github.com"]) return;
     if ([json isEqualToString:self.googleSignature]) return;
     self.googleSignature = json;
 
@@ -1412,6 +1397,11 @@ static UIView *GHWebLoginMakeCard(void) {
 }
 
 - (void)showPage {
+    if (self.prefersGoogle) {
+        self.googleSignature = nil;
+        [self presentGooglePageAllowingGitHub:YES];
+        return;
+    }
     [self presentStep:GHWebLoginStepPage title:nil message:nil error:nil
            firstField:nil secondField:NO primary:nil methods:nil];
 }
@@ -1473,7 +1463,6 @@ static UIView *GHWebLoginMakeCard(void) {
             NSURL *url = self.retryURL ?: self.startURL ?: [GHWebSession signInURL];
             self.submittedDeviceCode = NO;
             self.startedGoogle = NO;
-            self.googleStartAttempts = 0;
             [self showLoadingWithMessage:GHL(@"Подключение к github.com…")];
             [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
         }
@@ -1703,7 +1692,6 @@ static UIView *GHWebLoginMakeCard(void) {
         self.pollTimer = nil;
         [self.googlePollTimer invalidate];
         self.googlePollTimer = nil;
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(analyzePage) object:nil];
     }
 }
 
