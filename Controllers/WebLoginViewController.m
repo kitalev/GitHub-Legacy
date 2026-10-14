@@ -1192,6 +1192,18 @@ static UIView *GHWebLoginMakeCard(void) {
 
     if (self.prefersGoogle && [self handleGoogleInPage:page]) return;
 
+    BOOL loginChallenge = [path hasPrefix:@"/sessions/two-factor"] || [path hasPrefix:@"/sessions/recovery"] || [path isEqualToString:@"/login"];
+    if (loginChallenge && error == nil && [GHWebSession isSignedIn]) {
+        if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
+        NSString *key = [@"signed-in " stringByAppendingString:path];
+        if (![self.autoSubmittedActions containsObject:key]) {
+            [self.autoSubmittedActions addObject:key];
+            [self showLoadingWithMessage:GHL(@"Завершаем вход…")];
+            [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession baseURL]]];
+            return;
+        }
+    }
+
     NSString *mobilePollURL = GHWebLoginString(page[@"mobilePollURL"]);
     NSString *mobileToken = GHWebLoginString(page[@"mobileToken"]);
     if (mobilePollURL.length > 0 && mobileToken.length > 0) {

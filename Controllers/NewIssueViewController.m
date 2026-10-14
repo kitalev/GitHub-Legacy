@@ -20,6 +20,7 @@ static const NSUInteger kMaxInlineFileCharacters = 60000;
 static const unsigned long long kMaxFileReadBytes = 256 * 1024;
 static const CGFloat kMaxPhotoDimension = 2048;
 static const NSInteger kUnreadableFileAlertTag = 1;
+static const CGFloat kPreviewSide = 72;
 
 static __weak NewIssueViewController *gActiveComposer = nil;
 static NSString *gPendingIncomingFilePath = nil;
@@ -204,6 +205,53 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 
 @end
 
+#pragma mark - GHIssueAttachmentPreview
+
+@interface GHIssueAttachmentPreview : NSObject
+@property (nonatomic, copy) NSString *marker;
+@property (nonatomic, strong) UIView *view;
+@property (nonatomic, strong) UIImageView *imageView;
+@property (nonatomic, strong) UIActivityIndicatorView *spinner;
+@property (nonatomic, strong) UIButton *removeButton;
+@end
+
+@implementation GHIssueAttachmentPreview
+@end
+
+static UIImage *GHNewIssueThumbnail(UIImage *image, CGFloat side) {
+    if (image == nil || image.size.width < 1 || image.size.height < 1) return nil;
+    CGFloat scale = MAX(side / image.size.width, side / image.size.height);
+    CGSize drawn = CGSizeMake(ceil(image.size.width * scale), ceil(image.size.height * scale));
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(side, side), YES, [UIScreen mainScreen].scale);
+    [image drawInRect:CGRectMake(floor((side - drawn.width) / 2.0), floor((side - drawn.height) / 2.0), drawn.width, drawn.height)];
+    UIImage *thumbnail = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return thumbnail;
+}
+
+static UIImage *GHNewIssueRemoveBadge(void) {
+    static UIImage *badge = nil;
+    if (badge) return badge;
+    CGFloat side = 22;
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(side, side), NO, 0);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    [[UIColor whiteColor] setFill];
+    CGContextFillEllipseInRect(context, CGRectMake(0, 0, side, side));
+    [[UIColor colorWithWhite:0.15 alpha:0.9] setFill];
+    CGContextFillEllipseInRect(context, CGRectMake(1.5, 1.5, side - 3, side - 3));
+    [[UIColor whiteColor] setStroke];
+    CGContextSetLineWidth(context, 2.0);
+    CGContextSetLineCap(context, kCGLineCapRound);
+    CGContextMoveToPoint(context, 7.5, 7.5);
+    CGContextAddLineToPoint(context, side - 7.5, side - 7.5);
+    CGContextMoveToPoint(context, side - 7.5, 7.5);
+    CGContextAddLineToPoint(context, 7.5, side - 7.5);
+    CGContextStrokePath(context);
+    badge = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return badge;
+}
+
 #pragma mark - GHIssueFieldRow
 
 @interface GHIssueFieldRow : NSObject
@@ -224,6 +272,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 @property (nonatomic, strong) NSArray *checkboxSwitches;
 @property (nonatomic, strong) NSArray *checkboxSeparators;
 @property (nonatomic, strong) UIButton *attachButton;
+@property (nonatomic, strong) NSMutableArray *previews;
 @end
 
 @implementation GHIssueFieldRow
@@ -258,6 +307,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 @property (nonatomic, copy) NSArray *attachActions;
 @property (nonatomic, strong) UIPopoverController *imagePopover;
 @property (nonatomic, strong) GHAttachmentUploader *activeUpload;
+@property (nonatomic, weak) GHIssueAttachmentPreview *uploadingPreview;
 @property (nonatomic, assign) long long uploadRepositoryID;
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UILabel *repoLabel;
@@ -582,6 +632,10 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         row.dropdownChevron.image = [GHIconRenderer disclosureChevronWithColor:GHSecondaryTextColor() size:CGSizeMake(12, 20)];
         for (UILabel *label in row.checkboxLabels) label.textColor = GHPrimaryTextColor();
         for (UIView *separator in row.checkboxSeparators) separator.backgroundColor = GHSeparatorColor();
+        for (GHIssueAttachmentPreview *preview in row.previews) {
+            preview.imageView.backgroundColor = GHCellBackgroundColor();
+            preview.imageView.layer.borderColor = GHSeparatorColor().CGColor;
+        }
         [self updateDropdownTitleForRow:row];
     }
 }
@@ -675,6 +729,19 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     if (row.attachButton) {
         row.attachButton.frame = CGRectMake(left, y + 8, width, 38);
         y += 8 + 38;
+    }
+    if (row.previews.count > 0) {
+        CGFloat tileWidth = kPreviewSide + 8;
+        CGFloat tileHeight = kPreviewSide + 8;
+        CGFloat spacing = 6;
+        NSUInteger perLine = MAX((NSUInteger)1, (NSUInteger)floor((width + spacing) / (tileWidth + spacing)));
+        for (NSUInteger i = 0; i < row.previews.count; i++) {
+            GHIssueAttachmentPreview *preview = row.previews[i];
+            preview.view.frame = CGRectMake(left + (i % perLine) * (tileWidth + spacing), y + 8 + (i / perLine) * (tileHeight + spacing),
+                                            tileWidth, tileHeight);
+        }
+        NSUInteger lines = (row.previews.count + perLine - 1) / perLine;
+        y += 8 + lines * tileHeight + (lines - 1) * spacing;
     }
     return y + 20;
 }
@@ -817,7 +884,8 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
             return;
         }
         GHIssueFieldRow *strongRow = weakRow;
-        if (strongRow) [weakSelf uploadData:data fileName:path.lastPathComponent contentType:contentType intoRow:strongRow];
+        UIImage *thumbnail = [contentType hasPrefix:@"image/"] ? GHNewIssueThumbnail([UIImage imageWithData:data], kPreviewSide) : nil;
+        if (strongRow) [weakSelf uploadData:data fileName:path.lastPathComponent contentType:contentType thumbnail:thumbnail intoRow:strongRow];
     }];
 }
 
@@ -917,7 +985,7 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyyMMdd_HHmmss";
     NSString *fileName = [NSString stringWithFormat:@"IMG_%@.jpg", [formatter stringFromDate:[NSDate date]]];
-    [self uploadData:data fileName:fileName contentType:@"image/jpeg" intoRow:row];
+    [self uploadData:data fileName:fileName contentType:@"image/jpeg" thumbnail:GHNewIssueThumbnail(image, kPreviewSide) intoRow:row];
 }
 
 - (NSData *)jpegDataForImage:(UIImage *)image {
@@ -941,13 +1009,79 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
     return data;
 }
 
-- (void)uploadData:(NSData *)data fileName:(NSString *)fileName contentType:(NSString *)contentType intoRow:(GHIssueFieldRow *)row {
+- (GHIssueAttachmentPreview *)addPreviewWithImage:(UIImage *)image marker:(NSString *)marker toRow:(GHIssueFieldRow *)row {
+    GHIssueAttachmentPreview *preview = [[GHIssueAttachmentPreview alloc] init];
+    preview.marker = marker;
+    preview.view = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kPreviewSide + 8, kPreviewSide + 8)];
+
+    preview.imageView = [[UIImageView alloc] initWithFrame:CGRectMake(0, 8, kPreviewSide, kPreviewSide)];
+    preview.imageView.image = image;
+    preview.imageView.contentMode = UIViewContentModeScaleAspectFill;
+    preview.imageView.clipsToBounds = YES;
+    preview.imageView.layer.cornerRadius = 6.0;
+    preview.imageView.layer.borderWidth = 1.0;
+    preview.imageView.backgroundColor = GHCellBackgroundColor();
+    preview.imageView.layer.borderColor = GHSeparatorColor().CGColor;
+    preview.imageView.alpha = 0.45;
+    [preview.view addSubview:preview.imageView];
+
+    preview.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
+    preview.spinner.center = preview.imageView.center;
+    preview.spinner.hidesWhenStopped = YES;
+    [preview.spinner startAnimating];
+    [preview.view addSubview:preview.spinner];
+
+    preview.removeButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    preview.removeButton.frame = CGRectMake(kPreviewSide - 22, 0, 30, 30);
+    [preview.removeButton setImage:GHNewIssueRemoveBadge() forState:UIControlStateNormal];
+    [preview.removeButton addTarget:self action:@selector(removePreviewTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [preview.view addSubview:preview.removeButton];
+
+    [self.scrollView addSubview:preview.view];
+    if (row.previews == nil) row.previews = [NSMutableArray array];
+    [row.previews addObject:preview];
+    [self layoutContent];
+    return preview;
+}
+
+- (void)removePreview:(GHIssueAttachmentPreview *)preview fromRow:(GHIssueFieldRow *)row {
+    if (preview == nil) return;
+    [preview.view removeFromSuperview];
+    [row.previews removeObject:preview];
+    [self layoutContent];
+}
+
+- (void)removePreviewTapped:(UIButton *)button {
+    for (GHIssueFieldRow *row in self.rows) {
+        for (GHIssueAttachmentPreview *preview in [row.previews copy]) {
+            if (preview.removeButton != button) continue;
+            if (preview == self.uploadingPreview) {
+                [self.activeUpload cancel];
+                self.activeUpload = nil;
+                self.uploadingPreview = nil;
+                [self setAttachButtonsTitle:nil enabled:YES];
+            }
+            [self replacePlaceholder:preview.marker withText:@"" inRow:row];
+            [self removePreview:preview fromRow:row];
+            return;
+        }
+    }
+}
+
+- (void)uploadData:(NSData *)data
+          fileName:(NSString *)fileName
+       contentType:(NSString *)contentType
+         thumbnail:(UIImage *)thumbnail
+           intoRow:(GHIssueFieldRow *)row {
     NSString *placeholder = [NSString stringWithFormat:@"![%@ %@…]()", GHL(@"Загрузка"), fileName];
     [self insertBlock:placeholder intoRow:row];
     [self setAttachButtonsTitle:[NSString stringWithFormat:GHL(@"Загрузка… %d%%"), 0] enabled:NO];
+    GHIssueAttachmentPreview *preview = thumbnail ? [self addPreviewWithImage:thumbnail marker:placeholder toRow:row] : nil;
+    self.uploadingPreview = preview;
 
     __weak typeof(self) weakSelf = self;
     __weak GHIssueFieldRow *weakRow = row;
+    __weak GHIssueAttachmentPreview *weakPreview = preview;
     self.activeUpload = [GHAttachmentUploader uploadData:data
                                                 fileName:fileName
                                              contentType:contentType
@@ -960,19 +1094,27 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
         strongSelf.activeUpload = nil;
+        strongSelf.uploadingPreview = nil;
         [strongSelf setAttachButtonsTitle:nil enabled:YES];
 
         GHIssueFieldRow *strongRow = weakRow;
+        GHIssueAttachmentPreview *strongPreview = weakPreview;
         NSString *replacement = url ? [GHAttachmentUploader markdownForFileName:fileName url:url contentType:contentType] : @"";
         if (strongRow) [strongSelf replacePlaceholder:placeholder withText:replacement inRow:strongRow];
-        if (url) return;
+        if (url) {
+            strongPreview.marker = replacement;
+            [strongPreview.spinner stopAnimating];
+            strongPreview.imageView.alpha = 1.0;
+            return;
+        }
+        [strongSelf removePreview:strongPreview fromRow:strongRow];
 
         if ([error.domain isEqualToString:GHAttachmentUploaderErrorDomain] && error.code == GHAttachmentUploaderErrorSignInRequired && strongRow) {
             [GHWebSession signOut];
             __weak typeof(strongSelf) innerSelf = strongSelf;
             [strongSelf ensureUploadAccess:^{
                 GHIssueFieldRow *retryRow = weakRow;
-                if (retryRow) [innerSelf uploadData:data fileName:fileName contentType:contentType intoRow:retryRow];
+                if (retryRow) [innerSelf uploadData:data fileName:fileName contentType:contentType thumbnail:thumbnail intoRow:retryRow];
             }];
             return;
         }
@@ -1187,7 +1329,17 @@ static NSString *GHPlainTextFromMarkdown(NSString *markdown) {
 }
 
 - (void)textViewDidChange:(UITextView *)textView {
-    [self clearInvalidStateForRow:[self rowContainingView:textView]];
+    GHIssueFieldRow *row = [self rowContainingView:textView];
+    [self clearInvalidStateForRow:row];
+    NSString *text = textView.text ?: @"";
+    BOOL removed = NO;
+    for (GHIssueAttachmentPreview *preview in [row.previews copy]) {
+        if (preview == self.uploadingPreview || [text rangeOfString:preview.marker].location != NSNotFound) continue;
+        [preview.view removeFromSuperview];
+        [row.previews removeObject:preview];
+        removed = YES;
+    }
+    if (removed) [self layoutContent];
 }
 
 - (void)dismissKeyboard {

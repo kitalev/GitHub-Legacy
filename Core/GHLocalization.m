@@ -126,6 +126,7 @@ static NSDictionary *GHTranslations(void) {
             @"Введите код из письма, которое отправил GitHub.": @"Enter the code from the email GitHub sent you.",
             @"Показать": @"Show",
             @"Устройство подтверждено. Завершаем вход…": @"Device approved. Finishing sign-in…",
+            @"Завершаем вход…": @"Finishing sign-in…",
             @"Подтверждаем устройство…": @"Approving the device…",
             @"Вход…": @"Signing in…",
             @"Проверка пароля…": @"Checking password…",
