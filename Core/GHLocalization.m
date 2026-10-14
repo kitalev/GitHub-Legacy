@@ -83,6 +83,7 @@ static NSDictionary *GHTranslations(void) {
             @"Проверьте, что аккаунт Google привязан к GitHub, и попробуйте ещё раз.":
                 @"Make sure your Google account is linked to GitHub, then try again.",
             @"Email или телефон": @"Email or phone",
+            @"Google не ответил.": @"Google didn't respond.",
             @"Далее": @"Next",
             @"Открыть github.com здесь": @"Open github.com here",
             @"Не удалось открыть github.com": @"Couldn't open github.com",

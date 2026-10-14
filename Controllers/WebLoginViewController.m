@@ -74,7 +74,7 @@ static NSString * const kGHWebLoginGoogleAnalyzeScript =
      "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
      "function shown(e){if(!e)return false;var s=window.getComputedStyle(e);"
      "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
-     "var r={host:location.host,heading:'',text:'',errors:[],input:null,password:false,buttons:[]};"
+     "var r={host:location.host,ready:document.readyState,submitted:!!window.__ghSubmitted,heading:'',text:'',errors:[],input:null,password:false,buttons:[]};"
      "var h=document.querySelector('h1');if(h&&shown(h))r.heading=txt(h);"
      "var d=document.getElementById('headingSubtext');if(d&&shown(d))r.text=txt(d);"
      "var es=document.querySelectorAll('[aria-live=assertive],[aria-live=polite],.o6cuMc,.Ekjuhf,.dEOOab,.LXRPh,.error-msg');"
@@ -94,7 +94,7 @@ static NSString * const kGHWebLoginGoogleAnalyzeScript =
      "})()";
 
 static NSString * const kGHWebLoginGoogleSubmitScript =
-    @"(function(v,bi){"
+    @"(function(v,bi){window.__ghSubmitted=1;"
      "function set(e,val){if(!e)return;e.focus();e.value=val;var n=['input','change','keyup'];"
      "for(var i=0;i<n.length;i++){var ev=document.createEvent('HTMLEvents');ev.initEvent(n[i],true,true);e.dispatchEvent(ev);}}"
      "if(v.input!=null)set(window.__ghInput,v.input);"
@@ -301,6 +301,8 @@ static UIView *GHWebLoginMakeCard(void) {
 @property (nonatomic, strong) NSTimer *googlePollTimer;
 @property (nonatomic, copy) NSString *googleSignature;
 @property (nonatomic, assign) NSInteger googlePrimaryIndex;
+@property (nonatomic, assign) NSTimeInterval googleSubmittedAt;
+@property (nonatomic, assign) NSTimeInterval googleLoadingSince;
 @end
 
 @implementation WebLoginViewController
@@ -1358,7 +1360,18 @@ static UIView *GHWebLoginMakeCard(void) {
 }
 
 - (void)googlePollTick {
-    if (self.finished || self.webView.isLoading) return;
+    if (self.finished) return;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (self.step != GHWebLoginStepLoading) {
+        self.googleLoadingSince = 0;
+    } else if (self.googleLoadingSince == 0) {
+        self.googleLoadingSince = now;
+    } else if (now - self.googleLoadingSince > 45) {
+        self.googleLoadingSince = 0;
+        [self.webView stopLoading];
+        [self presentGoogleFailure:GHL(@"Google не ответил.")];
+        return;
+    }
     [self presentGooglePageAllowingGitHub:NO];
 }
 
@@ -1376,6 +1389,8 @@ static UIView *GHWebLoginMakeCard(void) {
     NSDictionary *page = json.length > 0 ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     if (![page isKindOfClass:[NSDictionary class]]) return;
     if (!allowGitHub && [[GHWebLoginString(page[@"host"]) lowercaseString] isEqualToString:@"github.com"]) return;
+    if ([GHWebLoginString(page[@"ready"]) isEqualToString:@"loading"]) return;
+    if ([page[@"submitted"] boolValue] && [NSDate timeIntervalSinceReferenceDate] - self.googleSubmittedAt < 15) return;
     if ([json isEqualToString:self.googleSignature]) return;
     self.googleSignature = json;
 
@@ -1432,9 +1447,9 @@ static UIView *GHWebLoginMakeCard(void) {
 - (void)submitGoogleWithValues:(NSDictionary *)values buttonIndex:(NSInteger)buttonIndex {
     NSString *script = [NSString stringWithFormat:kGHWebLoginGoogleSubmitScript, GHWebLoginJSON(values ?: @{}) ?: @"{}", (long)buttonIndex];
     self.googleSignature = nil;
+    self.googleSubmittedAt = [NSDate timeIntervalSinceReferenceDate];
     [self showLoadingWithMessage:GHL(@"Вход через Google…")];
     [self.webView stringByEvaluatingJavaScriptFromString:script];
-    self.googlePollTimer.fireDate = [NSDate dateWithTimeIntervalSinceNow:2.0];
 }
 - (BOOL)autoSubmitContinueFormInPage:(NSDictionary *)page {
     if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
