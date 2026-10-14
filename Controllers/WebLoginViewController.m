@@ -109,6 +109,71 @@ static NSString * const kGHWebLoginGoogleSubmitScript =
 static NSString * const kGHWebLoginGoogleUserAgent =
     @"Opera/9.80 (J2ME/MIDP; Opera Mini/9.80 (S60; SymbOS; Opera Mobi/23.348; U; en) Presto/2.5.25 Version/10.54";
 
+static NSString * const kGHGoogleProtocolHandledKey = @"GHGoogleUserAgentHandled";
+
+static BOOL GHWebLoginIsGoogleHost(NSString *host) {
+    host = [host lowercaseString];
+    return [host isEqualToString:@"google.com"] || [host hasSuffix:@".google.com"]
+        || [host isEqualToString:@"gstatic.com"] || [host hasSuffix:@".gstatic.com"];
+}
+
+@interface GHGoogleUserAgentProtocol : NSURLProtocol
+@property (nonatomic, strong) NSURLConnection *connection;
+@end
+
+@implementation GHGoogleUserAgentProtocol
+
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    NSString *scheme = [request.URL.scheme lowercaseString];
+    if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) return NO;
+    if ([NSURLProtocol propertyForKey:kGHGoogleProtocolHandledKey inRequest:request]) return NO;
+    return GHWebLoginIsGoogleHost(request.URL.host);
+}
+
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
+    return request;
+}
+
+- (void)startLoading {
+    NSMutableURLRequest *request = [self.request mutableCopy];
+    [request setValue:kGHWebLoginGoogleUserAgent forHTTPHeaderField:@"User-Agent"];
+    [NSURLProtocol setProperty:@YES forKey:kGHGoogleProtocolHandledKey inRequest:request];
+    self.connection = [NSURLConnection connectionWithRequest:request delegate:self];
+}
+
+- (void)stopLoading {
+    [self.connection cancel];
+    self.connection = nil;
+}
+
+- (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)response {
+    if (!response) return request;
+    NSMutableURLRequest *redirect = [request mutableCopy];
+    [NSURLProtocol removePropertyForKey:kGHGoogleProtocolHandledKey inRequest:redirect];
+    [self.client URLProtocol:self wasRedirectedToRequest:redirect redirectResponse:response];
+    [connection cancel];
+    [self.client URLProtocol:self didFailWithError:[NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil]];
+    return nil;
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data {
+    [self.client URLProtocol:self didLoadData:data];
+}
+
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection {
+    [self.client URLProtocolDidFinishLoading:self];
+}
+
+- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error {
+    [self.client URLProtocol:self didFailWithError:error];
+}
+
+@end
+
 static const NSInteger kGHWebLoginRowIconTag = 1001;
 static const NSInteger kGHWebLoginRowTitleTag = 1002;
 static const NSInteger kGHWebLoginRowSubtitleTag = 1003;
@@ -243,6 +308,7 @@ static UIView *GHWebLoginMakeCard(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     if (self.title.length == 0) self.title = GHL(@"Вход в GitHub");
+    if (self.prefersGoogle) [NSURLProtocol registerClass:[GHGoogleUserAgentProtocol class]];
 
     self.webView = [[UIWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -1229,11 +1295,6 @@ static UIView *GHWebLoginMakeCard(void) {
     [self showPage];
 }
 
-- (BOOL)isGoogleURL:(NSURL *)url {
-    NSString *host = [url.host lowercaseString];
-    return [host isEqualToString:@"google.com"] || [host hasSuffix:@".google.com"]
-        || [host isEqualToString:@"gstatic.com"] || [host hasSuffix:@".gstatic.com"];
-}
 
 - (BOOL)handleGoogleInPage:(NSDictionary *)page {
     NSString *host = [GHWebLoginString(page[@"host"]) lowercaseString];
@@ -1649,13 +1710,6 @@ static UIView *GHWebLoginMakeCard(void) {
                 navigationType:(UIWebViewNavigationType)navigationType {
     if (self.finished) return NO;
     if (request.URL == nil || ![request.mainDocumentURL isEqual:request.URL]) return YES;
-    if (self.prefersGoogle && [self isGoogleURL:request.URL]
-        && ![[request valueForHTTPHeaderField:@"User-Agent"] isEqualToString:kGHWebLoginGoogleUserAgent]) {
-        NSMutableURLRequest *spoofed = [request mutableCopy];
-        [spoofed setValue:kGHWebLoginGoogleUserAgent forHTTPHeaderField:@"User-Agent"];
-        [webView loadRequest:spoofed];
-        return NO;
-    }
     return ![self finishIfSignedInAtURL:request.URL];
 }
 
@@ -1692,6 +1746,7 @@ static UIView *GHWebLoginMakeCard(void) {
         self.pollTimer = nil;
         [self.googlePollTimer invalidate];
         self.googlePollTimer = nil;
+        if (self.prefersGoogle) [NSURLProtocol unregisterClass:[GHGoogleUserAgentProtocol class]];
     }
 }
 
@@ -1699,6 +1754,7 @@ static UIView *GHWebLoginMakeCard(void) {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self.pollTimer invalidate];
     [self.googlePollTimer invalidate];
+    if (self.prefersGoogle) [NSURLProtocol unregisterClass:[GHGoogleUserAgentProtocol class]];
     self.webView.delegate = nil;
     [self.webView stopLoading];
 }
