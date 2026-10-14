@@ -1628,7 +1628,11 @@ static void GHReleaseLoadAvatar(UIImageView *imageView, NSString *urlString) {
                                               cancelButtonTitle:GHL(@"Отмена")
                                          destructiveButtonTitle:nil
                                               otherButtonTitles:GHL(@"Скачать"), GHL(@"Скопировать ссылку"), nil];
-    [sheet showInView:self.view];
+    if (self.tabBarController.tabBar && !self.tabBarController.tabBar.hidden) {
+        [sheet showFromTabBar:self.tabBarController.tabBar];
+    } else {
+        [sheet showInView:self.view];
+    }
 }
 
 - (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {

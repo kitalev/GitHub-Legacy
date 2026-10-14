@@ -830,6 +830,8 @@ static UIImage *GHNewIssueRemoveBadge(void) {
 
     if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
         [sheet showFromRect:button.frame inView:self.scrollView animated:YES];
+    } else if (self.tabBarController.tabBar && !self.tabBarController.tabBar.hidden) {
+        [sheet showFromTabBar:self.tabBarController.tabBar];
     } else {
         [sheet showInView:self.view];
     }
@@ -1189,11 +1191,8 @@ static UIImage *GHNewIssueRemoveBadge(void) {
 }
 
 - (NSString *)unreadableFileMessageForPath:(NSString *)path {
-    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
-    NSString *owner = attributes[NSFileOwnerAccountName] ?: @"?";
-    unsigned long permissions = [attributes[NSFilePosixPermissions] unsignedLongValue];
-    return [NSString stringWithFormat:GHL(@"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile.\n\nОткройте папку с файлом в файловом менеджере, выберите файл и нажмите «Открыть в…» → GitHub — он сразу прикрепится к задаче."),
-            owner, permissions];
+    return [NSString stringWithFormat:GHL(@"Приложение работает от пользователя mobile и не может прочитать «%@»: файл доступен только root.\n\nОткройте эту папку в файловом менеджере, выберите в ней файл, нажмите «Открыть в…» и выберите GitHub Legacy. Файл сразу прикрепится к задаче."),
+            path.lastPathComponent];
 }
 
 - (void)showUnreadableFileAlertForPath:(NSString *)path {

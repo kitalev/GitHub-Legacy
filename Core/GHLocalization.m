@@ -468,8 +468,8 @@ static NSDictionary *GHTranslations(void) {
             @"Загрузка": @"Uploading",
             @"Загрузка… %d%%": @"Uploading… %d%%",
             @"Файл пустой.": @"The file is empty.",
-            @"Нет доступа на чтение: файл принадлежит %@ (права %lo), а приложение работает от пользователя mobile.\n\nОткройте папку с файлом в файловом менеджере, выберите файл и нажмите «Открыть в…» → GitHub — он сразу прикрепится к задаче.":
-                @"No read access: the file belongs to %@ (permissions %lo), and the app runs as the mobile user.\n\nOpen the file's folder in a file manager, select the file and tap \"Open In…\" → GitHub; it will be attached to the issue right away.",
+            @"Приложение работает от пользователя mobile и не может прочитать «%@»: файл доступен только root.\n\nОткройте эту папку в файловом менеджере, выберите в ней файл, нажмите «Открыть в…» и выберите GitHub Legacy. Файл сразу прикрепится к задаче.":
+                @"The app runs as the mobile user and can't read \"%@\": only root can access this file.\n\nOpen this folder in a file manager, select the file, tap \"Open In…\" and choose GitHub Legacy. The file will be attached to the issue right away.",
             @"Файл получен": @"File received",
             @"«%@» будет прикреплён, когда вы откроете форму новой задачи.": @"\"%@\" will be attached when you open the new issue form.",
             @"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.": @"Wait for the current upload to finish, then attach the file again.",
