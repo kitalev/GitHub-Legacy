@@ -107,7 +107,7 @@ static NSString * const kGHWebLoginGoogleSubmitScript =
      "})(%@,%ld)";
 
 static NSString * const kGHWebLoginGoogleUserAgent =
-    @"Mozilla/5.0 (iPhone; CPU iPhone OS 12_5_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Mobile/15E148 Safari/604.1";
+    @"Opera/9.80 (J2ME/MIDP; Opera Mini/9.80 (S60; SymbOS; Opera Mobi/23.348; U; en) Presto/2.5.25 Version/10.54";
 
 static const NSInteger kGHWebLoginRowIconTag = 1001;
 static const NSInteger kGHWebLoginRowTitleTag = 1002;
