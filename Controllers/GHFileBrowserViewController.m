@@ -18,9 +18,33 @@ static NSString * const kFileBrowserCellID = @"FileBrowserCell";
 @property (nonatomic, copy) NSString *path;
 @property (nonatomic, strong) NSArray *entries;
 @property (nonatomic, copy) NSString *emptyMessage;
+@property (nonatomic, copy) NSArray *managerLinks;
 @end
 
 @implementation GHFileBrowserViewController
+
++ (NSArray *)fileManagerLinksForFolder:(NSString *)folder {
+    NSString *encoded = [(folder.length > 0 ? folder : @"/") stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    NSArray *candidates = @[@[@"Filza", [NSString stringWithFormat:@"filza://view%@", encoded]],
+                            @[@"iFile", [NSString stringWithFormat:@"ifile://%@", encoded]]];
+    NSMutableArray *links = [NSMutableArray array];
+    for (NSArray *candidate in candidates) {
+        NSURL *url = [NSURL URLWithString:candidate[1]];
+        if (url && [[UIApplication sharedApplication] canOpenURL:url]) [links addObject:@[candidate[0], url]];
+    }
+    return links;
+}
+
++ (NSString *)defaultPickFolder {
+    BOOL isDirectory = NO;
+    NSString *downloads = @"/var/mobile/Media/Downloads";
+    if ([[NSFileManager defaultManager] fileExistsAtPath:downloads isDirectory:&isDirectory] && isDirectory) return downloads;
+    return @"/var/mobile/Media";
+}
+
++ (BOOL)canBrowseFileSystem {
+    return [[NSFileManager defaultManager] contentsOfDirectoryAtPath:@"/var/mobile" error:nil] != nil;
+}
 
 - (id)initWithPath:(NSString *)path {
     self = [super initWithStyle:UITableViewStylePlain];
@@ -79,6 +103,7 @@ static NSString * const kFileBrowserCellID = @"FileBrowserCell";
     if (names == nil) {
         self.entries = @[];
         self.emptyMessage = GHL(@"Нет доступа к папке");
+        self.managerLinks = [GHFileBrowserViewController fileManagerLinksForFolder:self.path];
         return;
     }
 
@@ -106,7 +131,7 @@ static NSString * const kFileBrowserCellID = @"FileBrowserCell";
 #pragma mark - UITableViewDataSource
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return MAX(self.entries.count, (NSUInteger)1);
+    return self.entries.count > 0 ? self.entries.count : 1 + self.managerLinks.count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -120,6 +145,15 @@ static NSString * const kFileBrowserCellID = @"FileBrowserCell";
     cell.textLabel.font = [UIFont systemFontOfSize:16];
     cell.detailTextLabel.textColor = GHSecondaryTextColor();
 
+    if (self.entries.count == 0 && indexPath.row > 0) {
+        cell.textLabel.text = [NSString stringWithFormat:GHL(@"Открыть в %@"), self.managerLinks[indexPath.row - 1][0]];
+        cell.textLabel.textColor = GHTintColor();
+        cell.detailTextLabel.text = GHL(@"Выберите файл и нажмите «Открыть в…» → GitHub Legacy");
+        cell.accessoryView = nil;
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        return cell;
+    }
     if (self.entries.count == 0) {
         cell.textLabel.text = self.emptyMessage;
         cell.textLabel.textColor = GHSecondaryTextColor();
@@ -149,7 +183,10 @@ static NSString * const kFileBrowserCellID = @"FileBrowserCell";
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if (self.entries.count == 0) return;
+    if (self.entries.count == 0) {
+        if (indexPath.row > 0) [[UIApplication sharedApplication] openURL:self.managerLinks[indexPath.row - 1][1]];
+        return;
+    }
 
     GHFileBrowserEntry *entry = self.entries[indexPath.row];
     if (entry.isDirectory) {

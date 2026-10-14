@@ -473,8 +473,16 @@ static NSDictionary *GHTranslations(void) {
             @"Файл получен": @"File received",
             @"«%@» будет прикреплён, когда вы откроете форму новой задачи.": @"\"%@\" will be attached when you open the new issue form.",
             @"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.": @"Wait for the current upload to finish, then attach the file again.",
-            @"Открыть в Filza": @"Open in Filza",
-            @"Открыть в iFile": @"Open in iFile",
+            @"Открыть в %@": @"Open in %@",
+            @"Открыть %@": @"Open %@",
+            @"Выбрать в %@": @"Choose in %@",
+            @"Выбор файла": @"Choose a file",
+            @"Файл из другого приложения…": @"File from another app…",
+            @"Выберите файл и нажмите «Открыть в…» → GitHub Legacy": @"Select a file and tap \"Open In…\" → GitHub Legacy",
+            @"В %@ выберите файл, нажмите «Открыть в…» и выберите GitHub Legacy. Файл сразу прикрепится к этой задаче.":
+                @"In %@, select the file, tap \"Open In…\" and choose GitHub Legacy. The file will be attached to this issue right away.",
+            @"Откройте файл в другом приложении (Почта, Safari, файловый менеджер), нажмите «Открыть в…» и выберите GitHub Legacy. Файл сразу прикрепится к этой задаче.":
+                @"Open the file in another app (Mail, Safari, a file manager), tap \"Open In…\" and choose GitHub Legacy. The file will be attached to this issue right away.",
             @"Войдите на github.com, чтобы прикреплять фото и видео.": @"Sign in to github.com to attach photos and videos.",
             @"github.com не разрешил загрузку файлов в этот репозиторий (HTTP %ld).": @"github.com didn't allow uploading files to this repository (HTTP %ld).",
             @"Не удалось загрузить файл в хранилище GitHub (HTTP %ld).": @"Couldn't upload the file to GitHub storage (HTTP %ld).",

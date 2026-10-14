@@ -4,6 +4,10 @@
 
 - (id)initWithPath:(NSString *)path;
 
++ (NSArray *)fileManagerLinksForFolder:(NSString *)folder;
++ (NSString *)defaultPickFolder;
++ (BOOL)canBrowseFileSystem;
+
 @property (nonatomic, copy) void (^onFilePicked)(NSString *path);
 
 @end

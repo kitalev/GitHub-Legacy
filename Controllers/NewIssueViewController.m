@@ -20,6 +20,7 @@ static const NSUInteger kMaxInlineFileCharacters = 60000;
 static const unsigned long long kMaxFileReadBytes = 256 * 1024;
 static const CGFloat kMaxPhotoDimension = 2048;
 static const NSInteger kUnreadableFileAlertTag = 1;
+static const NSInteger kFileManagerAlertTag = 2;
 static const CGFloat kPreviewSide = 72;
 
 static __weak NewIssueViewController *gActiveComposer = nil;
@@ -812,8 +813,18 @@ static UIImage *GHNewIssueRemoveBadge(void) {
         [sheet addButtonWithTitle:GHL(@"Снять фото")];
         [actions addObject:@"camera"];
     }
-    [sheet addButtonWithTitle:GHL(@"Файл…")];
-    [actions addObject:@"file"];
+    NSArray *managers = [GHFileBrowserViewController fileManagerLinksForFolder:[GHFileBrowserViewController defaultPickFolder]];
+    for (NSArray *manager in managers) {
+        [sheet addButtonWithTitle:[NSString stringWithFormat:GHL(@"Выбрать в %@"), manager[0]]];
+        [actions addObject:manager];
+    }
+    if ([GHFileBrowserViewController canBrowseFileSystem]) {
+        [sheet addButtonWithTitle:GHL(@"Файл…")];
+        [actions addObject:@"file"];
+    } else if (managers.count == 0) {
+        [sheet addButtonWithTitle:GHL(@"Файл из другого приложения…")];
+        [actions addObject:@"openin"];
+    }
     sheet.cancelButtonIndex = [sheet addButtonWithTitle:GHL(@"Отмена")];
     self.attachActions = actions;
 
@@ -826,8 +837,17 @@ static UIImage *GHNewIssueRemoveBadge(void) {
 
 - (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
     if (buttonIndex == actionSheet.cancelButtonIndex || buttonIndex < 0 || buttonIndex >= (NSInteger)self.attachActions.count) return;
-    NSString *action = self.attachActions[buttonIndex];
+    id selected = self.attachActions[buttonIndex];
+    if ([selected isKindOfClass:[NSArray class]]) {
+        [self presentFileManagerHint:selected];
+        return;
+    }
+    NSString *action = selected;
 
+    if ([action isEqualToString:@"openin"]) {
+        [self presentFileManagerHint:nil];
+        return;
+    }
     if ([action isEqualToString:@"file"]) {
         [self presentFileBrowser];
         return;
@@ -840,6 +860,23 @@ static UIImage *GHNewIssueRemoveBadge(void) {
     [self ensureUploadAccess:^{
         [weakSelf presentImagePickerWithSourceType:sourceType];
     }];
+}
+
+- (void)presentFileManagerHint:(NSArray *)manager {
+    NSString *message = manager
+        ? [NSString stringWithFormat:GHL(@"В %@ выберите файл, нажмите «Открыть в…» и выберите GitHub Legacy. Файл сразу прикрепится к этой задаче."), manager[0]]
+        : GHL(@"Откройте файл в другом приложении (Почта, Safari, файловый менеджер), нажмите «Открыть в…» и выберите GitHub Legacy. Файл сразу прикрепится к этой задаче.");
+    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Выбор файла")
+                                                     message:message
+                                                    delegate:manager ? self : nil
+                                           cancelButtonTitle:manager ? GHL(@"Отмена") : @"OK"
+                                           otherButtonTitles:nil];
+    if (manager) {
+        [alert addButtonWithTitle:[NSString stringWithFormat:GHL(@"Открыть %@"), manager[0]]];
+        alert.tag = kFileManagerAlertTag;
+        self.fileManagerURLs = @[manager[1]];
+    }
+    [alert show];
 }
 
 - (void)presentFileBrowser {
@@ -1160,9 +1197,7 @@ static UIImage *GHNewIssueRemoveBadge(void) {
 }
 
 - (void)showUnreadableFileAlertForPath:(NSString *)path {
-    NSString *encodedFolder = [[path stringByDeletingLastPathComponent] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
-    NSArray *candidates = @[@[GHL(@"Открыть в Filza"), [NSString stringWithFormat:@"filza://view%@", encodedFolder]],
-                            @[GHL(@"Открыть в iFile"), [NSString stringWithFormat:@"ifile://%@", encodedFolder]]];
+    NSArray *managers = [GHFileBrowserViewController fileManagerLinksForFolder:[path stringByDeletingLastPathComponent]];
 
     UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Не удалось прикрепить файл")
                                                      message:[self unreadableFileMessageForPath:path]
@@ -1170,11 +1205,9 @@ static UIImage *GHNewIssueRemoveBadge(void) {
                                            cancelButtonTitle:nil
                                            otherButtonTitles:nil];
     NSMutableArray *urls = [NSMutableArray array];
-    for (NSArray *candidate in candidates) {
-        NSURL *url = [NSURL URLWithString:candidate[1]];
-        if (url == nil || ![[UIApplication sharedApplication] canOpenURL:url]) continue;
-        [alert addButtonWithTitle:candidate[0]];
-        [urls addObject:url];
+    for (NSArray *manager in managers) {
+        [alert addButtonWithTitle:[NSString stringWithFormat:GHL(@"Открыть в %@"), manager[0]]];
+        [urls addObject:manager[1]];
     }
     alert.cancelButtonIndex = [alert addButtonWithTitle:urls.count > 0 ? GHL(@"Отмена") : @"OK"];
     alert.tag = kUnreadableFileAlertTag;
@@ -1183,7 +1216,12 @@ static UIImage *GHNewIssueRemoveBadge(void) {
 }
 
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
-    if (alertView.tag != kUnreadableFileAlertTag || buttonIndex == alertView.cancelButtonIndex) return;
+    if (buttonIndex == alertView.cancelButtonIndex) return;
+    if (alertView.tag == kFileManagerAlertTag) {
+        if (self.fileManagerURLs.count > 0) [[UIApplication sharedApplication] openURL:self.fileManagerURLs[0]];
+        return;
+    }
+    if (alertView.tag != kUnreadableFileAlertTag) return;
     if (buttonIndex < 0 || buttonIndex >= (NSInteger)self.fileManagerURLs.count) return;
     [[UIApplication sharedApplication] openURL:self.fileManagerURLs[buttonIndex]];
 }
