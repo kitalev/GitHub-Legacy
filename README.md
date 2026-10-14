@@ -23,6 +23,17 @@ A lightweight native GitHub client for iOS 5–10: repositories, READMEs, issues
 - Star repositories and follow users, with a dedicated tab for starred-repo release news
 - Light and dark themes, with an in-app English/Russian language switch
 
+## Supported devices
+
+The app is built as a universal binary with two slices:
+
+| Slice | iOS | Devices |
+|---|---|---|
+| `armv7` (32-bit) | 5.0–10.x | iPhone 3GS, 4, 4S, 5, 5c · iPod touch 4th and 5th gen · iPad 2, 3, 4, iPad mini |
+| `arm64` (64-bit) | 7.0–10.x | iPhone 5s, 6, 6 Plus, 6s, 6s Plus, SE, 7, 7 Plus · iPod touch 6th gen · iPad Air, Air 2, iPad mini 2/3/4, iPad Pro, iPad (2017) |
+
+Developed and tested on an **iPhone 4S running iOS 5.1.1**. The 64-bit slice compiles from the same code but hasn't been tested on a device yet.
+
 ## Install
 
 ### From latest release (.deb)

@@ -1,5 +1,5 @@
 export THEOS_DEVICE_IP =
-ARCHS = armv7
+ARCHS = armv7 arm64
 TARGET = iphone:clang:9.3:5.0
 
 include $(THEOS)/makefiles/common.mk
@@ -75,7 +75,6 @@ TWEAK_NAME = GitHubLegacySafariRedirect
 GitHubLegacySafariRedirect_FILES = Tweak/Tweak.xm
 GitHubLegacySafariRedirect_FRAMEWORKS = UIKit
 GitHubLegacySafariRedirect_CFLAGS = -fobjc-arc
-
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-install::
