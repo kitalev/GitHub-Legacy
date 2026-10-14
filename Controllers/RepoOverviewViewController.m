@@ -280,6 +280,21 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
 }
 
 - (void)handleLanguageDidChange {
+    NSString *label = GHL(@"Открыть README полностью");
+    if (self.readmeInlineBodyHTML.length > 0) {
+        NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"(class=\"show-more\">)[^<]*(<span)" options:0 error:nil];
+        NSString *escaped = [NSRegularExpression escapedTemplateForString:label];
+        self.readmeInlineBodyHTML = [regex stringByReplacingMatchesInString:self.readmeInlineBodyHTML
+                                                                    options:0
+                                                                      range:NSMakeRange(0, self.readmeInlineBodyHTML.length)
+                                                               withTemplate:[NSString stringWithFormat:@"$1%@$2", escaped]];
+    }
+    if (self.readmeWebView) {
+        NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@[label] options:0 error:nil]
+                                               encoding:NSUTF8StringEncoding];
+        [self.readmeWebView stringByEvaluatingJavaScriptFromString:
+            [NSString stringWithFormat:@"(function(t){var a=document.querySelector('a.show-more');if(a&&a.firstChild)a.firstChild.nodeValue=t;})(%@[0])", json]];
+    }
     [self refreshHeader];
     [self.tableView reloadData];
 }

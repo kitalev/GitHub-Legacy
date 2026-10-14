@@ -58,7 +58,17 @@
                                               selector:@selector(applyTheme)
                                                   name:kGHThemeDidChangeNotification
                                                 object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(handleLanguageDidChange)
+                                                  name:kGHLanguageDidChangeNotification
+                                                object:nil];
     [self applyTheme];
+}
+
+- (void)handleLanguageDidChange {
+    if (self.viewedLogin.length == 0) self.title = GHL(@"Избранное");
+    [self updateSignInHeader];
+    [self.tableView reloadData];
 }
 
 - (void)settingsButtonTapped {
