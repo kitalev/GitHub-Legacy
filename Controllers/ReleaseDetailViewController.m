@@ -355,7 +355,7 @@ static const CGFloat kNotesVerticalPadding = 10.0;
         NSString *previewHTML = needsClip
             ? [GHMarkdownRenderer htmlDocumentWrappingBody:
 
-                [NSString stringWithFormat:@"<div class=\"readme-clip\">%@</div><a href=\"app://release-notes-full\" class=\"show-more\"><span class=\"show-more-icon\"></span>%@<span class=\"show-more-chev\"></span></a>",
+                [NSString stringWithFormat:@"<div class=\"readme-clip\">%@</div><a href=\"app://release-notes-full\" class=\"show-more\">%@<span class=\"show-more-chev\"></span></a>",
                     previewBodyHTML, GHL(@"Читать полностью")]
                                                    pixelWidth:width]
             : [GHMarkdownRenderer htmlDocumentWrappingBody:previewBodyHTML pixelWidth:width];

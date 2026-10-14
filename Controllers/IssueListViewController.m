@@ -36,8 +36,7 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
 @property (nonatomic, assign) BOOL openLoadingMore;
 @property (nonatomic, assign) BOOL closedLoadingMore;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
-@property (nonatomic, strong) UIButton *openChip;
-@property (nonatomic, strong) UIButton *closedChip;
+@property (nonatomic, strong) UISegmentedControl *stateControl;
 @property (nonatomic, assign) BOOL showingClosed;
 @property (nonatomic, strong) UISearchBar *searchBar;
 @property (nonatomic, copy) NSString *searchQuery;
@@ -109,11 +108,10 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.openChip = [self makeFilterChip];
-    [self.openChip addTarget:self action:@selector(openChipTapped) forControlEvents:UIControlEventTouchUpInside];
-    self.closedChip = [self makeFilterChip];
-    [self.closedChip addTarget:self action:@selector(closedChipTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self updateFilterChipTitles];
+    self.stateControl = [[UISegmentedControl alloc] initWithItems:@[GHL(@"Открытые"), GHL(@"Закрытые")]];
+    self.stateControl.selectedSegmentIndex = 0;
+    self.stateControl.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [self.stateControl addTarget:self action:@selector(stateControlChanged) forControlEvents:UIControlEventValueChanged];
 
     self.searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 52, self.view.bounds.size.width, 44)];
     self.searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -123,8 +121,7 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 96)];
     headerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     headerView.backgroundColor = GHBackgroundColor();
-    [headerView addSubview:self.openChip];
-    [headerView addSubview:self.closedChip];
+    [headerView addSubview:self.stateControl];
     [headerView addSubview:self.searchBar];
     self.tableView.tableHeaderView = headerView;
 
@@ -217,58 +214,22 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     return !self.showingClosed;
 }
 
-- (UIButton *)makeFilterChip {
-    UIButton *chip = [UIButton buttonWithType:UIButtonTypeCustom];
-    chip.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-    chip.layer.cornerRadius = 16;
-    chip.layer.masksToBounds = YES;
-    chip.layer.borderWidth = 1;
-    chip.contentEdgeInsets = UIEdgeInsetsMake(0, 16, 0, 16);
-    return chip;
-}
-
 - (void)updateFilterChipTitles {
-    [self.openChip setTitle:GHL(@"Открытые") forState:UIControlStateNormal];
-    [self.closedChip setTitle:GHL(@"Закрытые") forState:UIControlStateNormal];
-    [self layoutFilterChips];
-}
-
-- (void)layoutFilterChips {
-    CGFloat x = 12;
-    for (UIButton *chip in @[self.openChip, self.closedChip]) {
-        [chip sizeToFit];
-        CGFloat width = MAX(chip.bounds.size.width, 64);
-        chip.frame = CGRectMake(x, 12, width, 32);
-        x += width + 8;
-    }
+    [self.stateControl setTitle:GHL(@"Открытые") forSegmentAtIndex:0];
+    [self.stateControl setTitle:GHL(@"Закрытые") forSegmentAtIndex:1];
 }
 
 - (void)updateFilterChipAppearance {
     BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
-    UIColor *activeColor = [UIColor colorWithRed:0.03 green:0.41 blue:0.85 alpha:1.0];
-    UIColor *inactiveBackground = dark ? [UIColor colorWithWhite:1.0 alpha:0.08] : [UIColor colorWithWhite:0.0 alpha:0.05];
-    NSArray *chips = @[self.openChip, self.closedChip];
-    for (NSUInteger i = 0; i < chips.count; i++) {
-        UIButton *chip = chips[i];
-        BOOL active = (i == 1) == self.showingClosed;
-        chip.backgroundColor = active ? activeColor : inactiveBackground;
-        chip.layer.borderColor = (active ? activeColor : GHSeparatorColor()).CGColor;
-        [chip setTitleColor:(active ? [UIColor whiteColor] : GHPrimaryTextColor()) forState:UIControlStateNormal];
-        [chip setTitleColor:(active ? [UIColor colorWithWhite:1.0 alpha:0.6] : GHSecondaryTextColor()) forState:UIControlStateHighlighted];
-    }
+    self.stateControl.segmentedControlStyle = dark ? UISegmentedControlStyleBar : UISegmentedControlStylePlain;
+    self.stateControl.tintColor = dark ? [UIColor colorWithWhite:0.32 alpha:1.0] : nil;
+    self.stateControl.frame = CGRectMake(10, dark ? 11 : 10, self.headerView.bounds.size.width - 20, dark ? 30 : 32);
 }
 
-- (void)openChipTapped {
-    if (!self.showingClosed) return;
-    self.showingClosed = NO;
-    [self updateFilterChipAppearance];
-    [self segmentChanged];
-}
-
-- (void)closedChipTapped {
-    if (self.showingClosed) return;
-    self.showingClosed = YES;
-    [self updateFilterChipAppearance];
+- (void)stateControlChanged {
+    BOOL closed = self.stateControl.selectedSegmentIndex == 1;
+    if (closed == self.showingClosed) return;
+    self.showingClosed = closed;
     [self segmentChanged];
 }
 

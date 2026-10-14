@@ -341,6 +341,7 @@ static UIView *GHWebLoginMakeCard(void) {
 @property (nonatomic, assign) BOOL keyboardVisible;
 @property (nonatomic, assign) NSInteger phase;
 @property (nonatomic, copy) NSString *codeKind;
+@property (nonatomic, assign) BOOL submittedCode;
 @property (nonatomic, strong) NSTimer *pollTimer;
 @property (nonatomic, assign) NSTimeInterval pollStartedAt;
 @property (nonatomic, copy) NSString *mobilePollURL;
@@ -1192,6 +1193,9 @@ static UIView *GHWebLoginMakeCard(void) {
 
     if (self.prefersGoogle && [self handleGoogleInPage:page]) return;
 
+    BOOL afterCode = self.submittedCode;
+    self.submittedCode = NO;
+
     BOOL loginChallenge = [path hasPrefix:@"/sessions/two-factor"] || [path hasPrefix:@"/sessions/recovery"] || [path isEqualToString:@"/login"];
     if (loginChallenge && error == nil && [GHWebSession isSignedIn]) {
         if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
@@ -1333,6 +1337,19 @@ static UIView *GHWebLoginMakeCard(void) {
             [fallback addObject:method];
         }
         methods = fallback;
+    }
+    if (methods.count > 0 && afterCode && error == nil) {
+        NSURL *next = self.startURL ?: [GHWebSession baseURL];
+        for (NSDictionary *method in methods) {
+            NSString *href = GHWebLoginString(method[@"href"]);
+            if ([method[@"kind"] isEqualToString:self.codeKind] && href.length > 0) {
+                next = [[NSURL URLWithString:href relativeToURL:[GHWebSession baseURL]] absoluteURL];
+                break;
+            }
+        }
+        [self showLoadingWithMessage:GHL(@"Завершаем вход…")];
+        [self.webView loadRequest:[NSURLRequest requestWithURL:next]];
+        return;
     }
     if (methods.count > 0) {
         [self presentStep:GHWebLoginStepChooseMethod
@@ -1593,6 +1610,7 @@ static UIView *GHWebLoginMakeCard(void) {
             break;
         case GHWebLoginStepCode:
             if (first.length == 0) return;
+            self.submittedCode = YES;
             [self submitFormWithValues:@{self.firstFieldName ?: @"otp": first} loadingMessage:GHL(@"Проверка кода…")];
             break;
         case GHWebLoginStepAuthorize:
