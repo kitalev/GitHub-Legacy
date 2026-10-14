@@ -14,7 +14,8 @@ typedef NS_ENUM(NSInteger, GHWebLoginStep) {
     GHWebLoginStepAuthorize,
     GHWebLoginStepMobile,
     GHWebLoginStepRetry,
-    GHWebLoginStepPage
+    GHWebLoginStepPage,
+    GHWebLoginStepGoogle
 };
 
 static NSString * const kGHWebLoginAnalyzeScript =
@@ -43,7 +44,7 @@ static NSString * const kGHWebLoginAnalyzeScript =
      "r.forms.push(o);}"
      "var as=document.querySelectorAll('a[href]');"
      "for(var i=0;i<as.length;i++){var h=as[i].getAttribute('href')||'';"
-     "if(/two-factor|recovery|verified-device|sudo|google/.test(h))r.links.push({href:as[i].href,text:txt(as[i])});}"
+     "if(/two-factor|recovery|verified-device|sudo/.test(h))r.links.push({href:as[i].href,text:txt(as[i])});}"
      "return JSON.stringify(r);"
      "})()";
 
@@ -67,6 +68,57 @@ static NSString * const kGHWebLoginDeviceCodeScript =
      "if(b&&b.name){var h=document.createElement('input');h.type='hidden';h.name=b.name;h.value=b.value;f.appendChild(h);}"
      "f.submit();return 'ok';"
      "})(%ld,%@[0],%ld)";
+
+static NSString * const kGHWebLoginGoogleStartScript =
+    @"(function(){"
+     "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ');}"
+     "var els=document.querySelectorAll('a,button,input[type=submit],[role=button]');"
+     "for(var i=0;i<els.length;i++){var e=els[i];var f=e.form;"
+     "var s=(txt(e)+' '+(e.getAttribute('href')||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.value||'')+' '+((f&&f.getAttribute('action'))||'')).toLowerCase();"
+     "if(s.indexOf('google')<0)continue;"
+     "var href=e.getAttribute('href')||'';"
+     "if(e.tagName.toLowerCase()=='a'&&href&&href.charAt(0)!='#'){location.href=e.href;return 'ok';}"
+     "if(f){if(e.name){var h=document.createElement('input');h.type='hidden';h.name=e.name;h.value=e.value;f.appendChild(h);}f.submit();return 'ok';}"
+     "var ev=document.createEvent('MouseEvents');ev.initMouseEvent('click',true,true,window,1,0,0,0,0,false,false,false,false,0,null);e.dispatchEvent(ev);return 'ok';}"
+     "return '';"
+     "})()";
+
+static NSString * const kGHWebLoginGoogleAnalyzeScript =
+    @"(function(){"
+     "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
+     "function shown(e){if(!e)return false;var s=window.getComputedStyle(e);"
+     "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
+     "var r={host:location.host,heading:'',text:'',errors:[],input:null,password:false,buttons:[]};"
+     "var h=document.querySelector('h1');if(h&&shown(h))r.heading=txt(h);"
+     "var d=document.getElementById('headingSubtext');if(d&&shown(d))r.text=txt(d);"
+     "var es=document.querySelectorAll('[aria-live=assertive],[aria-live=polite],.o6cuMc,.Ekjuhf,.dEOOab,.LXRPh,.error-msg');"
+     "for(var i=0;i<es.length;i++){var t=txt(es[i]);if(t&&shown(es[i])&&r.errors.indexOf(t)<0)r.errors.push(t);}"
+     "window.__ghInput=null;window.__ghPwd=null;"
+     "var ins=document.querySelectorAll('input');"
+     "for(var i=0;i<ins.length;i++){var e=ins[i];var ty=(e.getAttribute('type')||'text').toLowerCase();if(!shown(e))continue;"
+     "if(ty=='password'){if(!window.__ghPwd){window.__ghPwd=e;r.password=true;}}"
+     "else if((ty=='text'||ty=='email'||ty=='tel'||ty=='number')&&!window.__ghInput){window.__ghInput=e;"
+     "var lb=e.id?document.querySelector('label[for=\"'+e.id+'\"]'):null;"
+     "r.input={type:ty,label:e.getAttribute('aria-label')||e.getAttribute('placeholder')||(lb?txt(lb):'')};}}"
+     "window.__ghBtns=[];"
+     "var bs=document.querySelectorAll('button,[role=button],input[type=submit]');"
+     "for(var i=0;i<bs.length;i++){var b=bs[i];if(!shown(b))continue;var t=txt(b)||b.value||'';"
+     "if(!t||t.length>60)continue;window.__ghBtns.push(b);r.buttons.push({index:window.__ghBtns.length-1,text:t});}"
+     "return JSON.stringify(r);"
+     "})()";
+
+static NSString * const kGHWebLoginGoogleSubmitScript =
+    @"(function(v,bi){"
+     "function set(e,val){if(!e)return;e.focus();e.value=val;var n=['input','change','keyup'];"
+     "for(var i=0;i<n.length;i++){var ev=document.createEvent('HTMLEvents');ev.initEvent(n[i],true,true);e.dispatchEvent(ev);}}"
+     "if(v.input!=null)set(window.__ghInput,v.input);"
+     "if(v.password!=null)set(window.__ghPwd,v.password);"
+     "var b=bi>=0&&window.__ghBtns?window.__ghBtns[bi]:null;"
+     "if(b){var t=['mousedown','mouseup','click'];for(var i=0;i<t.length;i++){var ev=document.createEvent('MouseEvents');"
+     "ev.initMouseEvent(t[i],true,true,window,1,0,0,0,0,false,false,false,false,0,null);b.dispatchEvent(ev);}return 'ok';}"
+     "var f=window.__ghPwd||window.__ghInput;if(f&&f.form){f.form.submit();return 'ok';}"
+     "return 'none';"
+     "})(%@,%ld)";
 
 static NSString * const kGHWebLoginGoogleUserAgent =
     @"Mozilla/5.0 (iPhone; CPU iPhone OS 12_5_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Mobile/15E148 Safari/604.1";
@@ -195,6 +247,10 @@ static UIView *GHWebLoginMakeCard(void) {
 @property (nonatomic, strong) NSMutableSet *autoSubmittedActions;
 @property (nonatomic, assign) BOOL finished;
 @property (nonatomic, assign) BOOL startedGoogle;
+@property (nonatomic, assign) NSInteger googleStartAttempts;
+@property (nonatomic, strong) NSTimer *googlePollTimer;
+@property (nonatomic, copy) NSString *googleSignature;
+@property (nonatomic, assign) NSInteger googlePrimaryIndex;
 @end
 
 @implementation WebLoginViewController
@@ -716,6 +772,7 @@ static UIView *GHWebLoginMakeCard(void) {
 - (NSInteger)phaseForStep:(GHWebLoginStep)step {
     switch (step) {
         case GHWebLoginStepCredentials:
+        case GHWebLoginStepGoogle:
             return 1;
         case GHWebLoginStepPassword:
         case GHWebLoginStepCode:
@@ -1196,7 +1253,9 @@ static UIView *GHWebLoginMakeCard(void) {
 - (BOOL)handleGoogleInPage:(NSDictionary *)page {
     NSString *host = [GHWebLoginString(page[@"host"]) lowercaseString];
     if (![host isEqualToString:@"github.com"]) {
-        [self showPage];
+        self.googleSignature = nil;
+        if (!self.googlePollTimer) [self startGooglePolling];
+        [self presentGooglePage];
         return YES;
     }
 
@@ -1204,36 +1263,133 @@ static UIView *GHWebLoginMakeCard(void) {
         return [self inputOfForm:form type:@"password"] != nil && [self inputOfForm:form type:@"text"] != nil;
     }] != nil;
     if (!loginPage) return NO;
+
     if (self.startedGoogle) {
-        [self showPage];
+        NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
+        [self presentGoogleFailure:errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil];
         return YES;
     }
 
-    for (NSDictionary *form in page[@"forms"]) {
-        NSString *action = [GHWebLoginString(form[@"action"]) lowercaseString];
-        for (NSDictionary *button in form[@"buttons"]) {
-            NSString *text = [GHWebLoginString(button[@"text"]) lowercaseString];
-            if ([action rangeOfString:@"google"].location == NSNotFound && [text rangeOfString:@"google"].location == NSNotFound) continue;
-            self.startedGoogle = YES;
-            self.formIndex = [form[@"index"] integerValue];
-            self.buttonIndex = [button[@"index"] integerValue];
-            [self submitFormWithValues:nil loadingMessage:GHL(@"Переход к Google…")];
-            return YES;
-        }
-    }
-    for (NSDictionary *link in page[@"links"]) {
-        NSString *href = GHWebLoginString(link[@"href"]);
-        if ([[href lowercaseString] rangeOfString:@"google"].location == NSNotFound) continue;
+    if ([[self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginGoogleStartScript] isEqualToString:@"ok"]) {
         self.startedGoogle = YES;
         [self showLoadingWithMessage:GHL(@"Переход к Google…")];
-        [self.webView loadRequest:[NSURLRequest requestWithURL:[[NSURL URLWithString:href relativeToURL:[GHWebSession baseURL]] absoluteURL]]];
+        [self startGooglePolling];
         return YES;
     }
 
-    [self showPage];
+    if (self.googleStartAttempts < 10) {
+        self.googleStartAttempts++;
+        [self showLoadingWithMessage:GHL(@"Переход к Google…")];
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(analyzePage) object:nil];
+        [self performSelector:@selector(analyzePage) withObject:nil afterDelay:1.0];
+        return YES;
+    }
+
+    [self presentGoogleFailure:GHL(@"GitHub не показал кнопку входа через Google.")];
     return YES;
 }
 
+- (void)presentGoogleFailure:(NSString *)error {
+    [self.googlePollTimer invalidate];
+    self.googlePollTimer = nil;
+    [self presentStep:GHWebLoginStepRetry
+                title:GHL(@"Не удалось войти через Google")
+              message:GHL(@"Проверьте, что аккаунт Google привязан к GitHub, и попробуйте ещё раз.")
+                error:error
+           firstField:nil
+          secondField:NO
+              primary:GHL(@"Попробовать ещё раз")
+              methods:nil];
+}
+
+- (void)startGooglePolling {
+    [self.googlePollTimer invalidate];
+    self.googlePollTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                            target:self
+                                                          selector:@selector(googlePollTick)
+                                                          userInfo:nil
+                                                           repeats:YES];
+}
+
+- (void)googlePollTick {
+    if (self.finished || self.webView.isLoading) return;
+    [self presentGooglePage];
+}
+
+- (BOOL)isGoogleNextTitle:(NSString *)title {
+    NSString *value = [title lowercaseString];
+    for (NSString *word in @[@"next", @"далее", @"continue", @"продолжить", @"allow", @"разрешить", @"confirm", @"подтвердить",
+                             @"verify", @"sign in", @"войти", @"try again", @"повторить"]) {
+        if ([value rangeOfString:word].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+- (void)presentGooglePage {
+    NSString *json = [self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginGoogleAnalyzeScript];
+    NSDictionary *page = json.length > 0 ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    if (![page isKindOfClass:[NSDictionary class]]) return;
+    if ([[GHWebLoginString(page[@"host"]) lowercaseString] isEqualToString:@"github.com"]) return;
+    if ([json isEqualToString:self.googleSignature]) return;
+    self.googleSignature = json;
+
+    NSDictionary *input = [page[@"input"] isKindOfClass:[NSDictionary class]] ? page[@"input"] : nil;
+    BOOL password = [page[@"password"] boolValue];
+    NSArray *buttons = [page[@"buttons"] isKindOfClass:[NSArray class]] ? page[@"buttons"] : @[];
+    NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
+    NSString *heading = GHWebLoginString(page[@"heading"]);
+
+    if (!input && !password && buttons.count == 0) {
+        if (self.step != GHWebLoginStepLoading) [self showLoadingWithMessage:GHL(@"Вход через Google…")];
+        return;
+    }
+
+    NSInteger primaryIndex = -1;
+    for (NSDictionary *button in buttons) {
+        if ([self isGoogleNextTitle:GHWebLoginString(button[@"text"])]) {
+            primaryIndex = [button[@"index"] integerValue];
+            break;
+        }
+    }
+    if (primaryIndex < 0 && buttons.count == 1) primaryIndex = [buttons[0][@"index"] integerValue];
+    self.googlePrimaryIndex = primaryIndex;
+
+    NSString *primaryTitle = nil;
+    NSMutableArray *methods = [NSMutableArray array];
+    for (NSDictionary *button in buttons) {
+        NSInteger index = [button[@"index"] integerValue];
+        if (index == primaryIndex) {
+            primaryTitle = GHWebLoginString(button[@"text"]);
+            continue;
+        }
+        if (methods.count >= 6) continue;
+        [methods addObject:@{@"kind": @"person", @"title": GHWebLoginString(button[@"text"]), @"googleButton": @(index)}];
+    }
+    if (!primaryTitle && (input || password)) primaryTitle = GHL(@"Далее");
+
+    NSString *placeholder = nil;
+    if (input) {
+        placeholder = GHWebLoginString(input[@"label"]);
+        if (placeholder.length == 0) placeholder = GHL(@"Email или телефон");
+    }
+    [self presentStep:GHWebLoginStepGoogle
+                title:heading.length > 0 ? heading : GHL(@"Вход через Google")
+              message:GHWebLoginString(page[@"text"])
+                error:errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil
+           firstField:placeholder
+          secondField:password
+              primary:primaryTitle
+              methods:methods];
+    if (input && [GHWebLoginString(input[@"type"]) isEqualToString:@"tel"]) self.firstField.keyboardType = UIKeyboardTypePhonePad;
+}
+
+- (void)submitGoogleWithValues:(NSDictionary *)values buttonIndex:(NSInteger)buttonIndex {
+    NSString *script = [NSString stringWithFormat:kGHWebLoginGoogleSubmitScript, GHWebLoginJSON(values ?: @{}) ?: @"{}", (long)buttonIndex];
+    self.googleSignature = nil;
+    [self showLoadingWithMessage:GHL(@"Вход через Google…")];
+    [self.webView stringByEvaluatingJavaScriptFromString:script];
+    self.googlePollTimer.fireDate = [NSDate dateWithTimeIntervalSinceNow:2.0];
+}
 - (BOOL)autoSubmitContinueFormInPage:(NSDictionary *)page {
     if (self.autoSubmittedActions == nil) self.autoSubmittedActions = [NSMutableSet set];
     for (NSDictionary *form in page[@"forms"]) {
@@ -1298,10 +1454,26 @@ static UIView *GHWebLoginMakeCard(void) {
         case GHWebLoginStepAuthorize:
             [self submitFormWithValues:nil loadingMessage:GHL(@"Подтверждаем устройство…")];
             break;
+        case GHWebLoginStepGoogle:
+        {
+            NSMutableDictionary *values = [NSMutableDictionary dictionary];
+            if (!self.firstField.hidden) {
+                if (first.length == 0) return;
+                values[@"input"] = first;
+            }
+            if (!self.secondField.hidden) {
+                if (second.length == 0) return;
+                values[@"password"] = second;
+            }
+            [self submitGoogleWithValues:values buttonIndex:self.googlePrimaryIndex];
+        }
+            break;
         case GHWebLoginStepRetry:
         {
             NSURL *url = self.retryURL ?: self.startURL ?: [GHWebSession signInURL];
             self.submittedDeviceCode = NO;
+            self.startedGoogle = NO;
+            self.googleStartAttempts = 0;
             [self showLoadingWithMessage:GHL(@"Подключение к github.com…")];
             [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
         }
@@ -1314,6 +1486,10 @@ static UIView *GHWebLoginMakeCard(void) {
 - (void)methodTapped:(UIButton *)button {
     if (button.tag < 0 || button.tag >= (NSInteger)self.methods.count) return;
     NSDictionary *method = self.methods[button.tag];
+    if (method[@"googleButton"]) {
+        [self submitGoogleWithValues:nil buttonIndex:[method[@"googleButton"] integerValue]];
+        return;
+    }
     if (method[@"codeForm"] || method[@"passwordForm"]) {
         BOOL password = method[@"passwordForm"] != nil;
         self.formIndex = [(password ? method[@"passwordForm"] : method[@"codeForm"]) integerValue];
@@ -1525,12 +1701,16 @@ static UIView *GHWebLoginMakeCard(void) {
     if ([self isMovingFromParentViewController] || [self isBeingDismissed] || self.navigationController.isBeingDismissed) {
         [self.pollTimer invalidate];
         self.pollTimer = nil;
+        [self.googlePollTimer invalidate];
+        self.googlePollTimer = nil;
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(analyzePage) object:nil];
     }
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self.pollTimer invalidate];
+    [self.googlePollTimer invalidate];
     self.webView.delegate = nil;
     [self.webView stopLoading];
 }

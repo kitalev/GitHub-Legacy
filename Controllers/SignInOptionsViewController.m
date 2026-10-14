@@ -7,12 +7,12 @@
 
 static NSString * const kCellID = @"SignInOptionCell";
 
-static UIImage *GHGoogleIcon(CGFloat size) {
+static UIImage *GHGoogleIcon(UIColor *color, CGFloat size) {
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0);
     UIFont *font = [UIFont boldSystemFontOfSize:floor(size * 0.72)];
     NSString *letter = @"G";
     CGSize textSize = [letter sizeWithFont:font];
-    [[UIColor colorWithRed:0.26 green:0.52 blue:0.96 alpha:1.0] setFill];
+    [color setFill];
     [letter drawAtPoint:CGPointMake(floor((size - textSize.width) / 2.0), floor((size - textSize.height) / 2.0)) withFont:font];
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -244,7 +244,7 @@ static UIImage *GHGoogleIcon(CGFloat size) {
 - (UIImage *)iconForOption:(NSInteger)option {
     switch (option) {
         case 0: return [GHIconRenderer personIconWithColor:GHTintColor() size:36];
-        case 1: return GHGoogleIcon(36);
+        case 1: return GHGoogleIcon(GHSecondaryTextColor(), 36);
         case 2: return [GHIconRenderer devicesIconWithColor:GHSecondaryTextColor() size:36];
         default: return [GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:36];
     }
