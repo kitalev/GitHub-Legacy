@@ -4,6 +4,7 @@
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
 #import "GHIconRenderer.h"
+#import "GHWebPolyfill.h"
 
 typedef NS_ENUM(NSInteger, GHWebLoginStep) {
     GHWebLoginStepLoading,
@@ -119,6 +120,8 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 
 @interface GHGoogleUserAgentProtocol : NSURLProtocol
 @property (nonatomic, strong) NSURLConnection *connection;
+@property (nonatomic, strong) NSHTTPURLResponse *htmlResponse;
+@property (nonatomic, strong) NSMutableData *htmlData;
 @end
 
 @implementation GHGoogleUserAgentProtocol
@@ -157,14 +160,65 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
-    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    if ([response isKindOfClass:[NSHTTPURLResponse class]] && [[response.MIMEType lowercaseString] isEqualToString:@"text/html"]) {
+        self.htmlResponse = (NSHTTPURLResponse *)response;
+        self.htmlData = [NSMutableData data];
+        return;
+    }
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageAllowed];
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data {
+    if (self.htmlData) {
+        [self.htmlData appendData:data];
+        return;
+    }
     [self.client URLProtocol:self didLoadData:data];
 }
 
+- (NSData *)injectedHTML {
+    NSString *html = [[NSString alloc] initWithData:self.htmlData encoding:NSUTF8StringEncoding];
+    if (!html) return self.htmlData;
+    NSString *nonce = @"";
+    NSRange nonceRange = [html rangeOfString:@"nonce=\""];
+    if (nonceRange.location != NSNotFound) {
+        NSUInteger start = NSMaxRange(nonceRange);
+        NSRange end = [html rangeOfString:@"\"" options:0 range:NSMakeRange(start, html.length - start)];
+        if (end.location != NSNotFound) {
+            nonce = [NSString stringWithFormat:@" nonce=\"%@\"", [html substringWithRange:NSMakeRange(start, end.location - start)]];
+        }
+    }
+    NSString *script = [NSString stringWithFormat:@"<script%@>%@</script>", nonce, kGHWebPolyfillScript];
+    NSRange head = [html rangeOfString:@"<head" options:NSCaseInsensitiveSearch];
+    NSUInteger insertAt = 0;
+    if (head.location != NSNotFound) {
+        NSRange close = [html rangeOfString:@">" options:0 range:NSMakeRange(head.location, html.length - head.location)];
+        if (close.location != NSNotFound) insertAt = close.location + 1;
+    }
+    NSMutableString *result = [html mutableCopy];
+    [result insertString:script atIndex:insertAt];
+    return [result dataUsingEncoding:NSUTF8StringEncoding];
+}
+
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection {
+    if (self.htmlData) {
+        NSData *body = [self injectedHTML];
+        NSMutableDictionary *headers = [self.htmlResponse.allHeaderFields mutableCopy];
+        for (NSString *key in [headers allKeys]) {
+            NSString *lower = [key lowercaseString];
+            if ([lower isEqualToString:@"content-length"] || [lower isEqualToString:@"content-encoding"]
+                || [lower hasPrefix:@"content-security-policy"] || [lower hasPrefix:@"x-webkit-csp"]) {
+                [headers removeObjectForKey:key];
+            }
+        }
+        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.htmlResponse.URL
+                                                                  statusCode:self.htmlResponse.statusCode
+                                                                 HTTPVersion:@"HTTP/1.1"
+                                                                headerFields:headers];
+        [self.client URLProtocol:self didReceiveResponse:response ?: self.htmlResponse cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+        [self.client URLProtocol:self didLoadData:body];
+        self.htmlData = nil;
+    }
     [self.client URLProtocolDidFinishLoading:self];
 }
 
