@@ -91,6 +91,9 @@ static NSString * const kGHWebLoginGoogleAnalyzeScript =
      "var bs=document.querySelectorAll('button,[role=button],input[type=submit]');"
      "for(var i=0;i<bs.length;i++){var b=bs[i];if(!shown(b))continue;var t=txt(b)||b.value||'';"
      "if(!t||t.length>60)continue;window.__ghBtns.push(b);r.buttons.push({index:window.__ghBtns.length-1,text:t});}"
+     "window.__ghForm=null;var fs=document.forms;"
+     "for(var i=0;i<fs.length;i++){var a=fs[i].getAttribute('action')||'';if(!a)continue;if(!window.__ghForm||a.indexOf('challenge')>=0)window.__ghForm=fs[i];}"
+     "r.form=!!window.__ghForm;r.formText=window.__ghForm?txt(window.__ghForm).substring(0,300):'';"
      "return JSON.stringify(r);"
      "})()";
 
@@ -100,10 +103,12 @@ static NSString * const kGHWebLoginGoogleSubmitScript =
      "for(var i=0;i<n.length;i++){var ev=document.createEvent('HTMLEvents');ev.initEvent(n[i],true,true);e.dispatchEvent(ev);}}"
      "if(v.input!=null)set(window.__ghInput,v.input);"
      "if(v.password!=null)set(window.__ghPwd,v.password);"
+     "function sub(f){var ev=document.createEvent('HTMLEvents');ev.initEvent('submit',true,true);f.dispatchEvent(ev);f.submit();return 'ok';}"
+     "if(bi==-2)return window.__ghForm?sub(window.__ghForm):'none';"
      "var b=bi>=0&&window.__ghBtns?window.__ghBtns[bi]:null;"
      "if(b){var t=['mousedown','mouseup','click'];for(var i=0;i<t.length;i++){var ev=document.createEvent('MouseEvents');"
      "ev.initMouseEvent(t[i],true,true,window,1,0,0,0,0,false,false,false,false,0,null);b.dispatchEvent(ev);}return 'ok';}"
-     "var f=window.__ghPwd||window.__ghInput;if(f&&f.form){f.form.submit();return 'ok';}"
+     "var f=window.__ghPwd||window.__ghInput;if(f&&f.form)return sub(f.form);"
      "return 'none';"
      "})(%@,%ld)";
 
@@ -1454,7 +1459,8 @@ static UIView *GHWebLoginMakeCard(void) {
     NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
     NSString *heading = GHWebLoginString(page[@"heading"]);
 
-    if (!input && !password && buttons.count == 0) {
+    BOOL hasForm = [page[@"form"] boolValue];
+    if (!input && !password && buttons.count == 0 && !hasForm) {
         if (self.step != GHWebLoginStepLoading) [self showLoadingWithMessage:GHL(@"Вход через Google…")];
         return;
     }
@@ -1481,6 +1487,12 @@ static UIView *GHWebLoginMakeCard(void) {
         [methods addObject:@{@"kind": @"person", @"title": GHWebLoginString(button[@"text"]), @"googleButton": @(index)}];
     }
     if (!primaryTitle && (input || password)) primaryTitle = GHL(@"Далее");
+    if (!primaryTitle && hasForm) {
+        self.googlePrimaryIndex = -2;
+        primaryTitle = GHL(@"Продолжить");
+    }
+    NSString *message = GHWebLoginString(page[@"text"]);
+    if (message.length == 0 && !input && !password) message = GHWebLoginString(page[@"formText"]);
 
     NSString *placeholder = nil;
     if (input) {
@@ -1489,7 +1501,7 @@ static UIView *GHWebLoginMakeCard(void) {
     }
     [self presentStep:GHWebLoginStepGoogle
                 title:heading.length > 0 ? heading : GHL(@"Вход через Google")
-              message:GHWebLoginString(page[@"text"])
+              message:message
                 error:errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil
            firstField:placeholder
           secondField:password
