@@ -1,6 +1,8 @@
-#!/bin/bash
-if [ -e /usr/bin/uicache ]; then
-    su -c "/usr/bin/uicache -p /Applications/GitHubLegacy.app" mobile
-fi
+#!/bin/sh
+for prefix in "" /var/jb; do
+    if [ -d "$prefix/Applications/GitHubLegacy.app" ] && [ -x "$prefix/usr/bin/uicache" ]; then
+        su -c "$prefix/usr/bin/uicache -p $prefix/Applications/GitHubLegacy.app" mobile || "$prefix/usr/bin/uicache" -p "$prefix/Applications/GitHubLegacy.app"
+    fi
+done
 
 exit 0

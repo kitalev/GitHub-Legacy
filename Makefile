@@ -1,5 +1,11 @@
 export THEOS_DEVICE_IP =
+ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+ARCHS = arm64
+GitHubLegacySafariRedirect_ARCHS = arm64 arm64e
+else
 ARCHS = armv7 arm64
+GitHubLegacySafariRedirect_ARCHS = armv7 arm64 arm64e
+endif
 TARGET = iphone:clang:9.3:5.0
 
 include $(THEOS)/makefiles/common.mk

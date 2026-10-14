@@ -2,7 +2,8 @@
 
 # GitHub Legacy
 
-![Platform](https://img.shields.io/badge/platform-iOS%205%E2%80%9310-lightgrey)
+![Platform](https://img.shields.io/badge/platform-iOS%205%2B-lightgrey)
+![Arch](https://img.shields.io/badge/arch-armv7%20%7C%20arm64-lightgrey)
 ![Language](https://img.shields.io/badge/language-Objective--C-blue)
 ![Build](https://img.shields.io/badge/build-Theos-orange)
 [![Release](https://img.shields.io/github/v/release/kitalev/GitHub-Legacy?label=release)](https://github.com/kitalev/GitHub-Legacy/releases/latest)
@@ -12,7 +13,7 @@
 
 ---
 
-Лёгкий нативный клиент GitHub для iOS 5–10: репозитории, README, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на этих версиях уже не запустить.
+Лёгкий нативный клиент GitHub для iOS 5 и новее: репозитории, README, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на этих версиях уже не запустить.
 
 ## Возможности
 
@@ -24,27 +25,34 @@
 
 ## Поддерживаемые устройства
 
-Приложение собирается универсальным бинарником из двух частей:
-
 | Архитектура | iOS | Устройства |
 |---|---|---|
 | `armv7` (32 бита) | 5.0–10.x | iPhone 3GS, 4, 4S, 5, 5c · iPod touch 4-го и 5-го поколения · iPad 2, 3, 4, iPad mini |
-| `arm64` (64 бита) | 7.0–10.x | iPhone 5s, 6, 6 Plus, 6s, 6s Plus, SE, 7, 7 Plus · iPod touch 6-го поколения · iPad Air, Air 2, iPad mini 2/3/4, iPad Pro, iPad (2017) |
+| `arm64` (64 бита) | 7.0 и новее | iPhone 5s и все более новые iPhone · iPod touch 6-го и 7-го поколения · iPad Air и новее, iPad mini 2 и новее, все iPad Pro |
 
-Разрабатывалось и проверялось на **iPhone 4S с iOS 5.1.1**. 64-битная часть собирается из того же кода, но на устройстве пока не проверялась.
+Какой пакет ставить:
+
+| Пакет | Тип джейлбрейка | Обычно iOS | Внутри |
+|---|---|---|---|
+| `com.githublegacy.app_*_iphoneos-arm.deb` | rootful (Cydia, unc0ver, checkra1n, Taurine, palera1n rootful) | 5.0–14.x, также rootful 15–16 | `armv7` + `arm64`, твик Safari ещё и `arm64e` |
+| `com.githublegacy.app_*_iphoneos-arm64.deb` | rootless (Dopamine, palera1n rootless) | 15.0 и новее | `arm64`, твик Safari ещё и `arm64e` |
+| `.ipa` | без джейлбрейка (AltStore, Sideloadly, TrollStore) | любая поддерживаемая | `armv7` + `arm64` |
+
+Разрабатывалось и проверялось на **iPhone 4S с iOS 5.1.1**. 64-битные сборки собираются из того же кода, но на устройстве пока не проверялись. Часть твика Safari для `arm64e` собрана под новый ABI, поэтому на iPhone XS и новее он загружается на iOS 14+. На iOS 12–13 на этих устройствах приложение работает, но переход из Safari — нет.
 
 ## Установка
 
 ### Из последнего релиза (.deb)
 
-1. Скачайте `.deb` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest).
+1. Скачайте `.deb` под свой тип джейлбрейка со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest): `iphoneos-arm` для rootful, `iphoneos-arm64` для rootless (см. таблицу выше).
 2. Поместите файл `.deb` на устройство (например, в `/var/mobile/`).
 3. В iFile или Filza найдите `.deb`, нажмите на него и выберите `Install`.
 
 Либо через терминал:
 
 ```bash
-dpkg -i com.githublegacy.app_iphoneos-arm.deb
+dpkg -i com.githublegacy.app_1.1_iphoneos-arm.deb      # rootful
+dpkg -i com.githublegacy.app_1.1_iphoneos-arm64.deb    # rootless
 ```
 
 ### Из последнего релиза (.ipa)
@@ -64,9 +72,13 @@ export THEOS=/opt/theos
 Также понадобится Clang-toolchain с таргетингом на iOS (например, `$THEOS/toolchain/linux/iphone/bin`) и iOS SDK ≥ 5.0 в `$THEOS/sdks/`. Подойдёт любой SDK начиная с 5.0, так как `MinimumOSVersion` в `Info.plist` уже ограничивает приложение устройствами с iOS 5+ во время выполнения.
 
 ```bash
-# .deb (несандбоксная сборка, для джейлбрейк-устройств через Cydia)
+# rootful .deb (iphoneos-arm: armv7 + arm64)
 make clean
 make package FINALPACKAGE=1
+
+# rootless .deb (iphoneos-arm64, ставится в /var/jb)
+make clean
+make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 
 # .ipa (обычное сандбоксное приложение, для сайдлоада)
 make clean

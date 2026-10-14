@@ -1,6 +1,8 @@
-#!/bin/bash
-if [ -e /usr/bin/uicache ]; then
-    su -c "/usr/bin/uicache" mobile
-fi
+#!/bin/sh
+for prefix in "" /var/jb; do
+    if [ -x "$prefix/usr/bin/uicache" ]; then
+        su -c "$prefix/usr/bin/uicache" mobile || "$prefix/usr/bin/uicache"
+    fi
+done
 
 exit 0
