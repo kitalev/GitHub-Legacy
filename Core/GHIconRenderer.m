@@ -695,6 +695,41 @@
     return result;
 }
 
++ (UIImage *)busyStatusIconWithSize:(CGFloat)size {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
+    [[UIColor colorWithRed:0.86 green:0.20 blue:0.18 alpha:1.0] setFill];
+    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(0, 0, size, size)] fill];
+    [[UIColor whiteColor] setFill];
+    CGFloat barHeight = MAX(2, round(size * 0.18));
+    [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(size * 0.22, (size - barHeight) / 2.0, size * 0.56, barHeight)
+                                cornerRadius:barHeight / 2.0] fill];
+    UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return result;
+}
+
++ (UIImage *)messageStatusIconWithColor:(UIColor *)color size:(CGFloat)size {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
+    [color setFill];
+    UIBezierPath *bubble = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(size * 0.04, size * 0.08, size * 0.92, size * 0.66)
+                                                      cornerRadius:size * 0.2];
+    [bubble fill];
+    UIBezierPath *tail = [UIBezierPath bezierPath];
+    [tail moveToPoint:CGPointMake(size * 0.24, size * 0.70)];
+    [tail addLineToPoint:CGPointMake(size * 0.22, size * 0.96)];
+    [tail addLineToPoint:CGPointMake(size * 0.48, size * 0.70)];
+    [tail closePath];
+    [tail fill];
+    [[UIColor whiteColor] setFill];
+    CGFloat dot = size * 0.13;
+    for (NSInteger i = 0; i < 3; i++) {
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(size * (0.24 + 0.2 * i) - dot / 2.0, size * 0.41 - dot / 2.0, dot, dot)] fill];
+    }
+    UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return result;
+}
+
 + (UIImage *)tileWithIcon:(UIImage *)icon backgroundColor:(UIColor *)color size:(CGFloat)size {
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
     UIBezierPath *tile = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, size, size) cornerRadius:size * 0.24];

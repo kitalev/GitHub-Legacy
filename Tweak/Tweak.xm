@@ -197,6 +197,36 @@ static BOOL GHUsesModernNavigationDelegate(void) {
 
 %end
 
+%group GHRedirectHooksProvisional
+
+%hook TabDocument
+
+- (void)webView:(id)webView didStartProvisionalNavigation:(id)navigation {
+    %orig;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+    id url = [webView respondsToSelector:@selector(URL)] ? [webView performSelector:@selector(URL)] : nil;
+#pragma clang diagnostic pop
+    if (![url isKindOfClass:[NSURL class]] || !GHIsGitHubURL(url) || gGHKeyboardVisible || !GHRedirectEnabled()) return;
+    id selfAsID = self;
+    GHMarkHandedOff(selfAsID, url);
+    if ([webView respondsToSelector:@selector(stopLoading)]) [webView stopLoading];
+    if ([webView respondsToSelector:@selector(canGoBack)] && [webView respondsToSelector:@selector(goBack)]) {
+        typedef BOOL (*GHBoolGetter)(id, SEL);
+        if (((GHBoolGetter)[webView methodForSelector:@selector(canGoBack)])(webView, @selector(canGoBack))) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [webView performSelector:@selector(goBack)];
+#pragma clang diagnostic pop
+        }
+    }
+    GHHandOffToApp(url);
+}
+
+%end
+
+%end
+
 %group GHRedirectHooksActivation
 
 %hook TabDocument
@@ -238,6 +268,10 @@ static BOOL GHUsesModernNavigationDelegate(void) {
     if (tabDocumentClass != Nil
         && class_getInstanceMethod(tabDocumentClass, @selector(webView:decidePolicyForNavigationAction:preferences:decisionHandler:)) != NULL) {
         %init(GHRedirectHooksPreferences);
+    }
+    if (tabDocumentClass != Nil && GHUsesModernNavigationDelegate()
+        && class_getInstanceMethod(tabDocumentClass, @selector(webView:didStartProvisionalNavigation:)) != NULL) {
+        %init(GHRedirectHooksProvisional);
     }
     if (tabDocumentClass != Nil && class_getInstanceMethod(tabDocumentClass, @selector(becameActive)) != NULL) {
         %init(GHRedirectHooksActivation);

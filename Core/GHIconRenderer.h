@@ -7,6 +7,8 @@
 + (UIImage *)disclosureChevronWithColor:(UIColor *)color size:(CGSize)size;
 
 + (UIImage *)personIconWithColor:(UIColor *)color size:(CGFloat)size;
++ (UIImage *)busyStatusIconWithSize:(CGFloat)size;
++ (UIImage *)messageStatusIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)starIconWithColor:(UIColor *)color size:(CGFloat)size filled:(BOOL)filled;
 + (UIImage *)compassIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)searchIconWithColor:(UIColor *)color size:(CGFloat)size;

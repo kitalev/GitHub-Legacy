@@ -65,7 +65,8 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
 @property (nonatomic, strong) UIView *statusView;
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) UIView *statusBadge;
-@property (nonatomic, strong) UILabel *statusEmojiLabel;
+@property (nonatomic, strong) UIImageView *statusEmojiView;
+@property (nonatomic, copy) NSString *statusEmojiURL;
 @property (nonatomic, strong) NSMutableArray *infoRows;
 @property (nonatomic, strong) UIImageView *followersIconView;
 @property (nonatomic, strong) UIButton *followersButton;
@@ -135,11 +136,9 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         _statusBadge.hidden = YES;
         [self addSubview:_statusBadge];
 
-        _statusEmojiLabel = [[UILabel alloc] init];
-        _statusEmojiLabel.backgroundColor = [UIColor clearColor];
-        _statusEmojiLabel.font = [UIFont systemFontOfSize:15];
-        _statusEmojiLabel.textAlignment = NSTextAlignmentCenter;
-        [_statusBadge addSubview:_statusEmojiLabel];
+        _statusEmojiView = [[UIImageView alloc] init];
+        _statusEmojiView.contentMode = UIViewContentModeScaleAspectFit;
+        [_statusBadge addSubview:_statusEmojiView];
 
         _infoRows = [NSMutableArray array];
 
@@ -207,11 +206,7 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     self.bioLabel.text = hasData ? ([self stringForKey:@"bio"] ?: @"") : @"";
     self.statusLabel.text = hasData ? [self statusText] : @"";
     self.statusView.hidden = self.statusLabel.text.length == 0;
-    self.statusEmojiLabel.text = hasData && self.statusInfo ? [self statusEmoji] : @"";
-    if (hasData && self.statusInfo && self.statusEmojiLabel.text.length == 0 && self.statusLabel.text.length > 0) {
-        self.statusEmojiLabel.text = [self.statusInfo[@"indicatesLimitedAvailability"] boolValue] ? @"⛔" : @"💬";
-    }
-    self.statusBadge.hidden = self.statusEmojiLabel.text.length == 0;
+    [self updateStatusBadge:hasData];
 
     [self loadAvatarIfNeeded];
     [self rebuildInfoRows:hasData];
@@ -228,12 +223,55 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     [self setNeedsLayout];
 }
 
-- (NSString *)statusEmoji {
+- (NSString *)statusEmojiImageURL {
     NSString *emojiHTML = [self.statusInfo[@"emojiHTML"] isKindOfClass:[NSString class]] ? self.statusInfo[@"emojiHTML"] : @"";
-    NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
-    NSString *emoji = [tags stringByReplacingMatchesInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length) withTemplate:@""];
-    emoji = [emoji stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    return GHEmojiForDisplay(emoji) ?: @"";
+    if (emojiHTML.length == 0) return nil;
+    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"(?:fallback-src|src)=\"([^\"]+)\"" options:0 error:nil];
+    NSTextCheckingResult *match = [regex firstMatchInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length)];
+    if (match == nil) return nil;
+    NSString *url = [[emojiHTML substringWithRange:[match rangeAtIndex:1]] stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
+    if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
+    if ([url hasPrefix:@"/"]) url = [@"https://github.githubassets.com" stringByAppendingString:url];
+    return url;
+}
+
+- (void)updateStatusBadge:(BOOL)hasData {
+    if (!hasData || self.statusInfo == nil) {
+        self.statusBadge.hidden = YES;
+        self.statusEmojiURL = nil;
+        return;
+    }
+    BOOL busy = [self.statusInfo[@"indicatesLimitedAvailability"] boolValue];
+    NSString *url = [self statusEmojiImageURL];
+    if (url.length == 0) {
+        self.statusEmojiURL = nil;
+        self.statusEmojiView.image = busy ? [GHIconRenderer busyStatusIconWithSize:18] : [GHIconRenderer messageStatusIconWithColor:GHAccentColor() size:18];
+        self.statusBadge.hidden = !busy && self.statusLabel.text.length == 0;
+        return;
+    }
+    self.statusBadge.hidden = NO;
+    if ([url isEqualToString:self.statusEmojiURL]) return;
+    self.statusEmojiURL = url;
+    static NSCache *cache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cache = [[NSCache alloc] init];
+    });
+    UIImage *cached = [cache objectForKey:url];
+    self.statusEmojiView.image = cached ?: [GHIconRenderer messageStatusIconWithColor:GHAccentColor() size:18];
+    if (cached) return;
+    NSURL *imageURL = [NSURL URLWithString:url];
+    if (imageURL == nil) return;
+    __weak typeof(self) weakSelf = self;
+    [NSURLConnection sendAsynchronousRequest:[NSURLRequest requestWithURL:imageURL]
+                                       queue:[NSOperationQueue mainQueue]
+                           completionHandler:^(NSURLResponse *response, NSData *data, NSError *error) {
+        UIImage *image = data.length > 0 ? [UIImage imageWithData:data] : nil;
+        if (image == nil) return;
+        [cache setObject:image forKey:url];
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if ([strongSelf.statusEmojiURL isEqualToString:url]) strongSelf.statusEmojiView.image = image;
+    }];
 }
 
 - (NSString *)statusText {
@@ -422,7 +460,7 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         self.nameLabel.frame = CGRectMake(textX, namesTop, textWidth, nameHeight);
         self.loginLabel.frame = CGRectMake(textX, namesTop + nameHeight + 2, textWidth, loginHeight);
         self.statusBadge.frame = CGRectMake(kGHProfilePadding + kGHProfileAvatarSize - 24, y + kGHProfileAvatarSize - 24, 28, 28);
-        self.statusEmojiLabel.frame = self.statusBadge.bounds;
+        self.statusEmojiView.frame = CGRectMake(5, 5, 18, 18);
     }
     y += kGHProfileAvatarSize + 16;
 
