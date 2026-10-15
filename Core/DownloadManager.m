@@ -144,6 +144,23 @@
 
     NSError *writeError = nil;
     BOOL success = [ctx.receivedData writeToFile:ctx.filePath options:NSDataWritingAtomic error:&writeError];
+    if (!success) {
+        NSString *fileName = ctx.filePath.lastPathComponent;
+        NSArray *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSMutableArray *fallbacks = [NSMutableArray array];
+        if (documents.count > 0) [fallbacks addObject:[documents[0] stringByAppendingPathComponent:@"Downloads"]];
+        [fallbacks addObject:[NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"]];
+        [fallbacks addObject:[NSTemporaryDirectory() stringByAppendingPathComponent:@"Downloads"]];
+        for (NSString *directory in fallbacks) {
+            [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *path = [directory stringByAppendingPathComponent:fileName];
+            if ([ctx.receivedData writeToFile:path options:NSDataWritingAtomic error:nil]) {
+                ctx.filePath = path;
+                success = YES;
+                break;
+            }
+        }
+    }
 
     if (ctx.completionBlock) {
         if (success) {

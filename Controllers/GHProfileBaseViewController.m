@@ -3,6 +3,7 @@
 #import "GHCompat.h"
 #import "GHLegacyRefreshControl.h"
 #import "GHAPIClient.h"
+#import "GHAuthManager.h"
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
 #import "GHIconRenderer.h"
@@ -134,21 +135,33 @@ typedef NS_ENUM(NSInteger, GHProfileMenuRow) {
     self.headerView.statusInfo = nil;
 
     NSString *escaped = [[login stringByReplacingOccurrencesOfString:@"\\" withString:@""] stringByReplacingOccurrencesOfString:@"\"" withString:@""];
-    NSString *query = [NSString stringWithFormat:
-        @"{user(login:\"%@\"){status{emojiHTML message indicatesLimitedAvailability}"
-         "socialAccounts(first:10){nodes{provider displayName url}}}}", escaped];
+    NSString *currentLogin = [GHAuthManager sharedManager].currentUserLogin;
+    BOOL isSelf = currentLogin.length > 0 && [currentLogin caseInsensitiveCompare:login] == NSOrderedSame;
+    NSString *owner = isSelf ? @"viewer" : [NSString stringWithFormat:@"user(login:\"%@\")", escaped];
+    NSString *statusQuery = [NSString stringWithFormat:@"{u:%@{status{emojiHTML message indicatesLimitedAvailability}}}", owner];
+    NSString *socialQuery = [NSString stringWithFormat:@"{u:user(login:\"%@\"){socialAccounts(first:10){nodes{provider displayName url}}}}", escaped];
+
     __weak typeof(self) weakSelf = self;
-    [[GHAPIClient sharedClient] graphQLQuery:query completion:^(id jsonObject, NSError *error) {
+    void (^handle)(id, NSError *, BOOL) = ^(id jsonObject, NSError *error, BOOL status) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf || error || ![login isEqualToString:[strongSelf profileLogin]]) return;
         NSDictionary *root = [jsonObject isKindOfClass:[NSDictionary class]] ? jsonObject : nil;
         NSDictionary *data = [root[@"data"] isKindOfClass:[NSDictionary class]] ? root[@"data"] : root;
-        NSDictionary *user = [data[@"user"] isKindOfClass:[NSDictionary class]] ? data[@"user"] : nil;
+        NSDictionary *user = [data[@"u"] isKindOfClass:[NSDictionary class]] ? data[@"u"] : nil;
         if (user == nil) return;
-        NSDictionary *social = [user[@"socialAccounts"] isKindOfClass:[NSDictionary class]] ? user[@"socialAccounts"] : nil;
-        strongSelf.headerView.socialAccounts = [social[@"nodes"] isKindOfClass:[NSArray class]] ? social[@"nodes"] : nil;
-        strongSelf.headerView.statusInfo = [user[@"status"] isKindOfClass:[NSDictionary class]] ? user[@"status"] : nil;
+        if (status) {
+            strongSelf.headerView.statusInfo = [user[@"status"] isKindOfClass:[NSDictionary class]] ? user[@"status"] : nil;
+        } else {
+            NSDictionary *social = [user[@"socialAccounts"] isKindOfClass:[NSDictionary class]] ? user[@"socialAccounts"] : nil;
+            strongSelf.headerView.socialAccounts = [social[@"nodes"] isKindOfClass:[NSArray class]] ? social[@"nodes"] : nil;
+        }
         [strongSelf refreshHeader];
+    };
+    [[GHAPIClient sharedClient] graphQLQuery:statusQuery completion:^(id jsonObject, NSError *error) {
+        handle(jsonObject, error, YES);
+    }];
+    [[GHAPIClient sharedClient] graphQLQuery:socialQuery completion:^(id jsonObject, NSError *error) {
+        handle(jsonObject, error, NO);
     }];
 }
 

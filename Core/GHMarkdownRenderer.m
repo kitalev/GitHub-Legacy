@@ -1164,10 +1164,10 @@ static const NSUInteger kStackTableColumnThreshold = 3;
         "th{background:#f6f8fa;font-weight:bold;}"
 
         ".show-more{display:block;width:100%;min-height:44px;line-height:20px;padding:11px 28px;margin:6px 0 4px;text-align:center;"
-        "color:#007aff !important;font-size:15px;font-weight:bold;text-decoration:none;"
+        "color:#408cff !important;font-size:15px;font-weight:bold;text-decoration:none;"
         "border-radius:12px;border:1px solid #d9d9d9;background:#fff;-webkit-tap-highlight-color:rgba(0,122,255,0.15);}"
         ".show-more-chev{display:inline-block;width:6px;height:6px;margin:0 2px 0 7px;vertical-align:1px;"
-        "border-top:2px solid #007aff;border-right:2px solid #007aff;-webkit-transform:rotate(45deg);}"
+        "border-top:2px solid #408cff;border-right:2px solid #408cff;-webkit-transform:rotate(45deg);}"
 
         ".readme-clip{max-height:280px;overflow:hidden;position:relative;}"
 

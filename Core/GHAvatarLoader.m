@@ -33,7 +33,7 @@ static CGFloat const kGHAvatarDiameter = 30.0;
 - (UIImage *)circularAvatarFromImage:(UIImage *)sourceImage {
     CGRect rect = CGRectMake(0, 0, kGHAvatarDiameter, kGHAvatarDiameter);
 
-    UIGraphicsBeginImageContextWithOptions(rect.size, NO, 0.0);
+    UIGraphicsBeginImageContextWithOptions(rect.size, NO, [UIScreen mainScreen].scale * 2.0);
     CGContextRef context = UIGraphicsGetCurrentContext();
     CGContextAddEllipseInRect(context, rect);
     CGContextClip(context);
@@ -54,7 +54,7 @@ static CGFloat const kGHAvatarDiameter = 30.0;
 }
 
 - (void)styleAvatarImageView:(UIImageView *)imageView {
-    imageView.contentMode = UIViewContentModeCenter;
+    imageView.contentMode = UIViewContentModeScaleAspectFit;
     imageView.clipsToBounds = YES;
 }
 

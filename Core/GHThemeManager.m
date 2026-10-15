@@ -159,7 +159,7 @@ UIColor *GHTintColor(void) {
 }
 
 UIColor *GHAccentColor(void) {
-    return GHTintColor() ?: [UIColor colorWithRed:0.0 green:122.0/255.0 blue:1.0 alpha:1.0];
+    return [UIColor colorWithRed:0.25 green:0.55 blue:1.0 alpha:1.0];
 }
 
 UIColor *GHReactionAccentColor(void) {

@@ -64,6 +64,8 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
 @property (nonatomic, strong) UILabel *bioLabel;
 @property (nonatomic, strong) UIView *statusView;
 @property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UIView *statusBadge;
+@property (nonatomic, strong) UILabel *statusEmojiLabel;
 @property (nonatomic, strong) NSMutableArray *infoRows;
 @property (nonatomic, strong) UIImageView *followersIconView;
 @property (nonatomic, strong) UIButton *followersButton;
@@ -126,6 +128,18 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         _statusLabel.font = [UIFont systemFontOfSize:14];
         _statusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         [_statusView addSubview:_statusLabel];
+
+        _statusBadge = [[UIView alloc] init];
+        _statusBadge.layer.cornerRadius = 14;
+        _statusBadge.layer.borderWidth = 1;
+        _statusBadge.hidden = YES;
+        [self addSubview:_statusBadge];
+
+        _statusEmojiLabel = [[UILabel alloc] init];
+        _statusEmojiLabel.backgroundColor = [UIColor clearColor];
+        _statusEmojiLabel.font = [UIFont systemFontOfSize:15];
+        _statusEmojiLabel.textAlignment = NSTextAlignmentCenter;
+        [_statusBadge addSubview:_statusEmojiLabel];
 
         _infoRows = [NSMutableArray array];
 
@@ -193,6 +207,11 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     self.bioLabel.text = hasData ? ([self stringForKey:@"bio"] ?: @"") : @"";
     self.statusLabel.text = hasData ? [self statusText] : @"";
     self.statusView.hidden = self.statusLabel.text.length == 0;
+    self.statusEmojiLabel.text = hasData && self.statusInfo ? [self statusEmoji] : @"";
+    if (hasData && self.statusInfo && self.statusEmojiLabel.text.length == 0 && self.statusLabel.text.length > 0) {
+        self.statusEmojiLabel.text = [self.statusInfo[@"indicatesLimitedAvailability"] boolValue] ? @"⛔" : @"💬";
+    }
+    self.statusBadge.hidden = self.statusEmojiLabel.text.length == 0;
 
     [self loadAvatarIfNeeded];
     [self rebuildInfoRows:hasData];
@@ -209,18 +228,21 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     [self setNeedsLayout];
 }
 
-- (NSString *)statusText {
-    NSDictionary *status = self.statusInfo;
-    if (status == nil) return @"";
-    NSString *emojiHTML = [status[@"emojiHTML"] isKindOfClass:[NSString class]] ? status[@"emojiHTML"] : @"";
+- (NSString *)statusEmoji {
+    NSString *emojiHTML = [self.statusInfo[@"emojiHTML"] isKindOfClass:[NSString class]] ? self.statusInfo[@"emojiHTML"] : @"";
     NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
     NSString *emoji = [tags stringByReplacingMatchesInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length) withTemplate:@""];
     emoji = [emoji stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return GHEmojiForDisplay(emoji) ?: @"";
+}
+
+- (NSString *)statusText {
+    NSDictionary *status = self.statusInfo;
+    if (status == nil) return @"";
     NSString *message = [status[@"message"] isKindOfClass:[NSString class]] ? status[@"message"] : @"";
     message = [message stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (message.length == 0 && [status[@"indicatesLimitedAvailability"] boolValue]) message = GHL(@"Занят");
-    NSString *text = emoji.length > 0 && message.length > 0 ? [NSString stringWithFormat:@"%@ %@", emoji, message] : (message.length > 0 ? message : emoji);
-    return GHEmojiForDisplay(text) ?: @"";
+    return GHEmojiForDisplay(message) ?: @"";
 }
 
 - (void)setCountButton:(UIButton *)button count:(NSNumber *)count caption:(NSString *)caption {
@@ -365,6 +387,8 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     self.statusView.backgroundColor = GHCellBackgroundColor();
     self.statusView.layer.borderColor = GHSeparatorColor().CGColor;
     self.statusLabel.textColor = GHPrimaryTextColor();
+    self.statusBadge.backgroundColor = GHCellBackgroundColor();
+    self.statusBadge.layer.borderColor = GHSeparatorColor().CGColor;
     self.followersIconView.image = [GHIconRenderer personOutlineIconWithColor:GHSecondaryTextColor() size:kGHProfileIconSize];
     self.followersSeparatorLabel.textColor = GHSecondaryTextColor();
     for (GHProfileInfoRow *row in self.infoRows) [self styleInfoRow:row];
@@ -397,6 +421,8 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         self.avatarView.frame = CGRectMake(kGHProfilePadding, y, kGHProfileAvatarSize, kGHProfileAvatarSize);
         self.nameLabel.frame = CGRectMake(textX, namesTop, textWidth, nameHeight);
         self.loginLabel.frame = CGRectMake(textX, namesTop + nameHeight + 2, textWidth, loginHeight);
+        self.statusBadge.frame = CGRectMake(kGHProfilePadding + kGHProfileAvatarSize - 24, y + kGHProfileAvatarSize - 24, 28, 28);
+        self.statusEmojiLabel.frame = self.statusBadge.bounds;
     }
     y += kGHProfileAvatarSize + 16;
 

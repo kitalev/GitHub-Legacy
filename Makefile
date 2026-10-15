@@ -73,6 +73,9 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 
 GitHubLegacy_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore
 GitHubLegacy_CFLAGS = -fobjc-arc -Iinclude -IControllers -ICells -ICore
+ifneq ($(PACKAGE_FORMAT),ipa)
+GitHubLegacy_CODESIGN_FLAGS = -Sentitlements.plist
+endif
 
 include $(THEOS_MAKE_PATH)/application.mk
 

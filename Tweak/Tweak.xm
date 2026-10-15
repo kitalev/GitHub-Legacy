@@ -44,7 +44,14 @@ static void GHHandOffToApp(NSURL *url) {
     NSString *encoded = [urlString stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
     NSURL *appURL = [NSURL URLWithString:[NSString stringWithFormat:@"githublegacy://open?url=%@", encoded]];
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] openURL:appURL];
+        UIApplication *application = [UIApplication sharedApplication];
+        SEL modernOpen = NSSelectorFromString(@"openURL:options:completionHandler:");
+        if ([application respondsToSelector:modernOpen]) {
+            typedef void (*GHOpenURLFunction)(id, SEL, NSURL *, NSDictionary *, id);
+            ((GHOpenURLFunction)[application methodForSelector:modernOpen])(application, modernOpen, appURL, @{}, nil);
+        } else {
+            [application openURL:appURL];
+        }
     });
 }
 
@@ -159,6 +166,37 @@ static BOOL GHUsesModernNavigationDelegate(void) {
 
 %end
 
+%group GHRedirectHooksPreferences
+
+%hook TabDocument
+
+- (void)webView:(id)webView
+    decidePolicyForNavigationAction:(id)actionInformation
+                         preferences:(id)preferences
+                     decisionHandler:(void (^)(NSInteger, id))decisionHandler {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+    id request = [actionInformation respondsToSelector:@selector(request)]
+        ? [actionInformation performSelector:@selector(request)] : nil;
+    NSURL *url = [request respondsToSelector:@selector(URL)] ? [request URL] : nil;
+    id targetFrame = [actionInformation respondsToSelector:@selector(targetFrame)]
+        ? [actionInformation performSelector:@selector(targetFrame)] : nil;
+#pragma clang diagnostic pop
+    id selfAsID = self;
+    if (GHIsGitHubURL(url) && GHFrameInfoIsMainFrame(targetFrame) && !gGHKeyboardVisible && GHRedirectEnabled()) {
+        GHMarkHandedOff(selfAsID, url);
+        GHHandOffToApp(url);
+        decisionHandler(0, preferences);
+        return;
+    }
+
+    %orig;
+}
+
+%end
+
+%end
+
 %group GHRedirectHooksActivation
 
 %hook TabDocument
@@ -197,6 +235,10 @@ static BOOL GHUsesModernNavigationDelegate(void) {
     }
 
     Class tabDocumentClass = objc_getClass("TabDocument");
+    if (tabDocumentClass != Nil
+        && class_getInstanceMethod(tabDocumentClass, @selector(webView:decidePolicyForNavigationAction:preferences:decisionHandler:)) != NULL) {
+        %init(GHRedirectHooksPreferences);
+    }
     if (tabDocumentClass != Nil && class_getInstanceMethod(tabDocumentClass, @selector(becameActive)) != NULL) {
         %init(GHRedirectHooksActivation);
     }
