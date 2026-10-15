@@ -184,7 +184,7 @@ static UIImage *GHGoogleIcon(UIColor *color, CGFloat size) {
     self.tableView.backgroundColor = GHBackgroundColor();
     self.tableView.separatorColor = GHSeparatorColor();
 
-    self.headerIconView.image = [GHIconRenderer personIconWithColor:GHTintColor() size:56];
+    self.headerIconView.image = [GHIconRenderer personIconWithColor:GHAccentColor() size:56];
     self.headerTitleLabel.textColor = GHPrimaryTextColor();
     self.headerSubtitleLabel.textColor = GHSecondaryTextColor();
 
@@ -243,7 +243,7 @@ static UIImage *GHGoogleIcon(UIColor *color, CGFloat size) {
 
 - (UIImage *)iconForOption:(NSInteger)option {
     switch (option) {
-        case 0: return [GHIconRenderer personIconWithColor:GHTintColor() size:36];
+        case 0: return [GHIconRenderer personIconWithColor:GHAccentColor() size:36];
         case 1: return GHGoogleIcon(GHSecondaryTextColor(), 36);
         case 2: return [GHIconRenderer devicesIconWithColor:GHSecondaryTextColor() size:36];
         default: return [GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:36];

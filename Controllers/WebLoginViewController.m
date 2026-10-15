@@ -523,7 +523,7 @@ static UIView *GHWebLoginMakeCard(void) {
 }
 
 - (UIColor *)accentColor {
-    return self.step == GHWebLoginStepRetry ? GHWebLoginErrorColor() : GHTintColor();
+    return self.step == GHWebLoginStepRetry ? GHWebLoginErrorColor() : GHAccentColor();
 }
 
 - (UIImage *)iconForKind:(NSString *)kind color:(UIColor *)color size:(CGFloat)size {
@@ -562,16 +562,16 @@ static UIView *GHWebLoginMakeCard(void) {
     self.scrollView.backgroundColor = GHBackgroundColor();
     for (NSUInteger i = 0; i < self.progressSegments.count; i++) {
         BOOL active = (NSInteger)i < self.phase;
-        [self.progressSegments[i] setBackgroundColor:active ? GHTintColor() : GHSeparatorColor()];
+        [self.progressSegments[i] setBackgroundColor:active ? GHAccentColor() : GHSeparatorColor()];
     }
-    self.stepLabel.textColor = GHTintColor();
+    self.stepLabel.textColor = GHAccentColor();
     self.iconBackground.backgroundColor = [accent colorWithAlphaComponent:0.14];
     self.iconView.image = [self stepIcon];
     self.titleLabel.textColor = GHPrimaryTextColor();
     self.messageLabel.textColor = GHSecondaryTextColor();
-    self.digitsCard.backgroundColor = [GHTintColor() colorWithAlphaComponent:0.1];
-    self.digitsCard.layer.borderColor = [GHTintColor() colorWithAlphaComponent:0.35].CGColor;
-    self.digitsLabel.textColor = GHTintColor();
+    self.digitsCard.backgroundColor = [GHAccentColor() colorWithAlphaComponent:0.1];
+    self.digitsCard.layer.borderColor = [GHAccentColor() colorWithAlphaComponent:0.35].CGColor;
+    self.digitsLabel.textColor = GHAccentColor();
     self.statusLabel.textColor = GHSecondaryTextColor();
     self.errorLabel.textColor = GHWebLoginErrorColor();
     self.errorBox.backgroundColor = [GHWebLoginErrorColor() colorWithAlphaComponent:0.1];
@@ -584,12 +584,12 @@ static UIView *GHWebLoginMakeCard(void) {
     [(UIImageView *)self.firstField.leftView setImage:[self iconForKind:self.step == GHWebLoginStepCode ? self.codeKind : @"person"
                                                                   color:GHSecondaryTextColor() size:18]];
     [(UIImageView *)self.secondField.leftView setImage:[GHIconRenderer keyIconWithColor:GHSecondaryTextColor() size:18]];
-    [(UIButton *)self.secondField.rightView setTitleColor:GHTintColor() forState:UIControlStateNormal];
+    [(UIButton *)self.secondField.rightView setTitleColor:GHAccentColor() forState:UIControlStateNormal];
     [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage(accent, nil) forState:UIControlStateNormal];
     [self.primaryButton setBackgroundImage:GHWebLoginRoundedImage([accent colorWithAlphaComponent:0.75], nil)
                                   forState:UIControlStateHighlighted];
-    [self.secondaryButton setTitleColor:GHTintColor() forState:UIControlStateNormal];
-    [self.secondaryButton setTitleColor:[GHTintColor() colorWithAlphaComponent:0.5] forState:UIControlStateHighlighted];
+    [self.secondaryButton setTitleColor:GHAccentColor() forState:UIControlStateNormal];
+    [self.secondaryButton setTitleColor:[GHAccentColor() colorWithAlphaComponent:0.5] forState:UIControlStateHighlighted];
     self.sectionLabel.textColor = GHSecondaryTextColor();
     self.listCard.backgroundColor = GHCellBackgroundColor();
     self.listCard.layer.borderColor = GHSeparatorColor().CGColor;
@@ -640,13 +640,13 @@ static UIView *GHWebLoginMakeCard(void) {
 
 - (void)styleRow:(UIButton *)row {
     NSDictionary *item = row.tag < (NSInteger)self.rowItems.count ? self.rowItems[row.tag] : nil;
-    [(UIImageView *)[row viewWithTag:kGHWebLoginRowIconTag] setImage:[self iconForKind:item[@"kind"] color:GHTintColor() size:22]];
+    [(UIImageView *)[row viewWithTag:kGHWebLoginRowIconTag] setImage:[self iconForKind:item[@"kind"] color:GHAccentColor() size:22]];
     [(UILabel *)[row viewWithTag:kGHWebLoginRowTitleTag] setTextColor:GHPrimaryTextColor()];
     [(UILabel *)[row viewWithTag:kGHWebLoginRowSubtitleTag] setTextColor:GHSecondaryTextColor()];
     [(UIImageView *)[row viewWithTag:kGHWebLoginRowChevronTag] setImage:[GHIconRenderer disclosureChevronWithColor:GHSecondaryTextColor()
                                                                                                              size:CGSizeMake(9, 14)]];
     [[row viewWithTag:kGHWebLoginRowSeparatorTag] setBackgroundColor:GHSeparatorColor()];
-    [row setBackgroundImage:GHWebLoginSolidImage([GHTintColor() colorWithAlphaComponent:0.12]) forState:UIControlStateHighlighted];
+    [row setBackgroundImage:GHWebLoginSolidImage([GHAccentColor() colorWithAlphaComponent:0.12]) forState:UIControlStateHighlighted];
 }
 
 - (NSArray *)rowItems {

@@ -474,6 +474,7 @@ static NSDictionary *GHTranslations(void) {
             @"«%@» будет прикреплён, когда вы откроете форму новой задачи.": @"\"%@\" will be attached when you open the new issue form.",
             @"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.": @"Wait for the current upload to finish, then attach the file again.",
             @"Открыть в %@": @"Open in %@",
+            @"Занят": @"Busy",
             @"Файловый менеджер передал не копию, а сам файл «%@», а он доступен только root.\n\nВ файловом менеджере откройте свойства этого файла и разрешите чтение для всех (Others → Read, права 644). Затем снова нажмите «Открыть в…» → GitHub Legacy.":
                 @"The file manager passed the original file \"%@\" instead of a copy, and only root can read it.\n\nIn the file manager, open this file's properties and allow reading for everyone (Others → Read, permissions 644). Then tap \"Open In…\" → GitHub Legacy again.",
             @"Открыть %@": @"Open %@",

@@ -151,7 +151,7 @@ static UILabel *GHTokenLoginMakeLabel(UIFont *font, NSTextAlignment alignment) {
 - (void)applyTheme {
     self.view.backgroundColor = GHBackgroundColor();
 
-    self.headerIconView.image = [GHIconRenderer keyIconWithColor:GHTintColor() size:56];
+    self.headerIconView.image = [GHIconRenderer keyIconWithColor:GHAccentColor() size:56];
     self.headerTitleLabel.textColor = GHPrimaryTextColor();
     self.headerSubtitleLabel.textColor = GHSecondaryTextColor();
 

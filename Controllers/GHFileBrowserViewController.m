@@ -147,7 +147,7 @@ static NSString * const kFileBrowserCellID = @"FileBrowserCell";
 
     if (self.entries.count == 0 && indexPath.row > 0) {
         cell.textLabel.text = [NSString stringWithFormat:GHL(@"Открыть в %@"), self.managerLinks[indexPath.row - 1][0]];
-        cell.textLabel.textColor = GHTintColor();
+        cell.textLabel.textColor = GHAccentColor();
         cell.detailTextLabel.text = GHL(@"Выберите файл и нажмите «Открыть в…» → GitHub Legacy");
         cell.accessoryView = nil;
         cell.accessoryType = UITableViewCellAccessoryNone;

@@ -158,6 +158,10 @@ UIColor *GHTintColor(void) {
         : nil;
 }
 
+UIColor *GHAccentColor(void) {
+    return GHTintColor() ?: [UIColor colorWithRed:0.0 green:122.0/255.0 blue:1.0 alpha:1.0];
+}
+
 UIColor *GHReactionAccentColor(void) {
     return [GHThemeManager sharedManager].darkModeEnabled
         ? [UIColor colorWithRed:0.25 green:0.55 blue:1.0 alpha:1.0]
@@ -263,7 +267,7 @@ static UIImage *GHButtonBackgroundImage(UIColor *fill, UIColor *stroke) {
 }
 
 void GHStyleButton(UIButton *button, GHButtonStyle style) {
-    UIColor *tint = GHTintColor();
+    UIColor *tint = GHAccentColor();
     if (style == GHButtonStylePrimary) {
         [button setBackgroundImage:GHButtonBackgroundImage(tint, nil) forState:UIControlStateNormal];
         [button setBackgroundImage:GHButtonBackgroundImage([tint colorWithAlphaComponent:0.75], nil) forState:UIControlStateHighlighted];

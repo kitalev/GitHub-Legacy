@@ -132,7 +132,7 @@
     } else {
         [self.followButton setTitle:GHL(@"Подписаться") forState:UIControlStateNormal];
         [self.followButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        UIColor *tint = GHTintColor() ?: [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:1.0];
+        UIColor *tint = GHAccentColor();
         self.followButton.backgroundColor = tint;
         self.followButton.layer.borderColor = tint.CGColor;
     }

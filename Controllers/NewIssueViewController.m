@@ -400,8 +400,29 @@ static UIImage *GHNewIssueRemoveBadge(void) {
                                               selector:@selector(keyboardWillHide:)
                                                   name:UIKeyboardWillHideNotification
                                                 object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(handleLanguageDidChange)
+                                                  name:kGHLanguageDidChangeNotification
+                                                object:nil];
 
     [self applyTheme];
+}
+
+- (void)handleLanguageDidChange {
+    self.title = GHL(@"Новая задача");
+    if (self.issueTemplate.name.length == 0) self.templateLabel.text = GHL(@"Новая задача");
+    self.titleRow.captionLabel.text = [GHL(@"Заголовок") stringByAppendingString:@" *"];
+    self.titleRow.textField.placeholder = GHL(@"Заголовок");
+    for (GHIssueFieldRow *row in self.rows) {
+        if (!row.isBody) continue;
+        row.captionLabel.text = GHL(@"Описание");
+        row.textView.placeholderLabel.text = GHL(@"Опишите задачу. Поддерживается Markdown.");
+    }
+    [self.submitButton setTitle:GHL(@"Создать задачу") forState:UIControlStateNormal];
+    self.submitItem.title = GHL(@"Создать");
+    if (self.activeUpload == nil) [self setAttachButtonsTitle:nil enabled:YES];
+    [self applyTheme];
+    [self layoutContent];
 }
 
 + (void)receiveIncomingFileAtPath:(NSString *)path {

@@ -62,6 +62,8 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
 @property (nonatomic, strong) UILabel *nameLabel;
 @property (nonatomic, strong) UILabel *loginLabel;
 @property (nonatomic, strong) UILabel *bioLabel;
+@property (nonatomic, strong) UIView *statusView;
+@property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) NSMutableArray *infoRows;
 @property (nonatomic, strong) UIImageView *followersIconView;
 @property (nonatomic, strong) UIButton *followersButton;
@@ -112,6 +114,18 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         _bioLabel.numberOfLines = 0;
         _bioLabel.lineBreakMode = NSLineBreakByWordWrapping;
         [self addSubview:_bioLabel];
+
+        _statusView = [[UIView alloc] init];
+        _statusView.layer.cornerRadius = 15;
+        _statusView.layer.borderWidth = 1;
+        _statusView.hidden = YES;
+        [self addSubview:_statusView];
+
+        _statusLabel = [[UILabel alloc] init];
+        _statusLabel.backgroundColor = [UIColor clearColor];
+        _statusLabel.font = [UIFont systemFontOfSize:14];
+        _statusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+        [_statusView addSubview:_statusLabel];
 
         _infoRows = [NSMutableArray array];
 
@@ -177,6 +191,8 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     self.nameLabel.text = self.loading && !self.userInfo ? GHL(@"Загрузка…") : (name ?: login ?: @"—");
     self.loginLabel.text = login ?: @"";
     self.bioLabel.text = hasData ? ([self stringForKey:@"bio"] ?: @"") : @"";
+    self.statusLabel.text = hasData ? [self statusText] : @"";
+    self.statusView.hidden = self.statusLabel.text.length == 0;
 
     [self loadAvatarIfNeeded];
     [self rebuildInfoRows:hasData];
@@ -191,6 +207,20 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     }
 
     [self setNeedsLayout];
+}
+
+- (NSString *)statusText {
+    NSDictionary *status = self.statusInfo;
+    if (status == nil) return @"";
+    NSString *emojiHTML = [status[@"emojiHTML"] isKindOfClass:[NSString class]] ? status[@"emojiHTML"] : @"";
+    NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
+    NSString *emoji = [tags stringByReplacingMatchesInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length) withTemplate:@""];
+    emoji = [emoji stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *message = [status[@"message"] isKindOfClass:[NSString class]] ? status[@"message"] : @"";
+    message = [message stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (message.length == 0 && [status[@"indicatesLimitedAvailability"] boolValue]) message = GHL(@"Занят");
+    NSString *text = emoji.length > 0 && message.length > 0 ? [NSString stringWithFormat:@"%@ %@", emoji, message] : (message.length > 0 ? message : emoji);
+    return GHEmojiForDisplay(text) ?: @"";
 }
 
 - (void)setCountButton:(UIButton *)button count:(NSNumber *)count caption:(NSString *)caption {
@@ -250,6 +280,24 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         [self addInfoRowWithIcon:GHProfileInfoIconLink
                              text:[@"@" stringByAppendingString:twitter]
                               url:[NSURL URLWithString:[@"https://twitter.com/" stringByAppendingString:twitter]]];
+    }
+
+    NSString *shownBlog = [[[blog lowercaseString] stringByReplacingOccurrencesOfString:@"https://" withString:@""]
+                           stringByReplacingOccurrencesOfString:@"http://" withString:@""];
+    for (NSDictionary *account in self.socialAccounts) {
+        if (![account isKindOfClass:[NSDictionary class]]) continue;
+        NSString *urlString = [account[@"url"] isKindOfClass:[NSString class]] ? account[@"url"] : nil;
+        NSString *provider = [account[@"provider"] isKindOfClass:[NSString class]] ? [account[@"provider"] uppercaseString] : @"";
+        if (urlString.length == 0) continue;
+        if (twitter && [provider isEqualToString:@"TWITTER"]) continue;
+        NSString *bare = [[[urlString lowercaseString] stringByReplacingOccurrencesOfString:@"https://" withString:@""]
+                          stringByReplacingOccurrencesOfString:@"http://" withString:@""];
+        if ([bare hasSuffix:@"/"]) bare = [bare substringToIndex:bare.length - 1];
+        if (shownBlog.length > 0 && ([bare isEqualToString:shownBlog] || [[bare stringByAppendingString:@"/"] isEqualToString:shownBlog])) continue;
+        NSString *display = [account[@"displayName"] isKindOfClass:[NSString class]] && [account[@"displayName"] length] > 0
+            ? account[@"displayName"]
+            : [urlString stringByReplacingOccurrencesOfString:@"https://" withString:@""];
+        [self addInfoRowWithIcon:GHProfileInfoIconLink text:display url:[self webURLFromString:urlString]];
     }
 }
 
@@ -314,6 +362,9 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     self.nameLabel.textColor = GHPrimaryTextColor();
     self.loginLabel.textColor = GHSecondaryTextColor();
     self.bioLabel.textColor = GHPrimaryTextColor();
+    self.statusView.backgroundColor = GHCellBackgroundColor();
+    self.statusView.layer.borderColor = GHSeparatorColor().CGColor;
+    self.statusLabel.textColor = GHPrimaryTextColor();
     self.followersIconView.image = [GHIconRenderer personOutlineIconWithColor:GHSecondaryTextColor() size:kGHProfileIconSize];
     self.followersSeparatorLabel.textColor = GHSecondaryTextColor();
     for (GHProfileInfoRow *row in self.infoRows) [self styleInfoRow:row];
@@ -348,6 +399,16 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         self.loginLabel.frame = CGRectMake(textX, namesTop + nameHeight + 2, textWidth, loginHeight);
     }
     y += kGHProfileAvatarSize + 16;
+
+    if (!self.statusView.hidden) {
+        CGSize statusSize = [self.statusLabel.text sizeWithFont:self.statusLabel.font];
+        CGFloat statusWidth = MIN(contentWidth, ceil(statusSize.width) + 26);
+        if (apply) {
+            self.statusView.frame = CGRectMake(kGHProfilePadding, y, statusWidth, 30);
+            self.statusLabel.frame = CGRectMake(13, 0, statusWidth - 26, 30);
+        }
+        y += 30 + 14;
+    }
 
     if (self.bioLabel.text.length > 0) {
         CGSize bioSize = [self.bioLabel.text sizeWithFont:self.bioLabel.font

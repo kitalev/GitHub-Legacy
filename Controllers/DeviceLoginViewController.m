@@ -208,9 +208,9 @@ static UILabel *GHDeviceLoginMakeLabel(UIFont *font, NSTextAlignment alignment) 
     [self.successView applyTheme];
 
     self.clientIDExplanationLabel.textColor = GHSecondaryTextColor();
-    self.headerIconView.image = self.opensInApp ? [GHIconRenderer personIconWithColor:GHTintColor() size:44]
-                                                : [GHIconRenderer devicesIconWithColor:GHTintColor() size:56];
-    self.headerIconView.backgroundColor = self.opensInApp ? [GHTintColor() colorWithAlphaComponent:0.14] : [UIColor clearColor];
+    self.headerIconView.image = self.opensInApp ? [GHIconRenderer personIconWithColor:GHAccentColor() size:44]
+                                                : [GHIconRenderer devicesIconWithColor:GHAccentColor() size:56];
+    self.headerIconView.backgroundColor = self.opensInApp ? [GHAccentColor() colorWithAlphaComponent:0.14] : [UIColor clearColor];
     self.headerTitleLabel.textColor = GHPrimaryTextColor();
 
     self.codeCard.backgroundColor = GHCellBackgroundColor();

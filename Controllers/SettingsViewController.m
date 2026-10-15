@@ -371,7 +371,7 @@ static const NSInteger kUpdateAlertTag = 2;
             cell.detailTextLabel.text = self.loggedInUsername.length > 0 ? [NSString stringWithFormat:@"@%@", self.loggedInUsername] : @"";
         } else {
             cell.textLabel.text = GHL(@"Войти");
-            cell.textLabel.textColor = GHTintColor() ?: [UIColor colorWithRed:0.0 green:0.478 blue:1.0 alpha:1.0];
+            cell.textLabel.textColor = GHAccentColor();
             cell.detailTextLabel.text = @"";
         }
         cell.detailTextLabel.textColor = GHSecondaryTextColor();

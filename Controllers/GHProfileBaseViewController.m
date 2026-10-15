@@ -24,6 +24,10 @@ typedef NS_ENUM(NSInteger, GHProfileMenuRow) {
     GHProfileMenuRowCount
 };
 
+@interface GHProfileBaseViewController ()
+@property (nonatomic, copy) NSString *extrasLogin;
+@end
+
 @implementation GHProfileBaseViewController
 
 - (id)init {
@@ -114,11 +118,38 @@ typedef NS_ENUM(NSInteger, GHProfileMenuRow) {
     if (![self showsProfileContent]) return;
 
     CGFloat width = self.tableView.bounds.size.width > 0 ? self.tableView.bounds.size.width : 320;
+    [self loadProfileExtrasIfNeeded];
     [self.headerView configureWithUserInfo:self.userInfo fallbackLogin:[self profileLogin] loading:self.headerLoading];
     CGFloat height = [self.headerView heightForWidth:width];
     self.headerView.frame = CGRectMake(0, 0, width, height);
     [self.headerView setNeedsLayout];
     self.tableView.tableHeaderView = self.headerView;
+}
+
+- (void)loadProfileExtrasIfNeeded {
+    NSString *login = [self profileLogin];
+    if (self.userInfo == nil || login.length == 0 || [login isEqualToString:self.extrasLogin]) return;
+    self.extrasLogin = login;
+    self.headerView.socialAccounts = nil;
+    self.headerView.statusInfo = nil;
+
+    NSString *escaped = [[login stringByReplacingOccurrencesOfString:@"\\" withString:@""] stringByReplacingOccurrencesOfString:@"\"" withString:@""];
+    NSString *query = [NSString stringWithFormat:
+        @"{user(login:\"%@\"){status{emojiHTML message indicatesLimitedAvailability}"
+         "socialAccounts(first:10){nodes{provider displayName url}}}}", escaped];
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] graphQLQuery:query completion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || error || ![login isEqualToString:[strongSelf profileLogin]]) return;
+        NSDictionary *root = [jsonObject isKindOfClass:[NSDictionary class]] ? jsonObject : nil;
+        NSDictionary *data = [root[@"data"] isKindOfClass:[NSDictionary class]] ? root[@"data"] : root;
+        NSDictionary *user = [data[@"user"] isKindOfClass:[NSDictionary class]] ? data[@"user"] : nil;
+        if (user == nil) return;
+        NSDictionary *social = [user[@"socialAccounts"] isKindOfClass:[NSDictionary class]] ? user[@"socialAccounts"] : nil;
+        strongSelf.headerView.socialAccounts = [social[@"nodes"] isKindOfClass:[NSArray class]] ? social[@"nodes"] : nil;
+        strongSelf.headerView.statusInfo = [user[@"status"] isKindOfClass:[NSDictionary class]] ? user[@"status"] : nil;
+        [strongSelf refreshHeader];
+    }];
 }
 
 - (void)viewDidLayoutSubviews {

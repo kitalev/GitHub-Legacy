@@ -21,6 +21,7 @@ UIColor *GHSecondaryTextColor(void);
 UIColor *GHProfileHeaderSecondaryTextColor(void);
 UIColor *GHSeparatorColor(void);
 UIColor *GHTintColor(void);
+UIColor *GHAccentColor(void);
 UIColor *GHReactionAccentColor(void);
 UIColor *GHReactionPillBackgroundColor(void);
 UIColor *GHReactionPillBorderColor(void);
