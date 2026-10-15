@@ -24,6 +24,7 @@ static const NSInteger kLabelSheetTag = 2;
 
 @interface IssueListViewController () <UISearchBarDelegate, UIAlertViewDelegate, UIActionSheetDelegate>
 @property (nonatomic, strong) UIButton *filterButton;
+@property (nonatomic, strong) UISegmentedControl *filterSegment;
 @property (nonatomic, copy) NSString *filterQualifier;
 @property (nonatomic, copy) NSString *filterTitleKey;
 @property (nonatomic, copy) NSString *filterLabel;
@@ -122,9 +123,15 @@ static const NSInteger kLabelSheetTag = 2;
     self.stateControl.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [self.stateControl addTarget:self action:@selector(stateControlChanged) forControlEvents:UIControlEventValueChanged];
 
-    self.filterButton = GHMakeButton(GHButtonStyleSecondary);
-    self.filterButton.contentEdgeInsets = UIEdgeInsetsZero;
+    self.filterSegment = [[UISegmentedControl alloc] initWithItems:@[[GHIconRenderer filterIconWithColor:[UIColor grayColor] size:18]]];
+    self.filterSegment.segmentedControlStyle = UISegmentedControlStylePlain;
+    self.filterSegment.userInteractionEnabled = NO;
+    self.filterSegment.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+
+    self.filterButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.filterButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    [self.filterButton addTarget:self action:@selector(filterTouchDown) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
+    [self.filterButton addTarget:self action:@selector(filterTouchEnded) forControlEvents:UIControlEventTouchUpOutside | UIControlEventTouchCancel | UIControlEventTouchDragExit];
     [self.filterButton addTarget:self action:@selector(filterTapped) forControlEvents:UIControlEventTouchUpInside];
 
     self.searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 52, self.view.bounds.size.width, 44)];
@@ -136,6 +143,7 @@ static const NSInteger kLabelSheetTag = 2;
     headerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     headerView.backgroundColor = GHBackgroundColor();
     [headerView addSubview:self.stateControl];
+    [headerView addSubview:self.filterSegment];
     [headerView addSubview:self.filterButton];
     [headerView addSubview:self.searchBar];
     self.tableView.tableHeaderView = headerView;
@@ -235,16 +243,26 @@ static const NSInteger kLabelSheetTag = 2;
 }
 
 - (void)updateFilterChipAppearance {
-    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
-    self.stateControl.segmentedControlStyle = dark ? UISegmentedControlStyleBar : UISegmentedControlStylePlain;
-    self.stateControl.tintColor = dark ? [UIColor colorWithWhite:0.32 alpha:1.0] : nil;
+    self.stateControl.segmentedControlStyle = UISegmentedControlStylePlain;
     CGFloat width = self.headerView.bounds.size.width;
-    self.stateControl.frame = CGRectMake(10, dark ? 11 : 10, width - 20 - 52, dark ? 30 : 32);
-    self.filterButton.frame = CGRectMake(width - 10 - 44, 10, 44, 32);
-    BOOL active = self.filterQualifier.length > 0;
-    GHStyleButton(self.filterButton, active ? GHButtonStylePrimary : GHButtonStyleSecondary);
-    UIImage *icon = [GHIconRenderer filterIconWithColor:active ? [UIColor whiteColor] : GHAccentColor() size:18];
-    [self.filterButton setImage:icon forState:UIControlStateNormal];
+    self.stateControl.frame = CGRectMake(10, 10, width - 20 - 58, 32);
+    self.filterSegment.frame = CGRectMake(width - 10 - 50, 10, 50, 32);
+    self.filterButton.frame = self.filterSegment.frame;
+    [self filterTouchEnded];
+}
+
+- (void)setFilterSegmentHighlighted:(BOOL)highlighted {
+    UIColor *iconColor = highlighted ? [UIColor whiteColor] : [UIColor colorWithWhite:0.45 alpha:1.0];
+    [self.filterSegment setImage:[GHIconRenderer filterIconWithColor:iconColor size:18] forSegmentAtIndex:0];
+    self.filterSegment.selectedSegmentIndex = highlighted ? 0 : UISegmentedControlNoSegment;
+}
+
+- (void)filterTouchDown {
+    [self setFilterSegmentHighlighted:YES];
+}
+
+- (void)filterTouchEnded {
+    [self setFilterSegmentHighlighted:self.filterQualifier.length > 0];
 }
 
 - (BOOL)isFiltering {
@@ -257,6 +275,7 @@ static const NSInteger kLabelSheetTag = 2;
 }
 
 - (void)filterTapped {
+    [self filterTouchEnded];
     [self.searchBar resignFirstResponder];
     BOOL signedIn = [GHAuthManager sharedManager].isAuthenticated;
     NSMutableArray *actions = [NSMutableArray array];

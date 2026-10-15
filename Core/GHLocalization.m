@@ -475,6 +475,7 @@ static NSDictionary *GHTranslations(void) {
             @"Дождитесь окончания текущей загрузки и прикрепите файл ещё раз.": @"Wait for the current upload to finish, then attach the file again.",
             @"Открыть в %@": @"Open in %@",
             @"Занят": @"Busy",
+            @"Найти в тексте": @"Find in text",
             @"Поиск по коду": @"Code Search",
             @"Текст, функция или имя файла": @"Text, function or file name",
             @"GitHub ищет по коду только для вошедших пользователей. Войдите в аккаунт в настройках.": @"GitHub code search is only available when signed in. Sign in from Settings.",
@@ -494,7 +495,6 @@ static NSDictionary *GHTranslations(void) {
             @"Меток нет": @"No labels",
             @"В этом репозитории нет меток.": @"This repository has no labels.",
             @"Нет задач по фильтру: %@": @"No issues match the filter: %@",
-            @"Установить": @"Install",
             @"Файловый менеджер передал не копию, а сам файл «%@», а он доступен только root.\n\nВ файловом менеджере откройте свойства этого файла и разрешите чтение для всех (Others → Read, права 644). Затем снова нажмите «Открыть в…» → GitHub Legacy.":
                 @"The file manager passed the original file \"%@\" instead of a copy, and only root can read it.\n\nIn the file manager, open this file's properties and allow reading for everyone (Others → Read, permissions 644). Then tap \"Open In…\" → GitHub Legacy again.",
             @"Открыть %@": @"Open %@",

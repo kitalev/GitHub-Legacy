@@ -3,7 +3,7 @@
 NSString * const kGHRecentReposDidChangeNotification = @"GHRecentReposDidChangeNotification";
 
 static NSString * const kGHRecentReposDefaultsKey = @"GHRecentRepos";
-static const NSUInteger kGHRecentReposMaxCount = 20;
+static const NSUInteger kGHRecentReposMaxCount = 5;
 
 static id GHRecentPlistValue(id value) {
     if ([value isKindOfClass:[NSString class]] || [value isKindOfClass:[NSNumber class]]) return value;
@@ -14,7 +14,8 @@ static id GHRecentPlistValue(id value) {
 
 + (NSArray *)recentRepos {
     NSArray *saved = [[NSUserDefaults standardUserDefaults] arrayForKey:kGHRecentReposDefaultsKey];
-    return [saved isKindOfClass:[NSArray class]] ? saved : @[];
+    if (![saved isKindOfClass:[NSArray class]]) return @[];
+    return saved.count > kGHRecentReposMaxCount ? [saved subarrayWithRange:NSMakeRange(0, kGHRecentReposMaxCount)] : saved;
 }
 
 + (void)saveRepos:(NSArray *)repos {

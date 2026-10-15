@@ -19,7 +19,38 @@
 #import "GHCompat.h"
 #import "GHLegacyRefreshControl.h"
 
-@interface ReadmeViewController () <UIScrollViewDelegate>
+static NSString * const kGHFindScript =
+    @"(function(q){"
+     "var old=document.querySelectorAll('span.gh-find');"
+     "for(var i=0;i<old.length;i++){var s=old[i];var p=s.parentNode;if(!p)continue;p.replaceChild(document.createTextNode(s.textContent),s);p.normalize();}"
+     "window.__ghFind=[];window.__ghFindIndex=-1;"
+     "if(!document.getElementById('gh-find-style')){var st=document.createElement('style');st.id='gh-find-style';"
+     "st.textContent='span.gh-find{background:rgba(255,212,0,0.45);border-radius:2px;}span.gh-find.gh-cur{background:#ff9632;color:#000;}';"
+     "(document.head||document.body).appendChild(st);}"
+     "if(!q||!document.body)return '0';"
+     "var lq=q.toLowerCase();var nodes=[];"
+     "var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false);var n;"
+     "while((n=w.nextNode())){var pn=n.parentNode?n.parentNode.nodeName:'';if(pn=='SCRIPT'||pn=='STYLE')continue;"
+     "if(n.nodeValue.toLowerCase().indexOf(lq)>=0)nodes.push(n);}"
+     "for(var j=0;j<nodes.length;j++){var node=nodes[j];var t=node.nodeValue;var l=t.toLowerCase();var f=document.createDocumentFragment();var pos=0,idx;"
+     "while((idx=l.indexOf(lq,pos))>=0){if(idx>pos)f.appendChild(document.createTextNode(t.substring(pos,idx)));"
+     "var sp=document.createElement('span');sp.className='gh-find';sp.appendChild(document.createTextNode(t.substr(idx,q.length)));"
+     "f.appendChild(sp);window.__ghFind.push(sp);pos=idx+q.length;}"
+     "if(pos<t.length)f.appendChild(document.createTextNode(t.substring(pos)));node.parentNode.replaceChild(f,node);}"
+     "return String(window.__ghFind.length);"
+     "})(%@[0])";
+
+static NSString * const kGHFindStepScript =
+    @"(function(d){var a=window.__ghFind||[];if(!a.length)return '';var i=window.__ghFindIndex;"
+     "if(i>=0&&a[i])a[i].className='gh-find';i=(i+d+a.length)%%a.length;window.__ghFindIndex=i;var e=a[i];e.className='gh-find gh-cur';"
+     "if(e.scrollIntoView)e.scrollIntoView(true);window.scrollBy(0,-Math.round(window.innerHeight/3));"
+     "return (i+1)+'/'+a.length;})(%ld)";
+
+@interface ReadmeViewController () <UIScrollViewDelegate, UISearchBarDelegate>
+@property (nonatomic, strong) UIView *findBar;
+@property (nonatomic, strong) UISearchBar *findField;
+@property (nonatomic, strong) UILabel *findCountLabel;
+@property (nonatomic, strong) UISegmentedControl *findNavigation;
 @property (nonatomic, strong) UIWebView *webView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 
@@ -50,7 +81,10 @@
 
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:GHSpinnerStyle()];
     self.spinner.hidesWhenStopped = YES;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
+    UIBarButtonItem *findItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSearch
+                                                                              target:self
+                                                                              action:@selector(toggleFindBar)];
+    self.navigationItem.rightBarButtonItems = @[findItem, [[UIBarButtonItem alloc] initWithCustomView:self.spinner]];
     [self.spinner startAnimating];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -97,6 +131,7 @@
         self.webView.hidden = YES;
     }
     [self.view addSubview:self.webView];
+    [self layoutFindBar];
 
     if (self.refreshHandler != nil) {
         if (GHPullToRefreshAvailable()) {
@@ -156,7 +191,126 @@
 
 #pragma mark - Тема
 
+#pragma mark - Find in page
+
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    [self layoutFindBar];
+}
+
+- (void)layoutFindBar {
+    CGRect bounds = self.view.bounds;
+    CGFloat barHeight = self.findBar && !self.findBar.hidden ? 44 : 0;
+    if (self.findBar) {
+        self.findBar.frame = CGRectMake(0, 0, bounds.size.width, 44);
+        CGFloat navWidth = 76;
+        CGFloat countWidth = 52;
+        self.findNavigation.frame = CGRectMake(bounds.size.width - navWidth - 6, 7, navWidth, 30);
+        self.findCountLabel.frame = CGRectMake(bounds.size.width - navWidth - 6 - countWidth, 0, countWidth - 4, 44);
+        self.findField.frame = CGRectMake(0, 0, bounds.size.width - navWidth - 6 - countWidth, 44);
+    }
+    self.webView.frame = CGRectMake(0, barHeight, bounds.size.width, bounds.size.height - barHeight);
+}
+
+- (void)buildFindBar {
+    self.findBar = [[UIView alloc] init];
+    self.findBar.hidden = YES;
+
+    self.findField = [[UISearchBar alloc] init];
+    self.findField.delegate = self;
+    self.findField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    self.findField.autocorrectionType = UITextAutocorrectionTypeNo;
+    [self.findBar addSubview:self.findField];
+
+    self.findCountLabel = [[UILabel alloc] init];
+    self.findCountLabel.backgroundColor = [UIColor clearColor];
+    self.findCountLabel.font = [UIFont systemFontOfSize:13];
+    self.findCountLabel.textAlignment = NSTextAlignmentRight;
+    self.findCountLabel.adjustsFontSizeToFitWidth = YES;
+    [self.findBar addSubview:self.findCountLabel];
+
+    self.findNavigation = [[UISegmentedControl alloc] initWithItems:@[@"\u25B2", @"\u25BC"]];
+    self.findNavigation.segmentedControlStyle = UISegmentedControlStylePlain;
+    self.findNavigation.momentary = YES;
+    [self.findNavigation addTarget:self action:@selector(findNavigationChanged) forControlEvents:UIControlEventValueChanged];
+    [self.findBar addSubview:self.findNavigation];
+
+    [self.view addSubview:self.findBar];
+    [self applyFindBarTheme];
+}
+
+- (void)applyFindBarTheme {
+    if (!self.findBar) return;
+    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+    self.findBar.backgroundColor = GHBackgroundColor();
+    self.findField.barStyle = dark ? UIBarStyleBlack : UIBarStyleDefault;
+    self.findField.tintColor = GHTintColor();
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(1, 1), NO, 0);
+    [GHBackgroundColor() setFill];
+    UIRectFill(CGRectMake(0, 0, 1, 1));
+    self.findField.backgroundImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    self.findField.placeholder = GHL(@"Найти в тексте");
+    self.findCountLabel.textColor = GHSecondaryTextColor();
+}
+
+- (void)toggleFindBar {
+    if (!self.findBar) [self buildFindBar];
+    BOOL show = self.findBar.hidden;
+    self.findBar.hidden = !show;
+    [self layoutFindBar];
+    if (show) {
+        [self.findField becomeFirstResponder];
+        if (self.findField.text.length > 0) [self runFind];
+    } else {
+        [self.findField resignFirstResponder];
+        [self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindScript, @"[\"\"]"]];
+        self.findCountLabel.text = nil;
+    }
+}
+
+- (void)runFind {
+    NSString *query = self.findField.text ?: @"";
+    NSData *data = [NSJSONSerialization dataWithJSONObject:@[query] options:0 error:nil];
+    NSString *json = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"[\"\"]";
+    NSInteger count = [[self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindScript, json]] integerValue];
+    if (query.length == 0) {
+        self.findCountLabel.text = nil;
+    } else if (count == 0) {
+        self.findCountLabel.text = @"0";
+    } else {
+        [self stepFind:1];
+    }
+}
+
+- (void)stepFind:(NSInteger)direction {
+    NSString *result = [self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindStepScript, (long)direction]];
+    if (result.length > 0) self.findCountLabel.text = result;
+}
+
+- (void)findNavigationChanged {
+    NSInteger index = self.findNavigation.selectedSegmentIndex;
+    [self.findField resignFirstResponder];
+    [self stepFind:index == 0 ? -1 : 1];
+}
+
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(runFind) object:nil];
+    [self performSelector:@selector(runFind) withObject:nil afterDelay:0.35];
+}
+
+- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
+    [searchBar resignFirstResponder];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(runFind) object:nil];
+    if ([self.webView stringByEvaluatingJavaScriptFromString:@"String((window.__ghFind||[]).length)"].integerValue == 0) {
+        [self runFind];
+    } else {
+        [self stepFind:1];
+    }
+}
+
 - (void)handleThemeDidChange {
+    [self applyFindBarTheme];
     self.view.backgroundColor = GHBackgroundColor();
     self.webView.backgroundColor = GHWebViewBackgroundColor();
 
@@ -168,6 +322,7 @@
 #pragma mark - Язык
 
 - (void)handleLanguageDidChange {
+    self.findField.placeholder = GHL(@"Найти в тексте");
 
     if (self.titleTranslationKey.length > 0) {
         self.title = GHL(self.titleTranslationKey);

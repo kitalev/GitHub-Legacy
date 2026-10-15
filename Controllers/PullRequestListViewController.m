@@ -180,10 +180,8 @@ static NSString * const kPullRequestCellID = @"PullRequestCell";
 }
 
 - (void)updateFilterChipAppearance {
-    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
-    self.stateControl.segmentedControlStyle = dark ? UISegmentedControlStyleBar : UISegmentedControlStylePlain;
-    self.stateControl.tintColor = dark ? [UIColor colorWithWhite:0.32 alpha:1.0] : nil;
-    self.stateControl.frame = CGRectMake(10, dark ? 11 : 10, self.headerView.bounds.size.width - 20, dark ? 30 : 32);
+    self.stateControl.segmentedControlStyle = UISegmentedControlStylePlain;
+    self.stateControl.frame = CGRectMake(10, 10, self.headerView.bounds.size.width - 20, 32);
 }
 
 - (void)stateControlChanged {

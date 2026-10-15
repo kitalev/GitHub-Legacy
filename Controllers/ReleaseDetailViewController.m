@@ -1702,13 +1702,11 @@ static void GHReleaseLoadAvatar(UIImageView *imageView, NSString *urlString) {
 
             strongSelf.lastDownloadedFilePath = filePath;
 
-            BOOL isPackage = [[filePath.pathExtension lowercaseString] isEqualToString:@"deb"];
             UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Скачивание завершено")
                                                              message:filePath
                                                             delegate:strongSelf
                                                    cancelButtonTitle:@"OK"
-                                                   otherButtonTitles:isPackage ? GHL(@"Установить") : GHL(@"Открыть"),
-                                                                     isPackage ? GHL(@"Открыть") : nil, nil];
+                                                   otherButtonTitles:GHL(@"Открыть"), nil];
             alert.tag = kDownloadCompleteAlertTag;
             [alert show];
         }
@@ -1729,27 +1727,7 @@ static void GHReleaseLoadAvatar(UIImageView *imageView, NSString *urlString) {
     if (alertView.cancelButtonIndex == buttonIndex) return;
     if (self.lastDownloadedFilePath.length == 0) return;
 
-    BOOL isPackage = [[self.lastDownloadedFilePath.pathExtension lowercaseString] isEqualToString:@"deb"];
-    if (isPackage && buttonIndex == alertView.firstOtherButtonIndex) {
-        [self installDownloadedPackage];
-        return;
-    }
     [self presentOpenInMenuForDownloadedFile];
-}
-
-- (void)installDownloadedPackage {
-    NSString *path = self.lastDownloadedFilePath;
-    NSString *encodedPath = [path stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding] ?: path;
-    NSArray *installers = @[[NSString stringWithFormat:@"filza://view%@", encodedPath],
-                            [NSString stringWithFormat:@"ifile://%@", encodedPath]];
-    for (NSString *candidate in installers) {
-        NSURL *url = [NSURL URLWithString:candidate];
-        if (url && [[UIApplication sharedApplication] canOpenURL:url]) {
-            [[UIApplication sharedApplication] openURL:url];
-            return;
-        }
-    }
-    [self presentSystemOpenInMenuForDownloadedFile];
 }
 
 - (void)presentOpenInMenuForDownloadedFile {
