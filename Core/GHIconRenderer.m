@@ -695,6 +695,23 @@
     return result;
 }
 
++ (UIImage *)filterIconWithColor:(UIColor *)color size:(CGFloat)size {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
+    [color setFill];
+    UIBezierPath *funnel = [UIBezierPath bezierPath];
+    [funnel moveToPoint:CGPointMake(size * 0.08, size * 0.14)];
+    [funnel addLineToPoint:CGPointMake(size * 0.92, size * 0.14)];
+    [funnel addLineToPoint:CGPointMake(size * 0.58, size * 0.54)];
+    [funnel addLineToPoint:CGPointMake(size * 0.58, size * 0.88)];
+    [funnel addLineToPoint:CGPointMake(size * 0.42, size * 0.78)];
+    [funnel addLineToPoint:CGPointMake(size * 0.42, size * 0.54)];
+    [funnel closePath];
+    [funnel fill];
+    UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return result;
+}
+
 + (UIImage *)busyStatusIconWithSize:(CGFloat)size {
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0.0);
     [[UIColor colorWithRed:0.86 green:0.20 blue:0.18 alpha:1.0] setFill];

@@ -23,6 +23,8 @@
 #import "GHRepoHeaderView.h"
 #import "ReleaseDetailViewController.h"
 #import "GHURLRouter.h"
+#import "GHRecentRepos.h"
+#import "CodeSearchViewController.h"
 #import <QuartzCore/QuartzCore.h>
 #import <string.h>
 
@@ -41,6 +43,7 @@ typedef NS_ENUM(NSInteger, GHRepoRowKind) {
     GHRepoRowKindLicense,
     GHRepoRowKindBranch,
     GHRepoRowKindFiles,
+    GHRepoRowKindCodeSearch,
     GHRepoRowKindCommits
 };
 
@@ -327,6 +330,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
         if (!strongSelf || error || ![jsonObject isKindOfClass:[NSDictionary class]]) return;
 
         strongSelf.repo = jsonObject;
+        [GHRecentRepos recordRepo:jsonObject];
         [strongSelf refreshHeader];
         [strongSelf.tableView reloadData];
     }];
@@ -1072,6 +1076,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     NSMutableArray *rows = [NSMutableArray array];
     if ([self safeStringForKey:@"default_branch" inDict:self.repo].length > 0) [rows addObject:@(GHRepoRowKindBranch)];
     [rows addObject:@(GHRepoRowKindFiles)];
+    [rows addObject:@(GHRepoRowKindCodeSearch)];
     [rows addObject:@(GHRepoRowKindCommits)];
     return rows;
 }
@@ -1162,6 +1167,8 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
                                            size:30];
         case GHRepoRowKindFiles:
             return [self tileForIcon:[GHIconRenderer codeIconWithColor:white size:18] color:[self neutralTileColor]];
+        case GHRepoRowKindCodeSearch:
+            return [self tileForIcon:[GHIconRenderer searchIconWithColor:white size:18] color:[self neutralTileColor]];
         case GHRepoRowKindCommits:
             return [self tileForIcon:[GHIconRenderer commitIconWithColor:white size:18] color:[self neutralTileColor]];
         default:
@@ -1382,6 +1389,10 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
             cell.textLabel.text = GHL(@"Код");
             GHApplyDisclosureIndicator(cell);
             break;
+        case GHRepoRowKindCodeSearch:
+            cell.textLabel.text = GHL(@"Поиск по коду");
+            GHApplyDisclosureIndicator(cell);
+            break;
         case GHRepoRowKindCommits:
             cell.textLabel.text = GHL(@"Коммиты");
             GHApplyDisclosureIndicator(cell);
@@ -1479,6 +1490,13 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
             filesVC.path = nil;
             filesVC.title = GHL(@"Файлы");
             [self.navigationController pushViewController:filesVC animated:YES];
+            return;
+        }
+        case GHRepoRowKindCodeSearch: {
+            CodeSearchViewController *searchVC = [[CodeSearchViewController alloc] init];
+            searchVC.ownerLogin = [self ownerLogin];
+            searchVC.repoName = [self repoName];
+            [self.navigationController pushViewController:searchVC animated:YES];
             return;
         }
         case GHRepoRowKindCommits: {

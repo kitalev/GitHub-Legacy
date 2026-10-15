@@ -8,6 +8,7 @@
 
 + (UIImage *)personIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)busyStatusIconWithSize:(CGFloat)size;
++ (UIImage *)filterIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)messageStatusIconWithColor:(UIColor *)color size:(CGFloat)size;
 + (UIImage *)starIconWithColor:(UIColor *)color size:(CGFloat)size filled:(BOOL)filled;
 + (UIImage *)compassIconWithColor:(UIColor *)color size:(CGFloat)size;

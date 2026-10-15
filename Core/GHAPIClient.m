@@ -16,11 +16,15 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
 }
 
 - (void)getJSONFromPath:(NSString *)path completion:(GHJSONCompletionBlock)completion {
+    [self getJSONFromPath:path accept:@"application/vnd.github.v3+json" completion:completion];
+}
+
+- (void)getJSONFromPath:(NSString *)path accept:(NSString *)accept completion:(GHJSONCompletionBlock)completion {
     NSString *urlString = [NSString stringWithFormat:@"%@%@", kGHBaseURL, path];
     NSURL *url = [NSURL URLWithString:urlString];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    [request setValue:@"application/vnd.github.v3+json" forHTTPHeaderField:@"Accept"];
+    [request setValue:accept forHTTPHeaderField:@"Accept"];
 
     [request setValue:@"GitHubLegacy-iOS6" forHTTPHeaderField:@"User-Agent"];
     [request setTimeoutInterval:15.0];
@@ -79,7 +83,19 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
 
 - (void)searchIssuesAndPullRequestsWithQuery:(NSString *)query completion:(GHJSONCompletionBlock)completion {
     NSString *escapedQuery = [query stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
-    NSString *path = [NSString stringWithFormat:@"/search/issues?q=%@", escapedQuery];
+    NSString *path = [NSString stringWithFormat:@"/search/issues?q=%@&per_page=50", escapedQuery];
+    [self getJSONFromPath:path completion:completion];
+}
+
+- (void)searchCodeWithQuery:(NSString *)query completion:(GHJSONCompletionBlock)completion {
+    NSString *escapedQuery = (__bridge_transfer NSString *)CFURLCreateStringByAddingPercentEscapes(NULL, (__bridge CFStringRef)(query ?: @""), NULL,
+                                                                                                    CFSTR("!*'();@&=+$,/?%#[]"), kCFStringEncodingUTF8);
+    NSString *path = [NSString stringWithFormat:@"/search/code?q=%@&per_page=50", escapedQuery];
+    [self getJSONFromPath:path accept:@"application/vnd.github.v3.text-match+json" completion:completion];
+}
+
+- (void)labelsForOwner:(NSString *)owner repo:(NSString *)repo completion:(GHJSONCompletionBlock)completion {
+    NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/labels?per_page=100", owner, repo];
     [self getJSONFromPath:path completion:completion];
 }
 

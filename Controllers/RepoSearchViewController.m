@@ -11,6 +11,7 @@
 #import "PullRequestDetailViewController.h"
 #import "PublicProfileViewController.h"
 #import "GHLocalization.h"
+#import "GHRecentRepos.h"
 
 static const NSInteger kClearHistoryAlertTag = 3;
 
@@ -385,9 +386,18 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
 #pragma mark - UITableViewDataSource
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return [self isShowingHistory] ? 2 : 1;
+}
+
+- (BOOL)isRecentReposSection:(NSInteger)section {
+    return [self isShowingHistory] && section == 0;
+}
+
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if ([self isShowingHistory] && self.searchHistory.count > 0) return GHL(@"Недавние запросы");
-    return nil;
+    if (![self isShowingHistory]) return nil;
+    if ([self isRecentReposSection:section]) return [GHRecentRepos recentRepos].count > 0 ? GHL(@"Недавно открытые") : nil;
+    return self.searchHistory.count > 0 ? GHL(@"Недавние запросы") : nil;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
@@ -399,6 +409,7 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if ([self isRecentReposSection:section]) return [GHRecentRepos recentRepos].count;
     if ([self isShowingHistory]) {
 
         return self.searchHistory.count + (self.searchHistory.count > 0 ? 1 : 0);
@@ -407,6 +418,7 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isRecentReposSection:indexPath.section]) return 52;
     if ([self isShowingHistory]) return 44;
     if (self.resultsScope != GHSearchScopeIssuesAndPullRequests) return 44;
     if (indexPath.row >= (NSInteger)self.results.count) return 44;
@@ -435,7 +447,24 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
     return cell;
 }
 
+- (UITableViewCell *)recentRepoCellForTableView:(UITableView *)tableView indexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [self subtitleCellWithReuseIdentifier:@"RecentRepoCell" forTableView:tableView];
+    cell.backgroundColor = GHCellBackgroundColor();
+    NSArray *recent = [GHRecentRepos recentRepos];
+    NSDictionary *repo = indexPath.row < (NSInteger)recent.count ? recent[indexPath.row] : nil;
+    cell.textLabel.text = [repo[@"full_name"] isKindOfClass:[NSString class]] ? repo[@"full_name"] : @"";
+    cell.textLabel.textColor = GHPrimaryTextColor();
+    NSString *description = [repo[@"description"] isKindOfClass:[NSString class]] ? repo[@"description"] : nil;
+    cell.detailTextLabel.text = description.length > 0 ? description : [NSString stringWithFormat:@"★ %@", repo[@"stargazers_count"] ?: @0];
+    cell.detailTextLabel.textColor = GHSecondaryTextColor();
+    GHApplyDisclosureIndicator(cell);
+    NSDictionary *owner = [repo[@"owner"] isKindOfClass:[NSDictionary class]] ? repo[@"owner"] : nil;
+    [[GHAvatarLoader sharedLoader] loadAvatarWithURLString:owner[@"avatar_url"] intoImageView:cell.imageView];
+    return cell;
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isRecentReposSection:indexPath.section]) return [self recentRepoCellForTableView:tableView indexPath:indexPath];
     if ([self isShowingHistory]) {
         UITableViewCell *cell = [tableView gh_dequeueCellWithIdentifier:@"HistoryCell" forIndexPath:indexPath];
         cell.backgroundColor = GHCellBackgroundColor();
@@ -525,6 +554,7 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isRecentReposSection:indexPath.section]) return YES;
     if (![self isShowingHistory]) return NO;
     return indexPath.row < (NSInteger)self.searchHistory.count;
 }
@@ -539,6 +569,11 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle != UITableViewCellEditingStyleDelete) return;
+    if ([self isRecentReposSection:indexPath.section]) {
+        [GHRecentRepos removeRepoAtIndex:indexPath.row];
+        [tableView reloadData];
+        return;
+    }
     if (indexPath.row >= (NSInteger)self.searchHistory.count) return;
 
     [self.searchHistory removeObjectAtIndex:indexPath.row];
@@ -557,6 +592,17 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if ([self isRecentReposSection:indexPath.section]) {
+        NSArray *recent = [GHRecentRepos recentRepos];
+        if (indexPath.row >= (NSInteger)recent.count) return;
+        NSDictionary *repo = recent[indexPath.row];
+        RepoOverviewViewController *overviewVC = [[RepoOverviewViewController alloc] init];
+        overviewVC.repo = repo;
+        overviewVC.title = repo[@"name"];
+        [self.navigationController pushViewController:overviewVC animated:YES];
+        return;
+    }
 
     if ([self isShowingHistory]) {
         if (indexPath.row == self.searchHistory.count) {

@@ -19,8 +19,17 @@ static NSString * const kIssueEmptyCellID = @"IssueEmptyCell";
 
 static const NSInteger kNewIssueLoginAlertTag = 1;
 static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
+static const NSInteger kFilterSheetTag = 1;
+static const NSInteger kLabelSheetTag = 2;
 
-@interface IssueListViewController () <UISearchBarDelegate, UIAlertViewDelegate>
+@interface IssueListViewController () <UISearchBarDelegate, UIAlertViewDelegate, UIActionSheetDelegate>
+@property (nonatomic, strong) UIButton *filterButton;
+@property (nonatomic, copy) NSString *filterQualifier;
+@property (nonatomic, copy) NSString *filterTitleKey;
+@property (nonatomic, copy) NSString *filterLabel;
+@property (nonatomic, copy) NSArray *filterActions;
+@property (nonatomic, copy) NSArray *labelNames;
+@property (nonatomic, assign) NSInteger searchGeneration;
 
 @property (nonatomic, strong) NSMutableArray *openIssues;
 @property (nonatomic, strong) NSMutableArray *closedIssues;
@@ -113,6 +122,11 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     self.stateControl.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [self.stateControl addTarget:self action:@selector(stateControlChanged) forControlEvents:UIControlEventValueChanged];
 
+    self.filterButton = GHMakeButton(GHButtonStyleSecondary);
+    self.filterButton.contentEdgeInsets = UIEdgeInsetsZero;
+    self.filterButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    [self.filterButton addTarget:self action:@selector(filterTapped) forControlEvents:UIControlEventTouchUpInside];
+
     self.searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 52, self.view.bounds.size.width, 44)];
     self.searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     self.searchBar.placeholder = GHL(@"Поиск по задачам");
@@ -122,6 +136,7 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     headerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     headerView.backgroundColor = GHBackgroundColor();
     [headerView addSubview:self.stateControl];
+    [headerView addSubview:self.filterButton];
     [headerView addSubview:self.searchBar];
     self.tableView.tableHeaderView = headerView;
 
@@ -223,7 +238,126 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
     self.stateControl.segmentedControlStyle = dark ? UISegmentedControlStyleBar : UISegmentedControlStylePlain;
     self.stateControl.tintColor = dark ? [UIColor colorWithWhite:0.32 alpha:1.0] : nil;
-    self.stateControl.frame = CGRectMake(10, dark ? 11 : 10, self.headerView.bounds.size.width - 20, dark ? 30 : 32);
+    CGFloat width = self.headerView.bounds.size.width;
+    self.stateControl.frame = CGRectMake(10, dark ? 11 : 10, width - 20 - 52, dark ? 30 : 32);
+    self.filterButton.frame = CGRectMake(width - 10 - 44, 10, 44, 32);
+    BOOL active = self.filterQualifier.length > 0;
+    GHStyleButton(self.filterButton, active ? GHButtonStylePrimary : GHButtonStyleSecondary);
+    UIImage *icon = [GHIconRenderer filterIconWithColor:active ? [UIColor whiteColor] : GHAccentColor() size:18];
+    [self.filterButton setImage:icon forState:UIControlStateNormal];
+}
+
+- (BOOL)isFiltering {
+    return self.searchQuery.length > 0 || self.filterQualifier.length > 0;
+}
+
+- (NSString *)filterDisplayTitle {
+    if (self.filterLabel.length > 0) return [NSString stringWithFormat:GHL(@"метка «%@»"), self.filterLabel];
+    return self.filterTitleKey.length > 0 ? GHL(self.filterTitleKey) : nil;
+}
+
+- (void)filterTapped {
+    [self.searchBar resignFirstResponder];
+    BOOL signedIn = [GHAuthManager sharedManager].isAuthenticated;
+    NSMutableArray *actions = [NSMutableArray array];
+    [actions addObject:@[@"Все задачи", @""]];
+    if (signedIn) {
+        [actions addObject:@[@"Созданные мной", @"author:@me"]];
+        [actions addObject:@[@"Назначенные мне", @"assignee:@me"]];
+        [actions addObject:@[@"Упоминают меня", @"mentions:@me"]];
+    }
+    [actions addObject:@[@"Без исполнителя", @"no:assignee"]];
+    [actions addObject:@[@"Без комментариев", @"comments:0"]];
+    [actions addObject:@[@"По метке…", @"label"]];
+    self.filterActions = actions;
+
+    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:GHL(@"Фильтр задач")
+                                                       delegate:self
+                                              cancelButtonTitle:nil
+                                         destructiveButtonTitle:nil
+                                              otherButtonTitles:nil];
+    for (NSArray *action in actions) {
+        BOOL current = [action[1] isEqualToString:@"label"] ? self.filterLabel.length > 0
+                                                            : [action[1] isEqualToString:self.filterQualifier ?: @""] && self.filterLabel.length == 0;
+        [sheet addButtonWithTitle:current ? [@"✓ " stringByAppendingString:GHL(action[0])] : GHL(action[0])];
+    }
+    sheet.cancelButtonIndex = [sheet addButtonWithTitle:GHL(@"Отмена")];
+    sheet.tag = kFilterSheetTag;
+    [self showActionSheet:sheet];
+}
+
+- (void)showActionSheet:(UIActionSheet *)sheet {
+    if (self.tabBarController.tabBar && !self.tabBarController.tabBar.hidden) {
+        [sheet showFromTabBar:self.tabBarController.tabBar];
+    } else {
+        [sheet showInView:self.view];
+    }
+}
+
+- (void)actionSheet:(UIActionSheet *)actionSheet clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (buttonIndex == actionSheet.cancelButtonIndex || buttonIndex < 0) return;
+    if (actionSheet.tag == kLabelSheetTag) {
+        if (buttonIndex >= (NSInteger)self.labelNames.count) return;
+        NSString *label = self.labelNames[buttonIndex];
+        [self applyFilterQualifier:[NSString stringWithFormat:@"label:\"%@\"", label] titleKey:nil label:label];
+        return;
+    }
+    if (buttonIndex >= (NSInteger)self.filterActions.count) return;
+    NSArray *action = self.filterActions[buttonIndex];
+    if ([action[1] isEqualToString:@"label"]) {
+        [self presentLabelPicker];
+        return;
+    }
+    [self applyFilterQualifier:action[1] titleKey:[action[1] length] > 0 ? action[0] : nil label:nil];
+}
+
+- (void)presentLabelPicker {
+    [self.spinner startAnimating];
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] labelsForOwner:self.ownerLogin repo:self.repoName completion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf.spinner stopAnimating];
+        NSMutableArray *names = [NSMutableArray array];
+        for (NSDictionary *label in [jsonObject isKindOfClass:[NSArray class]] ? jsonObject : @[]) {
+            if ([label isKindOfClass:[NSDictionary class]] && [label[@"name"] isKindOfClass:[NSString class]]) [names addObject:label[@"name"]];
+        }
+        if (names.count == 0) {
+            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Меток нет")
+                                                             message:error.localizedDescription ?: GHL(@"В этом репозитории нет меток.")
+                                                            delegate:nil
+                                                   cancelButtonTitle:@"OK"
+                                                   otherButtonTitles:nil];
+            [alert show];
+            return;
+        }
+        strongSelf.labelNames = names;
+        UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:GHL(@"Метка")
+                                                           delegate:strongSelf
+                                                  cancelButtonTitle:nil
+                                             destructiveButtonTitle:nil
+                                                  otherButtonTitles:nil];
+        for (NSString *name in names) [sheet addButtonWithTitle:GHEmojiForDisplay(name)];
+        sheet.cancelButtonIndex = [sheet addButtonWithTitle:GHL(@"Отмена")];
+        sheet.tag = kLabelSheetTag;
+        [strongSelf showActionSheet:sheet];
+    }];
+}
+
+- (void)applyFilterQualifier:(NSString *)qualifier titleKey:(NSString *)titleKey label:(NSString *)label {
+    self.filterQualifier = qualifier.length > 0 ? qualifier : nil;
+    self.filterTitleKey = titleKey;
+    self.filterLabel = label;
+    [self updateFilterChipAppearance];
+    self.searchResults = nil;
+    self.searchAttempted = NO;
+    if ([self isFiltering]) {
+        [self performServerSearch];
+    } else {
+        self.searchLoading = NO;
+        [self loadStateIfNeeded:[self isOpenTabSelected] ? @"open" : @"closed"];
+    }
+    [self.tableView reloadData];
 }
 
 - (void)stateControlChanged {
@@ -234,7 +368,7 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
 }
 
 - (void)segmentChanged {
-    if (self.searchQuery.length > 0) {
+    if ([self isFiltering]) {
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(performServerSearch) object:nil];
         [self performServerSearch];
     } else {
@@ -360,6 +494,10 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     self.searchQuery = searchText;
 
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(performServerSearch) object:nil];
+    if (searchText.length == 0 && self.filterQualifier.length > 0) {
+        [self performServerSearch];
+        return;
+    }
     if (searchText.length == 0) {
         self.searchResults = nil;
         self.searchAttempted = NO;
@@ -372,24 +510,25 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
 }
 
 - (void)performServerSearch {
-    NSString *query = self.searchQuery;
-    if (query.length == 0) return;
+    if (![self isFiltering]) return;
+    NSString *query = self.searchQuery ?: @"";
 
     NSString *type = @"issue";
     NSString *stateQualifier = [self isOpenTabSelected] ? @"is:open" : @"is:closed";
-    NSString *scopedQuery = [NSString stringWithFormat:@"repo:%@/%@ is:%@ %@ %@",
-                              self.ownerLogin, self.repoName, type, stateQualifier, query];
+    NSString *scopedQuery = [NSString stringWithFormat:@"repo:%@/%@ is:%@ %@ %@ %@",
+                              self.ownerLogin, self.repoName, type, stateQualifier, self.filterQualifier ?: @"", query];
+    NSInteger generation = ++self.searchGeneration;
 
     self.searchLoading = YES;
     [self.tableView reloadData];
 
     __weak typeof(self) weakSelf = self;
-    NSString *requestQuery = self.searchQuery;
     [[GHAPIClient sharedClient] searchIssuesAndPullRequestsWithQuery:scopedQuery completion:^(id jsonObject, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
 
-        if (![strongSelf.searchQuery isEqualToString:requestQuery]) return;
+        if (generation != strongSelf.searchGeneration) return;
+        if (GHPullToRefreshAvailable()) { [strongSelf.refreshControl endRefreshing]; } else { [strongSelf.gh_legacyRefreshControl endRefreshing]; }
 
         strongSelf.searchLoading = NO;
         strongSelf.searchAttempted = YES;
@@ -412,10 +551,15 @@ static const NSInteger kNewIssueTemplatesErrorAlertTag = 2;
     self.searchLoading = NO;
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(performServerSearch) object:nil];
     [searchBar resignFirstResponder];
+    if (self.filterQualifier.length > 0) [self performServerSearch];
     [self.tableView reloadData];
 }
 
 - (void)reloadCurrentTab {
+    if ([self isFiltering]) {
+        [self performServerSearch];
+        return;
+    }
     NSString *state = [self isOpenTabSelected] ? @"open" : @"closed";
     if ([state isEqualToString:@"open"]) {
         self.openLoaded = NO;
@@ -546,7 +690,7 @@ static const NSInteger kIssuesDisplayBatchSize = 25;
 }
 
 - (NSMutableArray *)visibleIssues {
-    if (self.searchQuery.length > 0) return self.searchResults ?: [NSMutableArray array];
+    if ([self isFiltering]) return self.searchResults ?: [NSMutableArray array];
     return [self isOpenTabSelected] ? self.openIssues : self.closedIssues;
 }
 
@@ -597,9 +741,13 @@ static const NSInteger kIssuesDisplayBatchSize = 25;
         cell.textLabel.numberOfLines = 2;
         cell.textLabel.font = [UIFont systemFontOfSize:15];
         cell.textLabel.textColor = GHSecondaryTextColor();
-        if (self.searchQuery.length > 0) {
+        if ([self isFiltering]) {
+            NSString *filterTitle = [self filterDisplayTitle];
+            NSString *nothing = filterTitle.length > 0 && self.searchQuery.length == 0
+                ? [NSString stringWithFormat:GHL(@"Нет задач по фильтру: %@"), filterTitle]
+                : GHL(@"Ничего не найдено");
             cell.textLabel.text = self.searchLoading ? GHL(@"Поиск…")
-                                 : self.searchAttempted ? GHL(@"Ничего не найдено")
+                                 : self.searchAttempted ? nothing
                                  : GHL(@"Поиск…");
         } else if (!attempted) {
             cell.textLabel.text = GHL(@"Загрузка…");
@@ -647,7 +795,7 @@ static const NSInteger kIssuesDisplayBatchSize = 25;
 }
 
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (self.searchQuery.length > 0) return;
+    if ([self isFiltering]) return;
     NSMutableArray *issues = [self visibleIssues];
     if (issues.count == 0 || indexPath.row != (NSInteger)issues.count - 1) return;
     [self loadMoreIfNeededForState:[self isOpenTabSelected] ? @"open" : @"closed"];

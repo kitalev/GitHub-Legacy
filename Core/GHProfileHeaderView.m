@@ -223,31 +223,55 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     [self setNeedsLayout];
 }
 
-- (NSString *)statusEmojiImageURL {
+- (NSArray *)statusEmojiImageURLs {
     NSString *emojiHTML = [self.statusInfo[@"emojiHTML"] isKindOfClass:[NSString class]] ? self.statusInfo[@"emojiHTML"] : @"";
-    if (emojiHTML.length == 0) return nil;
+    if (emojiHTML.length == 0) return @[];
+    NSMutableArray *urls = [NSMutableArray array];
     NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"(?:fallback-src|src)=\"([^\"]+)\"" options:0 error:nil];
     NSTextCheckingResult *match = [regex firstMatchInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length)];
-    if (match == nil) {
-        NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
-        NSString *emoji = [tags stringByReplacingMatchesInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length) withTemplate:@""];
-        emoji = [emoji stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        NSData *data = [emoji dataUsingEncoding:NSUTF32LittleEndianStringEncoding];
-        const uint32_t *codepoints = data.bytes;
-        NSMutableArray *parts = [NSMutableArray array];
-        for (NSUInteger i = 0; i < data.length / sizeof(uint32_t); i++) {
-            uint32_t codepoint = CFSwapInt32LittleToHost(codepoints[i]);
-            if (codepoint == 0xFE0F) continue;
-            [parts addObject:[NSString stringWithFormat:@"%04x", codepoint]];
-        }
-        if (parts.count == 0) return nil;
-        return [NSString stringWithFormat:@"https://github.githubassets.com/images/icons/emoji/unicode/%@.png",
-                [parts componentsJoinedByString:@"-"]];
+    if (match) {
+        NSString *url = [[emojiHTML substringWithRange:[match rangeAtIndex:1]] stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
+        if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
+        if ([url hasPrefix:@"/"]) url = [@"https://github.githubassets.com" stringByAppendingString:url];
+        [urls addObject:url];
     }
-    NSString *url = [[emojiHTML substringWithRange:[match rangeAtIndex:1]] stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
-    if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
-    if ([url hasPrefix:@"/"]) url = [@"https://github.githubassets.com" stringByAppendingString:url];
-    return url;
+
+    NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
+    NSString *emoji = [tags stringByReplacingMatchesInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length) withTemplate:@""];
+    emoji = [emoji stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSData *data = [emoji dataUsingEncoding:NSUTF32LittleEndianStringEncoding];
+    const uint32_t *codepoints = data.bytes;
+    NSMutableArray *all = [NSMutableArray array];
+    NSMutableArray *stripped = [NSMutableArray array];
+    for (NSUInteger i = 0; i < data.length / sizeof(uint32_t); i++) {
+        uint32_t codepoint = CFSwapInt32LittleToHost(codepoints[i]);
+        NSString *hex = [NSString stringWithFormat:@"%04x", codepoint];
+        [all addObject:hex];
+        if (codepoint != 0xFE0F) [stripped addObject:hex];
+    }
+    if (stripped.count == 0) return urls;
+
+    NSString *github = @"https://github.githubassets.com/images/icons/emoji/unicode/%@.png";
+    NSString *twemoji = @"https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/%@.png";
+    NSString *fullName = [all componentsJoinedByString:@"-"];
+    NSString *strippedName = [stripped componentsJoinedByString:@"-"];
+    for (NSString *candidate in @[[NSString stringWithFormat:github, strippedName],
+                                  [NSString stringWithFormat:twemoji, strippedName],
+                                  [NSString stringWithFormat:twemoji, fullName],
+                                  [NSString stringWithFormat:github, stripped[0]],
+                                  [NSString stringWithFormat:twemoji, stripped[0]]]) {
+        if (![urls containsObject:candidate]) [urls addObject:candidate];
+    }
+    return urls;
+}
+
++ (NSCache *)statusEmojiCache {
+    static NSCache *cache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cache = [[NSCache alloc] init];
+    });
+    return cache;
 }
 
 - (void)updateStatusBadge:(BOOL)hasData {
@@ -257,35 +281,48 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         return;
     }
     BOOL busy = [self.statusInfo[@"indicatesLimitedAvailability"] boolValue];
-    NSString *url = [self statusEmojiImageURL];
-    if (url.length == 0) {
+    UIImage *fallback = busy ? [GHIconRenderer busyStatusIconWithSize:18] : [GHIconRenderer messageStatusIconWithColor:GHAccentColor() size:18];
+    NSArray *urls = [self statusEmojiImageURLs];
+    if (urls.count == 0) {
         self.statusEmojiURL = nil;
-        self.statusEmojiView.image = busy ? [GHIconRenderer busyStatusIconWithSize:18] : [GHIconRenderer messageStatusIconWithColor:GHAccentColor() size:18];
+        self.statusEmojiView.image = fallback;
         self.statusBadge.hidden = !busy && self.statusLabel.text.length == 0;
         return;
     }
     self.statusBadge.hidden = NO;
-    if ([url isEqualToString:self.statusEmojiURL]) return;
-    self.statusEmojiURL = url;
-    static NSCache *cache = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        cache = [[NSCache alloc] init];
-    });
-    UIImage *cached = [cache objectForKey:url];
-    self.statusEmojiView.image = cached ?: [GHIconRenderer messageStatusIconWithColor:GHAccentColor() size:18];
+    NSString *key = urls[0];
+    if ([key isEqualToString:self.statusEmojiURL]) return;
+    self.statusEmojiURL = key;
+    UIImage *cached = [[GHProfileHeaderView statusEmojiCache] objectForKey:key];
+    self.statusEmojiView.image = cached;
     if (cached) return;
-    NSURL *imageURL = [NSURL URLWithString:url];
-    if (imageURL == nil) return;
+    [self loadStatusEmojiFromURLs:urls index:0 key:key fallback:fallback];
+}
+
+- (void)loadStatusEmojiFromURLs:(NSArray *)urls index:(NSUInteger)index key:(NSString *)key fallback:(UIImage *)fallback {
+    if (index >= urls.count) {
+        if ([self.statusEmojiURL isEqualToString:key]) self.statusEmojiView.image = fallback;
+        return;
+    }
+    NSURL *imageURL = [NSURL URLWithString:urls[index]];
+    if (imageURL == nil) {
+        [self loadStatusEmojiFromURLs:urls index:index + 1 key:key fallback:fallback];
+        return;
+    }
     __weak typeof(self) weakSelf = self;
     [NSURLConnection sendAsynchronousRequest:[NSURLRequest requestWithURL:imageURL]
                                        queue:[NSOperationQueue mainQueue]
                            completionHandler:^(NSURLResponse *response, NSData *data, NSError *error) {
-        UIImage *image = data.length > 0 ? [UIImage imageWithData:data] : nil;
-        if (image == nil) return;
-        [cache setObject:image forKey:url];
         __strong typeof(weakSelf) strongSelf = weakSelf;
-        if ([strongSelf.statusEmojiURL isEqualToString:url]) strongSelf.statusEmojiView.image = image;
+        if (![strongSelf.statusEmojiURL isEqualToString:key]) return;
+        NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 200;
+        UIImage *image = status < 400 && data.length > 0 ? [UIImage imageWithData:data] : nil;
+        if (image == nil) {
+            [strongSelf loadStatusEmojiFromURLs:urls index:index + 1 key:key fallback:fallback];
+            return;
+        }
+        [[GHProfileHeaderView statusEmojiCache] setObject:image forKey:key];
+        strongSelf.statusEmojiView.image = image;
     }];
 }
 
