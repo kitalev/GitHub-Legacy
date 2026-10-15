@@ -180,7 +180,7 @@ static NSString * const kPullRequestCellID = @"PullRequestCell";
 }
 
 - (void)updateFilterChipAppearance {
-    self.stateControl.segmentedControlStyle = UISegmentedControlStylePlain;
+    GHStyleSegmentedControl(self.stateControl);
     self.stateControl.frame = CGRectMake(10, 10, self.headerView.bounds.size.width - 20, 32);
 }
 

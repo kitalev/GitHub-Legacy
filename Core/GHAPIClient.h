@@ -21,8 +21,6 @@ typedef void (^GHTextCompletionBlock)(NSString *text, NSError *error);
 - (void)searchUsersWithQuery:(NSString *)query
                     completion:(GHJSONCompletionBlock)completion;
 
-- (void)searchCodeWithQuery:(NSString *)query completion:(GHJSONCompletionBlock)completion;
-
 - (void)labelsForOwner:(NSString *)owner repo:(NSString *)repo completion:(GHJSONCompletionBlock)completion;
 
 - (void)releasesForOwner:(NSString *)owner

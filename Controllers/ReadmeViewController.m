@@ -31,6 +31,8 @@ static NSString * const kGHFindScript =
      "var lq=q.toLowerCase();var nodes=[];"
      "var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false);var n;"
      "while((n=w.nextNode())){var pn=n.parentNode?n.parentNode.nodeName:'';if(pn=='SCRIPT'||pn=='STYLE')continue;"
+     "var skip=false;for(var up=n.parentNode;up&&up.className!==undefined;up=up.parentNode){var cn=String(up.className);"
+     "if(cn.indexOf('code-gutter')>=0||cn.indexOf('show-more')>=0){skip=true;break;}}if(skip)continue;"
      "if(n.nodeValue.toLowerCase().indexOf(lq)>=0)nodes.push(n);}"
      "for(var j=0;j<nodes.length;j++){var node=nodes[j];var t=node.nodeValue;var l=t.toLowerCase();var f=document.createDocumentFragment();var pos=0,idx;"
      "while((idx=l.indexOf(lq,pos))>=0){if(idx>pos)f.appendChild(document.createTextNode(t.substring(pos,idx)));"
@@ -42,11 +44,27 @@ static NSString * const kGHFindScript =
 
 static NSString * const kGHFindStepScript =
     @"(function(d){var a=window.__ghFind||[];if(!a.length)return '';var i=window.__ghFindIndex;"
-     "if(i>=0&&a[i])a[i].className='gh-find';i=(i+d+a.length)%%a.length;window.__ghFindIndex=i;var e=a[i];e.className='gh-find gh-cur';"
+     "if(i>=0&&a[i])a[i].className='gh-find';i=(i+d+a.length)%%a.length;window.__ghFindIndex=i;var e=a[i];"
+     "var ch=e;while(ch&&!(ch.className!==undefined&&String(ch.className).indexOf('more-rows')>=0))ch=ch.parentNode;"
+     "if(ch&&ch.style&&ch.style.display=='none'){var k=parseInt(String(ch.id).replace('code-chunk-',''),10)||0;"
+     "var tr=e;while(tr&&tr.nodeName!='TR')tr=tr.parentNode;var rows=ch.getElementsByTagName('tr');var ri=0;"
+     "for(var r=0;r<rows.length;r++){if(rows[r]==tr){ri=r;break;}}"
+     "var g=document.getElementById('gutter-chunk-'+k);var ln=g&&g.children[ri]?g.children[ri].textContent:'';"
+     "return 'hidden|'+(i+1)+'/'+a.length+'|'+k+'|'+ln;}"
+     "e.className='gh-find gh-cur';"
      "if(e.scrollIntoView)e.scrollIntoView(true);window.scrollBy(0,-Math.round(window.innerHeight/3));"
      "return (i+1)+'/'+a.length;})(%ld)";
 
-@interface ReadmeViewController () <UIScrollViewDelegate, UISearchBarDelegate>
+static NSString * const kGHFindRevealScript =
+    @"(function(k){var b=document.getElementById('show-more');if(!b||typeof revealNextChunk!='function')return;"
+     "for(var guard=0;guard<10000;guard++){var shown=parseInt(b.getAttribute('data-shown'),10)||0;"
+     "var total=parseInt(b.getAttribute('data-total'),10)||0;if(shown>=total||(k>0&&shown>=k))break;revealNextChunk();}"
+     "})(%ld)";
+
+static const NSInteger kGHFindRevealAlertTag = 7101;
+
+@interface ReadmeViewController () <UIScrollViewDelegate, UISearchBarDelegate, UIAlertViewDelegate>
+@property (nonatomic, assign) NSInteger pendingRevealChunk;
 @property (nonatomic, strong) UIView *findBar;
 @property (nonatomic, strong) UISearchBar *findField;
 @property (nonatomic, strong) UILabel *findCountLabel;
@@ -252,6 +270,7 @@ static NSString * const kGHFindStepScript =
     UIGraphicsEndImageContext();
     self.findField.placeholder = GHL(@"Найти в тексте");
     self.findCountLabel.textColor = GHSecondaryTextColor();
+    GHStyleSegmentedControl(self.findNavigation);
 }
 
 - (void)toggleFindBar {
@@ -285,7 +304,30 @@ static NSString * const kGHFindStepScript =
 
 - (void)stepFind:(NSInteger)direction {
     NSString *result = [self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindStepScript, (long)direction]];
-    if (result.length > 0) self.findCountLabel.text = result;
+    if (result.length == 0) return;
+    if (![result hasPrefix:@"hidden|"]) {
+        self.findCountLabel.text = result;
+        return;
+    }
+    NSArray *parts = [result componentsSeparatedByString:@"|"];
+    if (parts.count < 4) return;
+    self.findCountLabel.text = parts[1];
+    self.pendingRevealChunk = [parts[2] integerValue];
+    NSString *line = parts[3];
+    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Совпадение в скрытой части файла")
+                                                     message:[NSString stringWithFormat:GHL(@"Строка %@ ещё не показана. Длинные файлы открываются частями по 300 строк, чтобы не тормозить. Раскрыть?"), line]
+                                                    delegate:self
+                                           cancelButtonTitle:GHL(@"Отмена")
+                                           otherButtonTitles:GHL(@"До этой строки"), GHL(@"Весь файл"), nil];
+    alert.tag = kGHFindRevealAlertTag;
+    [alert show];
+}
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (alertView.tag != kGHFindRevealAlertTag || buttonIndex == alertView.cancelButtonIndex) return;
+    NSInteger target = buttonIndex == alertView.firstOtherButtonIndex ? self.pendingRevealChunk : 0;
+    [self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindRevealScript, (long)target]];
+    [self stepFind:0];
 }
 
 - (void)findNavigationChanged {

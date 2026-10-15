@@ -87,13 +87,6 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [self getJSONFromPath:path completion:completion];
 }
 
-- (void)searchCodeWithQuery:(NSString *)query completion:(GHJSONCompletionBlock)completion {
-    NSString *escapedQuery = (__bridge_transfer NSString *)CFURLCreateStringByAddingPercentEscapes(NULL, (__bridge CFStringRef)(query ?: @""), NULL,
-                                                                                                    CFSTR("!*'();@&=+$,/?%#[]"), kCFStringEncodingUTF8);
-    NSString *path = [NSString stringWithFormat:@"/search/code?q=%@&per_page=50", escapedQuery];
-    [self getJSONFromPath:path accept:@"application/vnd.github.v3.text-match+json" completion:completion];
-}
-
 - (void)labelsForOwner:(NSString *)owner repo:(NSString *)repo completion:(GHJSONCompletionBlock)completion {
     NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/labels?per_page=100", owner, repo];
     [self getJSONFromPath:path completion:completion];

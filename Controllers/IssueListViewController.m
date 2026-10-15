@@ -243,7 +243,8 @@ static const NSInteger kLabelSheetTag = 2;
 }
 
 - (void)updateFilterChipAppearance {
-    self.stateControl.segmentedControlStyle = UISegmentedControlStylePlain;
+    GHStyleSegmentedControl(self.stateControl);
+    GHStyleSegmentedControl(self.filterSegment);
     CGFloat width = self.headerView.bounds.size.width;
     self.stateControl.frame = CGRectMake(10, 10, width - 20 - 58, 32);
     self.filterSegment.frame = CGRectMake(width - 10 - 50, 10, 50, 32);
@@ -252,7 +253,8 @@ static const NSInteger kLabelSheetTag = 2;
 }
 
 - (void)setFilterSegmentHighlighted:(BOOL)highlighted {
-    UIColor *iconColor = highlighted ? [UIColor whiteColor] : [UIColor colorWithWhite:0.45 alpha:1.0];
+    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+    UIColor *iconColor = highlighted ? [UIColor whiteColor] : [UIColor colorWithWhite:dark ? 0.78 : 0.45 alpha:1.0];
     [self.filterSegment setImage:[GHIconRenderer filterIconWithColor:iconColor size:18] forSegmentAtIndex:0];
     self.filterSegment.selectedSegmentIndex = highlighted ? 0 : UISegmentedControlNoSegment;
 }

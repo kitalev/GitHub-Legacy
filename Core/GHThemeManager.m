@@ -287,6 +287,90 @@ void GHStyleButton(UIButton *button, GHButtonStyle style) {
     }
 }
 
+static UIImage *GHSegmentBackgroundImage(BOOL selected) {
+    CGFloat radius = 7;
+    CGFloat height = 32;
+    CGSize size = CGSizeMake(radius * 2 + 1, height);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 0);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    CGRect rect = CGRectMake(0, 0, size.width, size.height);
+
+    UIBezierPath *outer = [UIBezierPath bezierPathWithRoundedRect:rect cornerRadius:radius];
+    [[UIColor colorWithWhite:0.05 alpha:1.0] setFill];
+    [outer fill];
+
+    UIBezierPath *inner = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(rect, 1, 1) cornerRadius:radius - 1];
+    CGContextSaveGState(context);
+    [inner addClip];
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGFloat top = selected ? 0.10 : 0.30;
+    CGFloat bottom = selected ? 0.17 : 0.19;
+    CGFloat components[] = {top, top, top, 1.0, bottom, bottom, bottom, 1.0};
+    CGFloat locations[] = {0.0, 1.0};
+    CGGradientRef gradient = CGGradientCreateWithColorComponents(space, components, locations, 2);
+    CGContextDrawLinearGradient(context, gradient, CGPointMake(0, 1), CGPointMake(0, height - 1), 0);
+    CGGradientRelease(gradient);
+    CGColorSpaceRelease(space);
+    if (selected) {
+        [[UIColor colorWithWhite:0.0 alpha:0.45] setFill];
+        UIRectFill(CGRectMake(0, 1, size.width, 2));
+    } else {
+        [[UIColor colorWithWhite:1.0 alpha:0.12] setFill];
+        UIRectFill(CGRectMake(0, 1, size.width, 1));
+    }
+    CGContextRestoreGState(context);
+
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return [image resizableImageWithCapInsets:UIEdgeInsetsMake(radius, radius, radius, radius)];
+}
+
+static UIImage *GHSegmentDividerImage(void) {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(1, 32), NO, 0);
+    [[UIColor colorWithWhite:0.05 alpha:1.0] setFill];
+    UIRectFill(CGRectMake(0, 0, 1, 32));
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
+void GHStyleSegmentedControl(UISegmentedControl *control) {
+    if (control == nil) return;
+    control.segmentedControlStyle = UISegmentedControlStylePlain;
+    if (![control respondsToSelector:@selector(setBackgroundImage:forState:barMetrics:)]) return;
+    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+    UIImage *normal = dark ? GHSegmentBackgroundImage(NO) : nil;
+    UIImage *selected = dark ? GHSegmentBackgroundImage(YES) : nil;
+    UIImage *divider = dark ? GHSegmentDividerImage() : nil;
+    [control setBackgroundImage:normal forState:UIControlStateNormal barMetrics:UIBarMetricsDefault];
+    [control setBackgroundImage:selected forState:UIControlStateSelected barMetrics:UIBarMetricsDefault];
+    [control setBackgroundImage:selected forState:UIControlStateHighlighted barMetrics:UIBarMetricsDefault];
+    for (NSArray *states in @[@[@(UIControlStateNormal), @(UIControlStateNormal)],
+                              @[@(UIControlStateSelected), @(UIControlStateNormal)],
+                              @[@(UIControlStateNormal), @(UIControlStateSelected)]]) {
+        [control setDividerImage:divider
+             forLeftSegmentState:[states[0] unsignedIntegerValue]
+               rightSegmentState:[states[1] unsignedIntegerValue]
+                      barMetrics:UIBarMetricsDefault];
+    }
+    if (dark) {
+        NSValue *shadowOffset = [NSValue valueWithUIOffset:UIOffsetMake(0, -1)];
+        [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor colorWithWhite:0.78 alpha:1.0],
+                                          UITextAttributeTextShadowColor: [UIColor blackColor],
+                                          UITextAttributeTextShadowOffset: shadowOffset,
+                                          UITextAttributeFont: [UIFont boldSystemFontOfSize:15]}
+                               forState:UIControlStateNormal];
+        [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor whiteColor],
+                                          UITextAttributeTextShadowColor: [UIColor blackColor],
+                                          UITextAttributeTextShadowOffset: shadowOffset,
+                                          UITextAttributeFont: [UIFont boldSystemFontOfSize:15]}
+                               forState:UIControlStateSelected];
+    } else {
+        [control setTitleTextAttributes:nil forState:UIControlStateNormal];
+        [control setTitleTextAttributes:nil forState:UIControlStateSelected];
+    }
+}
+
 UIButton *GHMakeButton(GHButtonStyle style) {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
     button.titleLabel.font = [UIFont boldSystemFontOfSize:17];

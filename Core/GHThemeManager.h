@@ -36,6 +36,7 @@ typedef NS_ENUM(NSInteger, GHButtonStyle) {
 
 UIButton *GHMakeButton(GHButtonStyle style);
 void GHStyleButton(UIButton *button, GHButtonStyle style);
+void GHStyleSegmentedControl(UISegmentedControl *control);
 
 void GHApplyDisclosureIndicator(UITableViewCell *cell);
 
