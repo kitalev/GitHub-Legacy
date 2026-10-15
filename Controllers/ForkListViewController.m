@@ -328,22 +328,36 @@ static const NSInteger kSortActionSheetTag = 2;
     return headerView;
 }
 
-- (UIButton *)filterButtonWithFrame:(CGRect)frame {
+static const NSInteger kForkFilterSegmentTag = 501;
 
+- (UIButton *)filterButtonWithFrame:(CGRect)frame {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
     button.frame = frame;
-    button.layer.cornerRadius = 16.0;
-    button.layer.borderWidth = 1.0;
-    button.titleLabel.font = [UIFont systemFontOfSize:14];
-    button.titleLabel.adjustsFontSizeToFitWidth = YES;
 
-    if ([button.titleLabel respondsToSelector:@selector(setMinimumScaleFactor:)]) {
-        button.titleLabel.minimumScaleFactor = 0.7;
-    } else {
-        button.titleLabel.minimumFontSize = 13.0 * 0.7;
-    }
-    button.contentEdgeInsets = UIEdgeInsetsMake(0, 14, 0, 14);
+    UISegmentedControl *segment = [[UISegmentedControl alloc] initWithItems:@[@""]];
+    segment.segmentedControlStyle = UISegmentedControlStylePlain;
+    segment.userInteractionEnabled = NO;
+    segment.tag = kForkFilterSegmentTag;
+    segment.frame = button.bounds;
+    segment.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [button addSubview:segment];
+
+    [button addTarget:self action:@selector(filterButtonTouchDown:) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
+    [button addTarget:self action:@selector(filterButtonTouchEnded:)
+     forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel | UIControlEventTouchDragExit];
     return button;
+}
+
+- (UISegmentedControl *)segmentOfFilterButton:(UIButton *)button {
+    return (UISegmentedControl *)[button viewWithTag:kForkFilterSegmentTag];
+}
+
+- (void)filterButtonTouchDown:(UIButton *)button {
+    [self segmentOfFilterButton:button].selectedSegmentIndex = 0;
+}
+
+- (void)filterButtonTouchEnded:(UIButton *)button {
+    [self segmentOfFilterButton:button].selectedSegmentIndex = UISegmentedControlNoSegment;
 }
 
 - (NSString *)periodDisplayNameForYears:(NSInteger)years {
@@ -362,8 +376,8 @@ static const NSInteger kSortActionSheetTag = 2;
 
     NSString *periodTitle = [NSString stringWithFormat:@"%@ ▾", [self periodDisplayNameForYears:self.selectedPeriodYears]];
     NSString *sortTitle = [NSString stringWithFormat:@"%@ ▾", [self sortDisplayNameForValue:self.selectedSortValue]];
-    [self.periodButton setTitle:periodTitle forState:UIControlStateNormal];
-    [self.sortButton setTitle:sortTitle forState:UIControlStateNormal];
+    [[self segmentOfFilterButton:self.periodButton] setTitle:periodTitle forSegmentAtIndex:0];
+    [[self segmentOfFilterButton:self.sortButton] setTitle:sortTitle forSegmentAtIndex:0];
     [self layoutFilterButtons];
 }
 
@@ -371,8 +385,8 @@ static const NSInteger kSortActionSheetTag = 2;
     CGFloat maxWidth = MAX((self.headerView.bounds.size.width - 16 * 2 - 10) / 2.0, 60);
     CGFloat x = 16;
     for (UIButton *button in @[self.periodButton, self.sortButton]) {
-        NSString *title = [button titleForState:UIControlStateNormal];
-        CGFloat w = ceil([title sizeWithFont:button.titleLabel.font].width) + 28;
+        NSString *title = [[self segmentOfFilterButton:button] titleForSegmentAtIndex:0];
+        CGFloat w = ceil([title sizeWithFont:[UIFont boldSystemFontOfSize:15]].width) + 32;
         w = MIN(w, maxWidth);
         button.frame = CGRectMake(x, 10, w, 32);
         x += w + 10;
@@ -453,10 +467,7 @@ static const NSInteger kSortActionSheetTag = 2;
     self.headerView.backgroundColor = GHCellBackgroundColor();
 
     for (UIButton *button in @[self.periodButton, self.sortButton]) {
-        [button setBackgroundImage:nil forState:UIControlStateNormal];
-        button.backgroundColor = [GHThemeManager sharedManager].darkModeEnabled ? [UIColor colorWithWhite:0.18 alpha:1.0] : [UIColor colorWithWhite:0.95 alpha:1.0];
-        [button setTitleColor:GHPrimaryTextColor() forState:UIControlStateNormal];
-        button.layer.borderColor = GHSeparatorColor().CGColor;
+        GHStyleSegmentedControl([self segmentOfFilterButton:button]);
     }
 
     [self.tableView reloadData];
