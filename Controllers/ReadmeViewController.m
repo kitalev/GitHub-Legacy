@@ -227,7 +227,7 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
         self.findBar.frame = CGRectMake(0, 0, bounds.size.width, 44);
         CGFloat navWidth = 76;
         CGFloat countWidth = 52;
-        self.findNavigation.frame = CGRectMake(bounds.size.width - navWidth - 6, 7, navWidth, 30);
+        self.findNavigation.frame = CGRectMake(bounds.size.width - navWidth - 6, 6, navWidth, 32);
         self.findCountLabel.frame = CGRectMake(bounds.size.width - navWidth - 6 - countWidth, 0, countWidth - 4, 44);
         self.findField.frame = CGRectMake(0, 0, bounds.size.width - navWidth - 6 - countWidth, 44);
     }

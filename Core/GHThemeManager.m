@@ -1,4 +1,5 @@
 #import "GHThemeManager.h"
+#import <QuartzCore/QuartzCore.h>
 #import "GHCompat.h"
 #import "GHIconRenderer.h"
 #import "GHLocalization.h"
@@ -287,47 +288,66 @@ void GHStyleButton(UIButton *button, GHButtonStyle style) {
     }
 }
 
-static UIImage *GHSegmentBackgroundImage(BOOL selected) {
-    CGFloat radius = 5;
-    CGFloat height = 32;
-    CGSize size = CGSizeMake(radius * 2 + 1, height);
-    UIGraphicsBeginImageContextWithOptions(size, NO, 0);
-    CGContextRef context = UIGraphicsGetCurrentContext();
-    CGRect rect = CGRectMake(0, 0, size.width, size.height);
-
-    UIBezierPath *outer = [UIBezierPath bezierPathWithRoundedRect:rect cornerRadius:radius];
-    [[UIColor colorWithWhite:0.05 alpha:1.0] setFill];
-    [outer fill];
-
-    UIBezierPath *inner = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(rect, 1, 1) cornerRadius:radius - 1];
-    CGContextSaveGState(context);
-    [inner addClip];
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGFloat top = selected ? 0.11 : 0.33;
-    CGFloat bottom = selected ? 0.19 : 0.20;
-    CGFloat components[] = {top, top, top, 1.0, bottom, bottom, bottom, 1.0};
-    CGFloat locations[] = {0.0, 1.0};
-    CGGradientRef gradient = CGGradientCreateWithColorComponents(space, components, locations, 2);
-    CGContextDrawLinearGradient(context, gradient, CGPointMake(0, 1), CGPointMake(0, height - 1), 0);
-    CGGradientRelease(gradient);
-    CGColorSpaceRelease(space);
-    if (selected) {
-        [[UIColor colorWithWhite:0.0 alpha:0.45] setFill];
-        UIRectFill(CGRectMake(0, 1, size.width, 2));
-    } else {
-        [[UIColor colorWithWhite:1.0 alpha:0.12] setFill];
-        UIRectFill(CGRectMake(0, 1, size.width, 1));
-    }
-    CGContextRestoreGState(context);
-
+static UIImage *GHCaptureStockSegment(BOOL selected) {
+    UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:@[@""]];
+    control.segmentedControlStyle = UISegmentedControlStylePlain;
+    control.frame = CGRectMake(0, 0, 40, 32);
+    control.selectedSegmentIndex = selected ? 0 : UISegmentedControlNoSegment;
+    [control setNeedsLayout];
+    [control layoutIfNeeded];
+    UIGraphicsBeginImageContextWithOptions(control.bounds.size, NO, 0);
+    [control.layer renderInContext:UIGraphicsGetCurrentContext()];
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
-    return [image resizableImageWithCapInsets:UIEdgeInsetsMake(radius, radius, radius, radius)];
+    return image;
+}
+
+static UIImage *GHDarkenedSegmentImage(UIImage *image, CGFloat factor) {
+    CGImageRef source = image.CGImage;
+    if (source == NULL) return nil;
+    size_t width = CGImageGetWidth(source);
+    size_t height = CGImageGetHeight(source);
+    uint8_t *pixels = calloc(width * height * 4, 1);
+    if (pixels == NULL) return nil;
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(pixels, width, height, 8, width * 4, space,
+                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(space);
+    if (context == NULL) {
+        free(pixels);
+        return nil;
+    }
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), source);
+    for (size_t i = 0; i < width * height; i++) {
+        uint8_t *pixel = pixels + i * 4;
+        CGFloat luminance = (pixel[0] * 0.30 + pixel[1] * 0.59 + pixel[2] * 0.11) * factor;
+        uint8_t value = (uint8_t)MIN(MAX(luminance, 0.0), (CGFloat)pixel[3]);
+        pixel[0] = value;
+        pixel[1] = value;
+        pixel[2] = value;
+    }
+    CGImageRef result = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    free(pixels);
+    UIImage *darkened = [UIImage imageWithCGImage:result scale:image.scale orientation:UIImageOrientationUp];
+    CGImageRelease(result);
+    return [darkened resizableImageWithCapInsets:UIEdgeInsetsMake(15, 12, 15, 12)];
+}
+
+static UIImage *GHDarkSegmentImage(BOOL selected) {
+    static UIImage *normalImage = nil;
+    static UIImage *selectedImage = nil;
+    if (selected) {
+        if (selectedImage == nil) selectedImage = GHDarkenedSegmentImage(GHCaptureStockSegment(YES), 0.36);
+        return selectedImage;
+    }
+    if (normalImage == nil) normalImage = GHDarkenedSegmentImage(GHCaptureStockSegment(NO), 0.27);
+    return normalImage;
 }
 
 static UIImage *GHSegmentDividerImage(void) {
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(1, 32), NO, 0);
-    [[UIColor colorWithWhite:0.05 alpha:1.0] setFill];
+    [[UIColor colorWithWhite:0.12 alpha:1.0] setFill];
     UIRectFill(CGRectMake(0, 0, 1, 32));
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -339,8 +359,8 @@ void GHStyleSegmentedControl(UISegmentedControl *control) {
     control.segmentedControlStyle = UISegmentedControlStylePlain;
     if (![control respondsToSelector:@selector(setBackgroundImage:forState:barMetrics:)]) return;
     BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
-    UIImage *normal = dark ? GHSegmentBackgroundImage(NO) : nil;
-    UIImage *selected = dark ? GHSegmentBackgroundImage(YES) : nil;
+    UIImage *normal = dark ? GHDarkSegmentImage(NO) : nil;
+    UIImage *selected = dark ? GHDarkSegmentImage(YES) : nil;
     UIImage *divider = dark ? GHSegmentDividerImage() : nil;
     [control setBackgroundImage:normal forState:UIControlStateNormal barMetrics:UIBarMetricsDefault];
     [control setBackgroundImage:selected forState:UIControlStateSelected barMetrics:UIBarMetricsDefault];
@@ -355,12 +375,12 @@ void GHStyleSegmentedControl(UISegmentedControl *control) {
     }
     if (dark) {
         NSValue *shadowOffset = [NSValue valueWithUIOffset:UIOffsetMake(0, -1)];
-        [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor colorWithWhite:0.72 alpha:1.0],
-                                          UITextAttributeTextShadowColor: [UIColor colorWithWhite:0.0 alpha:0.8],
+        [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor colorWithWhite:0.75 alpha:1.0],
+                                          UITextAttributeTextShadowColor: [UIColor colorWithWhite:0.0 alpha:0.7],
                                           UITextAttributeTextShadowOffset: shadowOffset}
                                forState:UIControlStateNormal];
         [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor whiteColor],
-                                          UITextAttributeTextShadowColor: [UIColor colorWithWhite:0.0 alpha:0.8],
+                                          UITextAttributeTextShadowColor: [UIColor colorWithWhite:0.0 alpha:0.7],
                                           UITextAttributeTextShadowOffset: shadowOffset}
                                forState:UIControlStateSelected];
     } else {
