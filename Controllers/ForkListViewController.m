@@ -221,6 +221,7 @@ static const NSInteger kSortActionSheetTag = 2;
 @property (nonatomic, assign) NSInteger selectedPeriodYears;
 @property (nonatomic, strong) UIButton *periodButton;
 @property (nonatomic, strong) UIButton *sortButton;
+@property (nonatomic, strong) UISegmentedControl *filterSegment;
 @property (nonatomic, strong) UIView *headerView;
 
 @property (nonatomic, strong) UIActionSheet *presentedActionSheet;
@@ -315,11 +316,18 @@ static const NSInteger kSortActionSheetTag = 2;
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 52)];
     headerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    self.periodButton = [self filterButtonWithFrame:CGRectMake(16, 10, 100, 32)];
+    self.filterSegment = [[UISegmentedControl alloc] initWithItems:@[@"", @""]];
+    self.filterSegment.segmentedControlStyle = UISegmentedControlStylePlain;
+    self.filterSegment.userInteractionEnabled = NO;
+    self.filterSegment.frame = CGRectMake(16, 10, headerView.bounds.size.width - 32, 32);
+    self.filterSegment.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [headerView addSubview:self.filterSegment];
+
+    self.periodButton = [self filterButton];
     [self.periodButton addTarget:self action:@selector(periodButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [headerView addSubview:self.periodButton];
 
-    self.sortButton = [self filterButtonWithFrame:CGRectMake(126, 10, 100, 32)];
+    self.sortButton = [self filterButton];
     [self.sortButton addTarget:self action:@selector(sortButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [headerView addSubview:self.sortButton];
 
@@ -328,69 +336,47 @@ static const NSInteger kSortActionSheetTag = 2;
     return headerView;
 }
 
-static const NSInteger kForkFilterSegmentTag = 501;
-
-- (UIButton *)filterButtonWithFrame:(CGRect)frame {
+- (UIButton *)filterButton {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-    button.frame = frame;
-
-    UISegmentedControl *segment = [[UISegmentedControl alloc] initWithItems:@[@""]];
-    segment.segmentedControlStyle = UISegmentedControlStylePlain;
-    segment.userInteractionEnabled = NO;
-    segment.tag = kForkFilterSegmentTag;
-    segment.frame = button.bounds;
-    segment.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [button addSubview:segment];
-
     [button addTarget:self action:@selector(filterButtonTouchDown:) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
     [button addTarget:self action:@selector(filterButtonTouchEnded:)
      forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel | UIControlEventTouchDragExit];
     return button;
 }
 
-- (UISegmentedControl *)segmentOfFilterButton:(UIButton *)button {
-    return (UISegmentedControl *)[button viewWithTag:kForkFilterSegmentTag];
-}
-
 - (void)filterButtonTouchDown:(UIButton *)button {
-    [self segmentOfFilterButton:button].selectedSegmentIndex = 0;
+    self.filterSegment.selectedSegmentIndex = button == self.periodButton ? 0 : 1;
 }
 
 - (void)filterButtonTouchEnded:(UIButton *)button {
-    [self segmentOfFilterButton:button].selectedSegmentIndex = UISegmentedControlNoSegment;
+    self.filterSegment.selectedSegmentIndex = UISegmentedControlNoSegment;
 }
 
 - (NSString *)periodDisplayNameForYears:(NSInteger)years {
     if (years == 0) return GHL(@"Всё время");
-    if (years == 1) return GHL(@"Последний год");
-    return [NSString stringWithFormat:GHL(@"Последние %ld года"), (long)years];
+    if (years == 1) return GHL(@"За год");
+    return [NSString stringWithFormat:GHL(@"За %ld года"), (long)years];
 }
 
 - (NSString *)sortDisplayNameForValue:(NSString *)value {
     if ([value isEqualToString:@"stargazers"]) return GHL(@"По звёздам");
-    if ([value isEqualToString:@"oldest"]) return GHL(@"Сначала старые");
-    return GHL(@"Сначала новые");
+    if ([value isEqualToString:@"oldest"]) return GHL(@"Старые");
+    return GHL(@"Новые");
 }
 
 - (void)updateFilterButtonTitles {
-
-    NSString *periodTitle = [NSString stringWithFormat:@"%@ ▾", [self periodDisplayNameForYears:self.selectedPeriodYears]];
-    NSString *sortTitle = [NSString stringWithFormat:@"%@ ▾", [self sortDisplayNameForValue:self.selectedSortValue]];
-    [[self segmentOfFilterButton:self.periodButton] setTitle:periodTitle forSegmentAtIndex:0];
-    [[self segmentOfFilterButton:self.sortButton] setTitle:sortTitle forSegmentAtIndex:0];
+    [self.filterSegment setTitle:[NSString stringWithFormat:@"%@ \u25BE", [self periodDisplayNameForYears:self.selectedPeriodYears]]
+               forSegmentAtIndex:0];
+    [self.filterSegment setTitle:[NSString stringWithFormat:@"%@ \u25BE", [self sortDisplayNameForValue:self.selectedSortValue]]
+               forSegmentAtIndex:1];
     [self layoutFilterButtons];
 }
 
 - (void)layoutFilterButtons {
-    CGFloat maxWidth = MAX((self.headerView.bounds.size.width - 16 * 2 - 10) / 2.0, 60);
-    CGFloat x = 16;
-    for (UIButton *button in @[self.periodButton, self.sortButton]) {
-        NSString *title = [[self segmentOfFilterButton:button] titleForSegmentAtIndex:0];
-        CGFloat w = ceil([title sizeWithFont:[UIFont boldSystemFontOfSize:15]].width) + 32;
-        w = MIN(w, maxWidth);
-        button.frame = CGRectMake(x, 10, w, 32);
-        x += w + 10;
-    }
+    CGFloat width = self.headerView.bounds.size.width - 32;
+    self.filterSegment.frame = CGRectMake(16, 10, width, 32);
+    self.periodButton.frame = CGRectMake(16, 10, floor(width / 2.0), 32);
+    self.sortButton.frame = CGRectMake(16 + floor(width / 2.0), 10, width - floor(width / 2.0), 32);
 }
 
 - (void)periodButtonTapped {
@@ -466,9 +452,7 @@ static const NSInteger kForkFilterSegmentTag = 501;
 
     self.headerView.backgroundColor = GHCellBackgroundColor();
 
-    for (UIButton *button in @[self.periodButton, self.sortButton]) {
-        GHStyleSegmentedControl([self segmentOfFilterButton:button]);
-    }
+    GHStyleSegmentedControl(self.filterSegment);
 
     [self.tableView reloadData];
 }
