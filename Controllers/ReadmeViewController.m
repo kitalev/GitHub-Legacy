@@ -43,17 +43,21 @@ static NSString * const kGHFindScript =
      "})(%@[0])";
 
 static NSString * const kGHFindStepScript =
-    @"(function(d){var a=window.__ghFind||[];if(!a.length)return '';var i=window.__ghFindIndex;"
+    @"(function(d){try{var a=window.__ghFind||[];if(!a.length)return '';var i=window.__ghFindIndex;"
      "if(i>=0&&a[i])a[i].className='gh-find';i=(i+d+a.length)%%a.length;window.__ghFindIndex=i;var e=a[i];"
-     "var ch=e;while(ch&&!(ch.className!==undefined&&String(ch.className).indexOf('more-rows')>=0))ch=ch.parentNode;"
-     "if(ch&&ch.style&&ch.style.display=='none'){var k=parseInt(String(ch.id).replace('code-chunk-',''),10)||0;"
+     "var ch=e.parentNode;while(ch&&ch.nodeType==1){if(/(^| )more-rows( |$)/.test(ch.className||'')&&ch.style.display=='none')break;ch=ch.parentNode;}"
+     "if(ch&&ch.nodeType==1){var k=parseInt(String(ch.id||'').replace('code-chunk-',''),10)||0;"
      "var tr=e;while(tr&&tr.nodeName!='TR')tr=tr.parentNode;var rows=ch.getElementsByTagName('tr');var ri=0;"
      "for(var r=0;r<rows.length;r++){if(rows[r]==tr){ri=r;break;}}"
-     "var g=document.getElementById('gutter-chunk-'+k);var ln=g&&g.children[ri]?g.children[ri].textContent:'';"
+     "var g=document.getElementById('gutter-chunk-'+k);var ln=g&&g.children[ri]?(g.children[ri].textContent||''):'';"
      "return 'hidden|'+(i+1)+'/'+a.length+'|'+k+'|'+ln;}"
      "e.className='gh-find gh-cur';"
-     "if(e.scrollIntoView)e.scrollIntoView(true);window.scrollBy(0,-Math.round(window.innerHeight/3));"
-     "return (i+1)+'/'+a.length;})(%ld)";
+     "var area=e.parentNode;while(area&&area.nodeType==1&&!/(^| )code-area( |$)/.test(area.className||''))area=area.parentNode;"
+     "var b=e.getBoundingClientRect();"
+     "if(area&&area.nodeType==1){var ab=area.getBoundingClientRect();"
+     "if(b.left<ab.left+16||b.right>ab.right-16){area.scrollLeft=Math.max(0,area.scrollLeft+b.left-ab.left-40);b=e.getBoundingClientRect();}}"
+     "window.scrollTo(0,Math.max(0,Math.round(window.pageYOffset+b.top-window.innerHeight/3)));"
+     "return (i+1)+'/'+a.length;}catch(x){return 'err|'+x;}})(%ld)";
 
 static NSString * const kGHFindRevealScript =
     @"(function(k){var b=document.getElementById('show-more');if(!b||typeof revealNextChunk!='function')return;"
@@ -305,6 +309,16 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
 - (void)stepFind:(NSInteger)direction {
     NSString *result = [self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindStepScript, (long)direction]];
     if (result.length == 0) return;
+    if ([result hasPrefix:@"err|"]) {
+        self.findCountLabel.text = @"!";
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Ошибка поиска")
+                                                         message:[result substringFromIndex:4]
+                                                        delegate:nil
+                                               cancelButtonTitle:@"OK"
+                                               otherButtonTitles:nil];
+        [alert show];
+        return;
+    }
     if (![result hasPrefix:@"hidden|"]) {
         self.findCountLabel.text = result;
         return;
@@ -332,6 +346,7 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
 
 - (void)findNavigationChanged {
     NSInteger index = self.findNavigation.selectedSegmentIndex;
+    self.findNavigation.selectedSegmentIndex = UISegmentedControlNoSegment;
     [self.findField resignFirstResponder];
     [self stepFind:index == 0 ? -1 : 1];
 }

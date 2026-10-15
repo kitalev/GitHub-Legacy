@@ -288,7 +288,7 @@ void GHStyleButton(UIButton *button, GHButtonStyle style) {
 }
 
 static UIImage *GHSegmentBackgroundImage(BOOL selected) {
-    CGFloat radius = 7;
+    CGFloat radius = 5;
     CGFloat height = 32;
     CGSize size = CGSizeMake(radius * 2 + 1, height);
     UIGraphicsBeginImageContextWithOptions(size, NO, 0);
@@ -303,8 +303,8 @@ static UIImage *GHSegmentBackgroundImage(BOOL selected) {
     CGContextSaveGState(context);
     [inner addClip];
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGFloat top = selected ? 0.10 : 0.30;
-    CGFloat bottom = selected ? 0.17 : 0.19;
+    CGFloat top = selected ? 0.11 : 0.33;
+    CGFloat bottom = selected ? 0.19 : 0.20;
     CGFloat components[] = {top, top, top, 1.0, bottom, bottom, bottom, 1.0};
     CGFloat locations[] = {0.0, 1.0};
     CGGradientRef gradient = CGGradientCreateWithColorComponents(space, components, locations, 2);
@@ -355,15 +355,13 @@ void GHStyleSegmentedControl(UISegmentedControl *control) {
     }
     if (dark) {
         NSValue *shadowOffset = [NSValue valueWithUIOffset:UIOffsetMake(0, -1)];
-        [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor colorWithWhite:0.78 alpha:1.0],
-                                          UITextAttributeTextShadowColor: [UIColor blackColor],
-                                          UITextAttributeTextShadowOffset: shadowOffset,
-                                          UITextAttributeFont: [UIFont boldSystemFontOfSize:15]}
+        [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor colorWithWhite:0.72 alpha:1.0],
+                                          UITextAttributeTextShadowColor: [UIColor colorWithWhite:0.0 alpha:0.8],
+                                          UITextAttributeTextShadowOffset: shadowOffset}
                                forState:UIControlStateNormal];
         [control setTitleTextAttributes:@{UITextAttributeTextColor: [UIColor whiteColor],
-                                          UITextAttributeTextShadowColor: [UIColor blackColor],
-                                          UITextAttributeTextShadowOffset: shadowOffset,
-                                          UITextAttributeFont: [UIFont boldSystemFontOfSize:15]}
+                                          UITextAttributeTextShadowColor: [UIColor colorWithWhite:0.0 alpha:0.8],
+                                          UITextAttributeTextShadowOffset: shadowOffset}
                                forState:UIControlStateSelected];
     } else {
         [control setTitleTextAttributes:nil forState:UIControlStateNormal];

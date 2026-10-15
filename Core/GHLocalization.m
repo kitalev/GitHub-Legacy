@@ -476,6 +476,7 @@ static NSDictionary *GHTranslations(void) {
             @"Открыть в %@": @"Open in %@",
             @"Занят": @"Busy",
             @"Найти в тексте": @"Find in text",
+            @"Ошибка поиска": @"Search error",
             @"Совпадение в скрытой части файла": @"Match in a hidden part of the file",
             @"Строка %@ ещё не показана. Длинные файлы открываются частями по 300 строк, чтобы не тормозить. Раскрыть?": @"Line %@ isn't shown yet. Long files open in 300-line parts to stay fast. Show it?",
             @"До этой строки": @"Up to this line",
