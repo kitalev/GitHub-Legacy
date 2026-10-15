@@ -228,7 +228,22 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
     if (emojiHTML.length == 0) return nil;
     NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"(?:fallback-src|src)=\"([^\"]+)\"" options:0 error:nil];
     NSTextCheckingResult *match = [regex firstMatchInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length)];
-    if (match == nil) return nil;
+    if (match == nil) {
+        NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
+        NSString *emoji = [tags stringByReplacingMatchesInString:emojiHTML options:0 range:NSMakeRange(0, emojiHTML.length) withTemplate:@""];
+        emoji = [emoji stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSData *data = [emoji dataUsingEncoding:NSUTF32LittleEndianStringEncoding];
+        const uint32_t *codepoints = data.bytes;
+        NSMutableArray *parts = [NSMutableArray array];
+        for (NSUInteger i = 0; i < data.length / sizeof(uint32_t); i++) {
+            uint32_t codepoint = CFSwapInt32LittleToHost(codepoints[i]);
+            if (codepoint == 0xFE0F) continue;
+            [parts addObject:[NSString stringWithFormat:@"%04x", codepoint]];
+        }
+        if (parts.count == 0) return nil;
+        return [NSString stringWithFormat:@"https://github.githubassets.com/images/icons/emoji/unicode/%@.png",
+                [parts componentsJoinedByString:@"-"]];
+    }
     NSString *url = [[emojiHTML substringWithRange:[match rangeAtIndex:1]] stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
     if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
     if ([url hasPrefix:@"/"]) url = [@"https://github.githubassets.com" stringByAppendingString:url];
