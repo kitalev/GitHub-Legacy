@@ -245,8 +245,10 @@ static void GHWebLoginDiag(NSString *format, ...) {
     static NSString *path = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-        path = [documents stringByAppendingPathComponent:@"GitHubLegacy-login-diag.txt"];
+        NSString *library = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) firstObject];
+        NSString *logs = [library stringByAppendingPathComponent:@"Logs"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:logs withIntermediateDirectories:YES attributes:nil error:nil];
+        path = [logs stringByAppendingPathComponent:@"GitHubLegacy-login-diag.txt"];
     });
     @synchronized ([NSFileManager class]) {
         NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], message];
