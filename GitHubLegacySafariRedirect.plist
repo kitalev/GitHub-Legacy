@@ -4,10 +4,6 @@
 <dict>
 	<key>Filter</key>
 	<dict>
-		<key>CoreFoundationVersion</key>
-		<array>
-			<string>675.00</string>
-		</array>
 		<key>Bundles</key>
 		<array>
 			<string>com.apple.mobilesafari</string>
