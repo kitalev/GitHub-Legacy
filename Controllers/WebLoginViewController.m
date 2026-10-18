@@ -244,6 +244,38 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
     return NSClassFromString(@"NSJSONSerialization") == Nil;
 }
 
+static void GHWebLoginStoreSetCookies(NSURLResponse *response) {
+    if (![response isKindOfClass:[NSHTTPURLResponse class]] || response.URL == nil) return;
+    NSDictionary *headers = [(NSHTTPURLResponse *)response allHeaderFields];
+    NSString *header = nil;
+    for (NSString *key in headers) {
+        if ([key caseInsensitiveCompare:@"Set-Cookie"] == NSOrderedSame) header = headers[key];
+    }
+    if (header.length == 0) return;
+
+    static NSRegularExpression *separator = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        separator = [NSRegularExpression regularExpressionWithPattern:@",\\s*(?=[^;,\\s=]+=)" options:0 error:nil];
+    });
+
+    NSMutableArray *parts = [NSMutableArray array];
+    __block NSUInteger start = 0;
+    [separator enumerateMatchesInString:header options:0 range:NSMakeRange(0, header.length)
+                             usingBlock:^(NSTextCheckingResult *match, NSMatchingFlags flags, BOOL *stop) {
+        [parts addObject:[header substringWithRange:NSMakeRange(start, match.range.location - start)]];
+        start = NSMaxRange(match.range);
+    }];
+    [parts addObject:[header substringFromIndex:start]];
+
+    NSHTTPCookieStorage *storage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
+    for (NSString *part in parts) {
+        for (NSHTTPCookie *cookie in [NSHTTPCookie cookiesWithResponseHeaderFields:@{@"Set-Cookie": part} forURL:response.URL]) {
+            [storage setCookie:cookie];
+        }
+    }
+}
+
 @interface GHGitHubPostProtocol : NSURLProtocol
 @property (nonatomic, strong) NSURLConnection *connection;
 @end
@@ -269,7 +301,7 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
     if (referer.length == 0 || ![[[NSURL URLWithString:referer].host lowercaseString] isEqualToString:@"github.com"]) {
         [request setValue:@"https://github.com/login" forHTTPHeaderField:@"Referer"];
     }
-    if (request.HTTPBody == nil && request.HTTPBodyStream != nil && [request valueForHTTPHeaderField:@"Content-Length"].length == 0) {
+    if (request.HTTPBody == nil && request.HTTPBodyStream != nil) {
         NSInputStream *stream = request.HTTPBodyStream;
         NSMutableData *body = [NSMutableData data];
         uint8_t buffer[4096];
@@ -293,6 +325,7 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
 
 - (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)response {
     if (!response) return request;
+    GHWebLoginStoreSetCookies(response);
     NSMutableURLRequest *redirect = [request mutableCopy];
     [NSURLProtocol removePropertyForKey:kGHGitHubPostProtocolHandledKey inRequest:redirect];
     [self.client URLProtocol:self wasRedirectedToRequest:redirect redirectResponse:response];
@@ -302,6 +335,7 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
+    GHWebLoginStoreSetCookies(response);
     [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
 }
 
@@ -1851,9 +1885,7 @@ static UIView *GHWebLoginMakeCard(void) {
             [self.webView loadRequest:[NSURLRequest requestWithURL:next]];
             return;
         }
-        NSString *submitted = [self.webView stringByEvaluatingJavaScriptFromString:
-            @"(function(){var f=document.getElementById('github-mobile-authenticate-form');if(!f)return '';f.submit();return 'ok';})()"];
-        if (![submitted isEqualToString:@"ok"]) [self.webView reload];
+        [self.webView loadRequest:[NSURLRequest requestWithURL:self.startURL ?: [GHWebSession baseURL]]];
         return;
     }
     if ([status rangeOfString:@"rejected"].location != NSNotFound) {
