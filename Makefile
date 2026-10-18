@@ -3,17 +3,32 @@ ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
 ARCHS = arm64
 GitHubLegacySafariRedirect_ARCHS = arm64 arm64e
 else
-ARCHS = armv7 arm64
-GitHubLegacySafariRedirect_ARCHS = armv7 arm64 arm64e
+ARCHS = armv6 armv7 arm64
+GitHubLegacySafariRedirect_ARCHS = armv6 armv7 arm64 arm64e
 endif
 TARGET = iphone:clang:9.3:4.0
+
+ARMV6_SDK = $(CURDIR)/.theos/armv6/iPhoneOS9.3.sdk
+ifneq ($(filter armv6,$(ARCHS)),)
+$(shell if [ ! -f "$(ARMV6_SDK)/.ready" ]; then \
+	rm -rf "$(ARMV6_SDK)" && mkdir -p "$(dir $(ARMV6_SDK))" && \
+	cp -a "$(THEOS)/sdks/iPhoneOS9.3.sdk" "$(ARMV6_SDK)" && \
+	mkdir -p "$(ARMV6_SDK)/VendorFrameworks" && \
+	cp -a "$(THEOS)/vendor/lib/CydiaSubstrate.framework" "$(ARMV6_SDK)/VendorFrameworks/" && \
+	find "$(ARMV6_SDK)" -name '*.tbd' -exec perl -pi -e 's/(?<=[\[ ])armv7(?=\s*[,\]])/armv6, armv7/g' {} + && \
+	touch "$(ARMV6_SDK)/.ready"; \
+fi)
+endif
+
 LEGACY_ARCH_TARGET = $(if $(filter arm64 arm64e,$(THEOS_CURRENT_ARCH)),-target $(THEOS_CURRENT_ARCH)-apple-ios5.0)
+LEGACY_ARCH_CFLAGS = $(LEGACY_ARCH_TARGET) $(if $(filter armv6,$(THEOS_CURRENT_ARCH)),-isysroot $(ARMV6_SDK) -marm)
+LEGACY_ARCH_LDFLAGS = $(LEGACY_ARCH_TARGET) $(if $(filter armv6,$(THEOS_CURRENT_ARCH)),-isysroot $(ARMV6_SDK) -F$(ARMV6_SDK)/VendorFrameworks)
 
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = GitHubLegacy
 
-GitHubLegacy_FILES = main.m AppDelegate.m \
+GitHubLegacy_FILES = main.m AppDelegate.m Core/GHLegacyStart.m \
 	Core/GHTrendingClient.m \
 	Controllers/ExploreViewController.m \
 	Controllers/RepoSearchViewController.m \
@@ -77,8 +92,8 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Controllers/LanguageViewController.m
 
 GitHubLegacy_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore
-GitHubLegacy_CFLAGS = -fobjc-arc -fobjc-runtime=ios-5.0 -Iinclude -IControllers -ICells -ICore $(LEGACY_ARCH_TARGET)
-GitHubLegacy_LDFLAGS = $(LEGACY_ARCH_TARGET)
+GitHubLegacy_CFLAGS = -fobjc-arc -fobjc-runtime=ios-5.0 -Iinclude -IControllers -ICells -ICore $(LEGACY_ARCH_CFLAGS)
+GitHubLegacy_LDFLAGS = $(LEGACY_ARCH_LDFLAGS)
 Core/GHARCLite.m_CFLAGS = -fno-objc-arc
 Core/GHLegacyPolyfills.m_CFLAGS = -fno-objc-arc
 ifneq ($(PACKAGE_FORMAT),ipa)
@@ -91,8 +106,8 @@ include $(THEOS_MAKE_PATH)/application.mk
 TWEAK_NAME = GitHubLegacySafariRedirect
 GitHubLegacySafariRedirect_FILES = Tweak/Tweak.xm Core/GHARCLite.m
 GitHubLegacySafariRedirect_FRAMEWORKS = UIKit
-GitHubLegacySafariRedirect_CFLAGS = -fobjc-arc -fobjc-runtime=ios-5.0 $(LEGACY_ARCH_TARGET)
-GitHubLegacySafariRedirect_LDFLAGS = $(LEGACY_ARCH_TARGET)
+GitHubLegacySafariRedirect_CFLAGS = -fobjc-arc -fobjc-runtime=ios-5.0 $(LEGACY_ARCH_CFLAGS)
+GitHubLegacySafariRedirect_LDFLAGS = $(LEGACY_ARCH_LDFLAGS)
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-install::
