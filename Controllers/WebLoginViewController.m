@@ -23,7 +23,9 @@ typedef NS_ENUM(NSInteger, GHWebLoginStep) {
 static NSString * const kGHWebLoginAnalyzeScript =
     @"(function(){"
      "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
-     "function shown(e){if(!e||e.type=='hidden')return false;var s=window.getComputedStyle(e);"
+     "if(!document.getElementById('gh-hidden-fix')){var hs=document.createElement('style');hs.id='gh-hidden-fix';hs.appendChild(document.createTextNode('[hidden]{display:none !important}'));(document.head||document.documentElement).appendChild(hs);}"
+     "function hid(e){for(;e&&e.nodeType==1;e=e.parentNode){if(e.hasAttribute('hidden'))return true;}return false;}"
+     "function shown(e){if(!e||e.type=='hidden'||hid(e))return false;var s=window.getComputedStyle(e);"
      "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
      "var r={host:location.host,path:location.pathname,forms:[],links:[],errors:[],text:document.body?txt(document.body).substring(0,600):''};"
      "var so=document.querySelector('sudo-credential-options');var et=document.getElementById('sudo-credential-options-totp-email-csrf');"
@@ -74,7 +76,9 @@ static NSString * const kGHWebLoginDeviceCodeScript =
 static NSString * const kGHWebLoginGoogleAnalyzeScript =
     @"(function(){"
      "function txt(e){return (e.innerText||e.textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');}"
-     "function shown(e){if(!e)return false;var s=window.getComputedStyle(e);"
+     "if(!document.getElementById('gh-hidden-fix')){var hs=document.createElement('style');hs.id='gh-hidden-fix';hs.appendChild(document.createTextNode('[hidden]{display:none !important}'));(document.head||document.documentElement).appendChild(hs);}"
+     "function hid(e){for(;e&&e.nodeType==1;e=e.parentNode){if(e.hasAttribute('hidden'))return true;}return false;}"
+     "function shown(e){if(!e||hid(e))return false;var s=window.getComputedStyle(e);"
      "return s.display!='none'&&s.visibility!='hidden'&&(e.offsetWidth>0||e.offsetHeight>0);}"
      "var r={host:location.host,ready:document.readyState,submitted:!!window.__ghSubmitted,heading:'',text:'',errors:[],input:null,password:false,buttons:[]};"
      "var h=document.querySelector('h1');if(h&&shown(h))r.heading=txt(h);"
@@ -234,56 +238,6 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 
 @end
 
-static void GHWebLoginDiag(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
-
-static void GHWebLoginDiag(NSString *format, ...) {
-    va_list args;
-    va_start(args, format);
-    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-
-    static NSString *path = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSString *library = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) firstObject];
-        NSString *logs = [library stringByAppendingPathComponent:@"Logs"];
-        [[NSFileManager defaultManager] createDirectoryAtPath:logs withIntermediateDirectories:YES attributes:nil error:nil];
-        path = [logs stringByAppendingPathComponent:@"GitHubLegacy-login-diag.txt"];
-    });
-    @synchronized ([NSFileManager class]) {
-        NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], message];
-        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
-        if (handle == nil) {
-            [line writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:nil];
-            return;
-        }
-        [handle seekToEndOfFile];
-        [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [handle closeFile];
-    }
-}
-
-static NSString *GHWebLoginCookieNames(void) {
-    NSMutableArray *names = [NSMutableArray array];
-    for (NSHTTPCookie *cookie in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookiesForURL:[NSURL URLWithString:@"https://github.com/"]]) {
-        [names addObject:cookie.name];
-    }
-    return [names componentsJoinedByString:@","];
-}
-
-static NSString *GHWebLoginBodySummary(NSData *body) {
-    NSString *text = body.length > 0 ? [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] : nil;
-    if (text.length == 0) return [NSString stringWithFormat:@"%lu bytes", (unsigned long)body.length];
-    NSMutableArray *fields = [NSMutableArray array];
-    for (NSString *pair in [text componentsSeparatedByString:@"&"]) {
-        NSRange equals = [pair rangeOfString:@"="];
-        NSString *name = equals.location == NSNotFound ? pair : [pair substringToIndex:equals.location];
-        NSUInteger valueLength = equals.location == NSNotFound ? 0 : pair.length - equals.location - 1;
-        [fields addObject:[NSString stringWithFormat:@"%@(%lu)", [name stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding] ?: name, (unsigned long)valueLength]];
-    }
-    return [NSString stringWithFormat:@"%lu bytes [%@]", (unsigned long)body.length, [fields componentsJoinedByString:@" "]];
-}
-
 static NSString * const kGHGitHubPostProtocolHandledKey = @"GHGitHubPostHandled";
 
 static BOOL GHWebLoginNeedsPostOriginFix(void) {
@@ -315,7 +269,7 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
     if (referer.length == 0 || ![[[NSURL URLWithString:referer].host lowercaseString] isEqualToString:@"github.com"]) {
         [request setValue:@"https://github.com/login" forHTTPHeaderField:@"Referer"];
     }
-    if (request.HTTPBody == nil && request.HTTPBodyStream != nil) {
+    if (request.HTTPBody == nil && request.HTTPBodyStream != nil && [request valueForHTTPHeaderField:@"Content-Length"].length == 0) {
         NSInputStream *stream = request.HTTPBodyStream;
         NSMutableData *body = [NSMutableData data];
         uint8_t buffer[4096];
@@ -329,10 +283,6 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
         request.HTTPBody = body;
     }
     [NSURLProtocol setProperty:@YES forKey:kGHGitHubPostProtocolHandledKey inRequest:request];
-    NSMutableDictionary *headers = [request.allHTTPHeaderFields mutableCopy];
-    if (headers[@"Cookie"]) headers[@"Cookie"] = [NSString stringWithFormat:@"<%lu chars>", (unsigned long)[headers[@"Cookie"] length]];
-    GHWebLoginDiag(@"proto POST %@ headers=%@ body=%@ cookies=%@", request.URL, headers,
-                   GHWebLoginBodySummary(request.HTTPBody), GHWebLoginCookieNames());
     self.connection = [NSURLConnection connectionWithRequest:request delegate:self];
 }
 
@@ -343,9 +293,6 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
 
 - (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)response {
     if (!response) return request;
-    GHWebLoginDiag(@"proto redirect %ld -> %@ cookies=%@",
-                   (long)([response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 0),
-                   request.URL, GHWebLoginCookieNames());
     NSMutableURLRequest *redirect = [request mutableCopy];
     [NSURLProtocol removePropertyForKey:kGHGitHubPostProtocolHandledKey inRequest:redirect];
     [self.client URLProtocol:self wasRedirectedToRequest:redirect redirectResponse:response];
@@ -355,8 +302,6 @@ static BOOL GHWebLoginNeedsPostOriginFix(void) {
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
-    GHWebLoginDiag(@"proto response %ld %@",
-                   (long)([response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 0), response.URL);
     [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
 }
 
@@ -513,8 +458,6 @@ static UIView *GHWebLoginMakeCard(void) {
     if (self.title.length == 0) self.title = GHL(@"Вход в GitHub");
     if (self.prefersGoogle) [NSURLProtocol registerClass:[GHGoogleUserAgentProtocol class]];
     if (GHWebLoginNeedsPostOriginFix()) [NSURLProtocol registerClass:[GHGitHubPostProtocol class]];
-    GHWebLoginDiag(@"open iOS %@ postFix=%d google=%d", [UIDevice currentDevice].systemVersion,
-                   GHWebLoginNeedsPostOriginFix(), self.prefersGoogle);
 
     self.webView = [[UIWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -1332,9 +1275,6 @@ static UIView *GHWebLoginMakeCard(void) {
 
     NSString *path = GHWebLoginString(page[@"path"]);
     NSArray *errors = [page[@"errors"] isKindOfClass:[NSArray class]] ? page[@"errors"] : @[];
-    GHWebLoginDiag(@"page %@ errors=%@ notices=%@ forms=%lu", path, [errors componentsJoinedByString:@" | "],
-                   [page[@"notices"] isKindOfClass:[NSArray class]] ? [page[@"notices"] componentsJoinedByString:@" | "] : @"",
-                   (unsigned long)[page[@"forms"] count]);
     NSString *error = errors.count > 0 ? [errors componentsJoinedByString:@"\n"] : nil;
     BOOL deviceMode = self.deviceUserCode.length > 0;
 
@@ -1729,8 +1669,6 @@ static UIView *GHWebLoginMakeCard(void) {
 - (void)submitFormWithValues:(NSDictionary *)values loadingMessage:(NSString *)message {
     NSString *script = [NSString stringWithFormat:kGHWebLoginSubmitScript,
                         (long)self.formIndex, GHWebLoginJSON(values ?: @{}) ?: @"{}", (long)self.buttonIndex];
-    GHWebLoginDiag(@"submit form %ld fields=%@ button=%ld", (long)self.formIndex,
-                   [[values allKeys] componentsJoinedByString:@","], (long)self.buttonIndex);
     [self showLoadingWithMessage:message];
     if (![[self.webView stringByEvaluatingJavaScriptFromString:script] isEqualToString:@"ok"]) [self.webView reload];
 }
@@ -1969,8 +1907,6 @@ static UIView *GHWebLoginMakeCard(void) {
     shouldStartLoadWithRequest:(NSURLRequest *)request
                 navigationType:(UIWebViewNavigationType)navigationType {
     if (self.finished) return NO;
-    GHWebLoginDiag(@"load %@ %@ nav=%ld main=%d", request.HTTPMethod, request.URL, (long)navigationType,
-                   request.URL != nil && [request.mainDocumentURL isEqual:request.URL]);
     if (request.URL == nil || ![request.mainDocumentURL isEqual:request.URL]) return YES;
     return ![self finishIfSignedInAtURL:request.URL];
 }
@@ -1982,15 +1918,12 @@ static UIView *GHWebLoginMakeCard(void) {
 - (void)webViewDidFinishLoad:(UIWebView *)webView {
     if (webView.isLoading) return;
     [self.spinner stopAnimating];
-    GHWebLoginDiag(@"finished %@ cookies=%@ ua=%@", webView.request.URL, GHWebLoginCookieNames(),
-                   [webView stringByEvaluatingJavaScriptFromString:@"navigator.userAgent"]);
     if ([self finishIfSignedInAtURL:webView.request.URL]) return;
     [self analyzePage];
 }
 
 - (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error {
     if (!webView.isLoading) [self.spinner stopAnimating];
-    GHWebLoginDiag(@"failed %@ %ld %@", error.domain, (long)error.code, error.localizedDescription);
     if (self.finished) return;
     if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) return;
     if ([error.domain isEqualToString:@"WebKitErrorDomain"] && error.code == 102) return;
