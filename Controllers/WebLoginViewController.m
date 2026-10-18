@@ -1,4 +1,5 @@
 #import "WebLoginViewController.h"
+#import "GHJSONSerialization.h"
 #import <QuartzCore/QuartzCore.h>
 #import "GHWebSession.h"
 #import "GHThemeManager.h"
@@ -240,7 +241,7 @@ static const NSInteger kGHWebLoginRowChevronTag = 1004;
 static const NSInteger kGHWebLoginRowSeparatorTag = 1005;
 
 static NSString *GHWebLoginJSON(id object) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
+    NSData *data = [GHJSONSerialization dataWithJSONObject:object options:0 error:nil];
     return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
 }
 
@@ -1180,7 +1181,7 @@ static UIView *GHWebLoginMakeCard(void) {
 
 - (void)analyzePage {
     NSString *json = [self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginAnalyzeScript];
-    NSDictionary *page = json.length > 0 ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    NSDictionary *page = json.length > 0 ? [GHJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     if (![page isKindOfClass:[NSDictionary class]]) {
         [self showPage];
         return;
@@ -1474,7 +1475,7 @@ static UIView *GHWebLoginMakeCard(void) {
 
 - (void)presentGooglePageAllowingGitHub:(BOOL)allowGitHub {
     NSString *json = [self.webView stringByEvaluatingJavaScriptFromString:kGHWebLoginGoogleAnalyzeScript];
-    NSDictionary *page = json.length > 0 ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    NSDictionary *page = json.length > 0 ? [GHJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     if (![page isKindOfClass:[NSDictionary class]]) return;
     if (!allowGitHub && [[GHWebLoginString(page[@"host"]) lowercaseString] isEqualToString:@"github.com"]) return;
     if ([GHWebLoginString(page[@"ready"]) isEqualToString:@"loading"]) return;
@@ -1738,7 +1739,7 @@ static UIView *GHWebLoginMakeCard(void) {
     NSRange space = [result rangeOfString:@" "];
     NSInteger httpStatus = [(space.location != NSNotFound ? [result substringToIndex:space.location] : result) integerValue];
     NSString *body = space.location != NSNotFound ? [result substringFromIndex:space.location + 1] : @"";
-    id json = body.length > 0 ? [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    id json = body.length > 0 ? [GHJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
     NSString *status = [([json isKindOfClass:[NSDictionary class]] ? GHWebLoginString(json[@"status"]) : body) lowercaseString];
 
     if ([status rangeOfString:@"approved"].location != NSNotFound && [status rangeOfString:@"not_approved"].location == NSNotFound) {

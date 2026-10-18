@@ -1,4 +1,5 @@
 #import "RepoOverviewViewController.h"
+#import "GHJSONSerialization.h"
 #import "GHCompat.h"
 #import "GHLegacyRefreshControl.h"
 #import "RepoDetailViewController.h"
@@ -291,7 +292,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
                                                                withTemplate:[NSString stringWithFormat:@"$1%@$2", escaped]];
     }
     if (self.readmeWebView) {
-        NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@[label] options:0 error:nil]
+        NSString *json = [[NSString alloc] initWithData:[GHJSONSerialization dataWithJSONObject:@[label] options:0 error:nil]
                                                encoding:NSUTF8StringEncoding];
         [self.readmeWebView stringByEvaluatingJavaScriptFromString:
             [NSString stringWithFormat:@"(function(t){var a=document.querySelector('a.show-more');if(a&&a.firstChild)a.firstChild.nodeValue=t;})(%@[0])", json]];

@@ -1,4 +1,5 @@
 #import "ReadmeViewController.h"
+#import "GHJSONSerialization.h"
 #import "AppDelegate.h"
 #import "GHThemeManager.h"
 #import "GHIconRenderer.h"
@@ -294,7 +295,7 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
 
 - (void)runFind {
     NSString *query = self.findField.text ?: @"";
-    NSData *data = [NSJSONSerialization dataWithJSONObject:@[query] options:0 error:nil];
+    NSData *data = [GHJSONSerialization dataWithJSONObject:@[query] options:0 error:nil];
     NSString *json = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"[\"\"]";
     NSInteger count = [[self.webView stringByEvaluatingJavaScriptFromString:[NSString stringWithFormat:kGHFindScript, json]] integerValue];
     if (query.length == 0) {

@@ -1,4 +1,5 @@
 #import "GHAttachmentUploader.h"
+#import "GHJSONSerialization.h"
 #import "GHWebSession.h"
 #import "GHLocalization.h"
 
@@ -66,7 +67,7 @@ static NSString *GHAttachmentUploadToken(NSString *html) {
     NSString *quoted = GHAttachmentFirstMatch(@"\"uploadToken\"\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\")", html, 1);
     if (quoted.length > 0) {
         NSData *json = [[NSString stringWithFormat:@"[%@]", quoted] dataUsingEncoding:NSUTF8StringEncoding];
-        NSArray *decoded = [NSJSONSerialization JSONObjectWithData:json options:0 error:nil];
+        NSArray *decoded = [GHJSONSerialization JSONObjectWithData:json options:0 error:nil];
         NSString *token = [decoded isKindOfClass:[NSArray class]] && decoded.count > 0 ? GHAttachmentString(decoded[0]) : nil;
         if (token.length > 0) return token;
     }
@@ -81,7 +82,7 @@ static NSString *GHAttachmentUploadToken(NSString *html) {
 }
 
 static NSString *GHAttachmentServerMessage(NSData *data) {
-    id json = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    id json = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     if (![json isKindOfClass:[NSDictionary class]]) return nil;
     NSMutableArray *messages = [NSMutableArray array];
     id errors = json[@"errors"];
@@ -245,7 +246,7 @@ static NSString *GHAttachmentServerMessage(NSData *data) {
 }
 
 - (void)handlePolicyResponse {
-    id json = self.responseData.length > 0 ? [NSJSONSerialization JSONObjectWithData:self.responseData options:0 error:nil] : nil;
+    id json = self.responseData.length > 0 ? [GHJSONSerialization JSONObjectWithData:self.responseData options:0 error:nil] : nil;
     NSDictionary *policy = [json isKindOfClass:[NSDictionary class]] ? json : nil;
     NSURL *uploadURL = [self gitHubURLForString:GHAttachmentString(policy[@"upload_url"])];
     NSDictionary *form = [policy[@"form"] isKindOfClass:[NSDictionary class]] ? policy[@"form"] : nil;
@@ -314,7 +315,7 @@ static NSString *GHAttachmentServerMessage(NSData *data) {
                                ?: [NSString stringWithFormat:GHL(@"github.com не подтвердил загруженный файл (HTTP %ld)."), (long)self.response.statusCode]];
         return;
     }
-    id json = self.responseData.length > 0 ? [NSJSONSerialization JSONObjectWithData:self.responseData options:0 error:nil] : nil;
+    id json = self.responseData.length > 0 ? [GHJSONSerialization JSONObjectWithData:self.responseData options:0 error:nil] : nil;
     [self finishWithAssetURL:[json isKindOfClass:[NSDictionary class]] ? GHAttachmentString(json[@"href"]) : nil];
 }
 

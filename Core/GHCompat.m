@@ -60,7 +60,7 @@ NSString *GHFontAttributeName(void) {
     static NSString *name = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        name = GHStringConstant("NSFontAttributeName") ?: UITextAttributeFont;
+        name = GHStringConstant("NSFontAttributeName") ?: GHStringConstant("UITextAttributeFont") ?: @"UITextAttributeFont";
     });
     return name;
 }
@@ -69,7 +69,7 @@ NSString *GHForegroundColorAttributeName(void) {
     static NSString *name = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        name = GHStringConstant("NSForegroundColorAttributeName") ?: UITextAttributeTextColor;
+        name = GHStringConstant("NSForegroundColorAttributeName") ?: GHStringConstant("UITextAttributeTextColor") ?: @"UITextAttributeTextColor";
     });
     return name;
 }

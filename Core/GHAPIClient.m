@@ -1,4 +1,5 @@
 #import "GHAPIClient.h"
+#import "GHJSONSerialization.h"
 #import "GHAuthManager.h"
 #import "GHLocalization.h"
 
@@ -46,7 +47,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         if (httpResponse.statusCode >= 400) {
 
             NSString *githubMessage = nil;
-            id errorJSON = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            id errorJSON = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
             if ([errorJSON isKindOfClass:[NSDictionary class]]) {
                 id msg = errorJSON[@"message"];
                 if ([msg isKindOfClass:[NSString class]]) githubMessage = msg;
@@ -68,7 +69,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         }
 
         NSError *jsonError = nil;
-        id jsonObject = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
+        id jsonObject = [GHJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
 
         if (completion) completion(jsonObject, jsonError);
     }];
@@ -172,7 +173,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
 - (NSError *)errorForHTTPResponse:(NSHTTPURLResponse *)httpResponse data:(NSData *)data {
     NSString *githubMessage = nil;
     NSMutableArray *details = [NSMutableArray array];
-    id errorJSON = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    id errorJSON = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     if ([errorJSON isKindOfClass:[NSDictionary class]]) {
         id msg = errorJSON[@"message"];
         if ([msg isKindOfClass:[NSString class]]) githubMessage = msg;
@@ -244,7 +245,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [request setTimeoutInterval:30.0];
 
     NSError *encodeError = nil;
-    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:parameters ?: @{} options:0 error:&encodeError];
+    NSData *bodyData = [GHJSONSerialization dataWithJSONObject:parameters ?: @{} options:0 error:&encodeError];
     if (encodeError) {
         if (completion) completion(nil, encodeError);
         return;
@@ -264,7 +265,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
             return;
         }
         NSError *jsonError = nil;
-        id jsonObject = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
+        id jsonObject = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
         if (completion) completion(jsonObject, jsonError);
     }];
 }
@@ -406,7 +407,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
 
         NSString *message = nil;
         if (data.length > 0) {
-            id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            id json = [GHJSONSerialization JSONObjectWithData:data options:0 error:nil];
             if ([json isKindOfClass:[NSDictionary class]]) {
                 id msg = json[@"message"];
                 if ([msg isKindOfClass:[NSString class]]) message = msg;
@@ -452,7 +453,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [request setTimeoutInterval:15.0];
 
     NSError *encodeError = nil;
-    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:@{@"query": query ?: @""} options:0 error:&encodeError];
+    NSData *bodyData = [GHJSONSerialization dataWithJSONObject:@{@"query": query ?: @""} options:0 error:&encodeError];
     if (encodeError) {
         if (completion) completion(nil, encodeError);
         return;
@@ -468,7 +469,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         }
 
         NSError *jsonError = nil;
-        id jsonObject = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
+        id jsonObject = [GHJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
 
         if (!jsonError && [jsonObject isKindOfClass:[NSDictionary class]] && jsonObject[@"errors"]) {
             NSArray *errors = [jsonObject[@"errors"] isKindOfClass:[NSArray class]] ? jsonObject[@"errors"] : @[];
@@ -522,7 +523,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
     [request setTimeoutInterval:15.0];
 
-    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:@{@"content": content ?: @""} options:0 error:nil];
+    NSData *bodyData = [GHJSONSerialization dataWithJSONObject:@{@"content": content ?: @""} options:0 error:nil];
     request.HTTPBody = bodyData;
 
     [NSURLConnection sendAsynchronousRequest:request
@@ -537,7 +538,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         if (httpResponse.statusCode >= 400) {
 
             NSString *githubMessage = nil;
-            id errorJSON = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            id errorJSON = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
             if ([errorJSON isKindOfClass:[NSDictionary class]]) {
                 id msg = errorJSON[@"message"];
                 if ([msg isKindOfClass:[NSString class]]) githubMessage = msg;
@@ -552,7 +553,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
             return;
         }
 
-        id jsonObject = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        id jsonObject = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         if (completion) completion(jsonObject, nil);
     }];
 }

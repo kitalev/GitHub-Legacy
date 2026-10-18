@@ -102,6 +102,11 @@ NSString * const kGHOpenReadmeStateKey = @"GHOpenReadmeState";
     return YES;
 }
 
+- (BOOL)application:(UIApplication *)application handleOpenURL:(NSURL *)url {
+    [self routeAppURL:url];
+    return YES;
+}
+
 - (void)routeAppURL:(NSURL *)url {
     if (url.isFileURL) {
         [NewIssueViewController receiveIncomingFileAtPath:url.path];

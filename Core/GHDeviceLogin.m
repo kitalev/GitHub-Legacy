@@ -1,4 +1,5 @@
 #import "GHDeviceLogin.h"
+#import "GHJSONSerialization.h"
 
 static NSString * const kGHDeviceLoginBuiltInClientID = @"Ov23liJ5Mma9pneXgbT1";
 
@@ -66,7 +67,7 @@ static NSString * const kGHAccessTokenURL = @"https://github.com/login/oauth/acc
             return;
         }
 
-        id json = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        id json = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         NSDictionary *dict = [json isKindOfClass:[NSDictionary class]] ? json : nil;
 
         NSString *deviceCode = [dict[@"device_code"] isKindOfClass:[NSString class]] ? dict[@"device_code"] : nil;
@@ -112,7 +113,7 @@ static NSString * const kGHAccessTokenURL = @"https://github.com/login/oauth/acc
             return;
         }
 
-        id json = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        id json = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         NSDictionary *dict = [json isKindOfClass:[NSDictionary class]] ? json : nil;
 
         NSString *accessToken = [dict[@"access_token"] isKindOfClass:[NSString class]] ? dict[@"access_token"] : nil;

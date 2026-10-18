@@ -6,7 +6,8 @@ else
 ARCHS = armv7 arm64
 GitHubLegacySafariRedirect_ARCHS = armv7 arm64 arm64e
 endif
-TARGET = iphone:clang:9.3:5.0
+TARGET = iphone:clang:9.3:4.0
+LEGACY_ARCH_TARGET = $(if $(filter arm64 arm64e,$(THEOS_CURRENT_ARCH)),-target $(THEOS_CURRENT_ARCH)-apple-ios5.0)
 
 include $(THEOS)/makefiles/common.mk
 
@@ -58,6 +59,9 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Core/GHCompat.m \
 	Core/GHLegacyRefreshControl.m \
 	Core/GHFoundationCompat.m \
+	Core/GHARCLite.m \
+	Core/GHLegacyPolyfills.m \
+	Core/GHJSONSerialization.m \
 	Core/GHURLRouter.m \
 	Controllers/ProfileRepoListViewController.m \
 	Controllers/GHUserListViewController.m \
@@ -73,7 +77,10 @@ GitHubLegacy_FILES = main.m AppDelegate.m \
 	Controllers/LanguageViewController.m
 
 GitHubLegacy_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore
-GitHubLegacy_CFLAGS = -fobjc-arc -Iinclude -IControllers -ICells -ICore
+GitHubLegacy_CFLAGS = -fobjc-arc -fobjc-runtime=ios-5.0 -Iinclude -IControllers -ICells -ICore $(LEGACY_ARCH_TARGET)
+GitHubLegacy_LDFLAGS = $(LEGACY_ARCH_TARGET)
+Core/GHARCLite.m_CFLAGS = -fno-objc-arc
+Core/GHLegacyPolyfills.m_CFLAGS = -fno-objc-arc
 ifneq ($(PACKAGE_FORMAT),ipa)
 GitHubLegacy_CODESIGN_FLAGS = -Sentitlements.plist
 endif
@@ -82,9 +89,10 @@ include $(THEOS_MAKE_PATH)/application.mk
 
 
 TWEAK_NAME = GitHubLegacySafariRedirect
-GitHubLegacySafariRedirect_FILES = Tweak/Tweak.xm
+GitHubLegacySafariRedirect_FILES = Tweak/Tweak.xm Core/GHARCLite.m
 GitHubLegacySafariRedirect_FRAMEWORKS = UIKit
-GitHubLegacySafariRedirect_CFLAGS = -fobjc-arc
+GitHubLegacySafariRedirect_CFLAGS = -fobjc-arc -fobjc-runtime=ios-5.0 $(LEGACY_ARCH_TARGET)
+GitHubLegacySafariRedirect_LDFLAGS = $(LEGACY_ARCH_TARGET)
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-install::
