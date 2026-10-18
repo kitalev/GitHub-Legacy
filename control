@@ -6,5 +6,6 @@ Description: A lightweight GitHub client for iOS 4+ devices - browse repositorie
 Maintainer: kitalev
 Author: kitalev
 Section: Applications
-Depends: firmware (>= 4.0), mobilesubstrate
+Depends: firmware (>= 4.0)
+Recommends: mobilesubstrate
 Icon: file:///Applications/GitHubLegacy.app/Icon-72@2x.png
