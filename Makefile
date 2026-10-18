@@ -4,7 +4,7 @@ ARCHS = arm64
 GitHubLegacySafariRedirect_ARCHS = arm64 arm64e
 else
 ARCHS = armv6 armv7 arm64
-GitHubLegacySafariRedirect_ARCHS = armv6 armv7 arm64 arm64e
+GitHubLegacySafariRedirect_ARCHS = armv7 arm64 arm64e
 endif
 TARGET = iphone:clang:9.3:4.0
 THEOS_PLATFORM_DEB_COMPRESSION_TYPE = gzip
