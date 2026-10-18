@@ -7,6 +7,8 @@ ARCHS = armv6 armv7 arm64
 GitHubLegacySafariRedirect_ARCHS = armv6 armv7 arm64 arm64e
 endif
 TARGET = iphone:clang:9.3:4.0
+THEOS_PLATFORM_DEB_COMPRESSION_TYPE = gzip
+THEOS_PLATFORM_DEB_COMPRESSION_LEVEL = 6
 
 ARMV6_SDK = $(CURDIR)/.theos/armv6/iPhoneOS9.3.sdk
 ifneq ($(filter armv6,$(ARCHS)),)

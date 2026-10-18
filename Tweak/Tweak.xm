@@ -118,6 +118,14 @@ static BOOL GHUsesModernNavigationDelegate(void) {
     %orig;
 }
 
+%end
+
+%end
+
+%group GHRedirectHooksLoadURL
+
+%hook TabDocument
+
 - (void)loadURL:(id)url userDriven:(BOOL)userDriven {
     if (GHIsGitHubURL(url) && !gGHKeyboardVisible && GHRedirectEnabled()) {
         GHMarkHandedOff(self, url);
@@ -258,22 +266,30 @@ static BOOL GHUsesModernNavigationDelegate(void) {
 
 %ctor {
     GHStartObservingKeyboard();
+    Class tabDocumentClass = objc_getClass("TabDocument");
+    if (tabDocumentClass == Nil) return;
+
     if (GHUsesModernNavigationDelegate()) {
-        %init(GHRedirectHooksModern);
+        if (class_getInstanceMethod(tabDocumentClass, @selector(webView:decidePolicyForNavigationAction:decisionHandler:)) != NULL) {
+            %init(GHRedirectHooksModern);
+        }
     } else {
-        %init(GHRedirectHooksLegacy);
+        if (class_getInstanceMethod(tabDocumentClass, @selector(webView:decidePolicyForNavigationAction:request:frame:decisionListener:)) != NULL) {
+            %init(GHRedirectHooksLegacy);
+        }
+        if (class_getInstanceMethod(tabDocumentClass, @selector(loadURL:userDriven:)) != NULL) {
+            %init(GHRedirectHooksLoadURL);
+        }
     }
 
-    Class tabDocumentClass = objc_getClass("TabDocument");
-    if (tabDocumentClass != Nil
-        && class_getInstanceMethod(tabDocumentClass, @selector(webView:decidePolicyForNavigationAction:preferences:decisionHandler:)) != NULL) {
+    if (class_getInstanceMethod(tabDocumentClass, @selector(webView:decidePolicyForNavigationAction:preferences:decisionHandler:)) != NULL) {
         %init(GHRedirectHooksPreferences);
     }
-    if (tabDocumentClass != Nil && GHUsesModernNavigationDelegate()
+    if (GHUsesModernNavigationDelegate()
         && class_getInstanceMethod(tabDocumentClass, @selector(webView:didStartProvisionalNavigation:)) != NULL) {
         %init(GHRedirectHooksProvisional);
     }
-    if (tabDocumentClass != Nil && class_getInstanceMethod(tabDocumentClass, @selector(becameActive)) != NULL) {
+    if (class_getInstanceMethod(tabDocumentClass, @selector(becameActive)) != NULL) {
         %init(GHRedirectHooksActivation);
     }
 }

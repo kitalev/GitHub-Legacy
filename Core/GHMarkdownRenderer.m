@@ -1331,7 +1331,9 @@ static const NSUInteger kStackTableColumnThreshold = 3;
 + (NSString *)themeToggleScriptForDarkModeEnabled:(BOOL)darkModeEnabled {
     return [NSString stringWithFormat:
         @"(function(){var s=document.getElementById('gh-dark-style');"
-        "if(s){s.disabled=%@;}})();",
+        "if(s){s.setAttribute('media','%@');s.disabled=%@;if(s.sheet){s.sheet.disabled=%@;}}})();",
+        darkModeEnabled ? @"all" : @"print",
+        darkModeEnabled ? @"false" : @"true",
         darkModeEnabled ? @"false" : @"true"];
 }
 

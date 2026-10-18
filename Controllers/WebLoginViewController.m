@@ -234,6 +234,87 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 
 @end
 
+static NSString * const kGHGitHubPostProtocolHandledKey = @"GHGitHubPostHandled";
+
+static BOOL GHWebLoginNeedsPostOriginFix(void) {
+    return NSClassFromString(@"NSJSONSerialization") == Nil;
+}
+
+@interface GHGitHubPostProtocol : NSURLProtocol
+@property (nonatomic, strong) NSURLConnection *connection;
+@end
+
+@implementation GHGitHubPostProtocol
+
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    if (![[request.HTTPMethod uppercaseString] isEqualToString:@"POST"]) return NO;
+    if (![[request.URL.scheme lowercaseString] isEqualToString:@"https"]) return NO;
+    if ([NSURLProtocol propertyForKey:kGHGitHubPostProtocolHandledKey inRequest:request]) return NO;
+    NSString *host = [request.URL.host lowercaseString];
+    return [host isEqualToString:@"github.com"];
+}
+
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
+    return request;
+}
+
+- (void)startLoading {
+    NSMutableURLRequest *request = [self.request mutableCopy];
+    [request setValue:@"https://github.com" forHTTPHeaderField:@"Origin"];
+    NSString *referer = [request valueForHTTPHeaderField:@"Referer"];
+    if (referer.length == 0 || ![[[NSURL URLWithString:referer].host lowercaseString] isEqualToString:@"github.com"]) {
+        [request setValue:@"https://github.com/login" forHTTPHeaderField:@"Referer"];
+    }
+    if (request.HTTPBody == nil && request.HTTPBodyStream != nil && [request valueForHTTPHeaderField:@"Content-Length"].length == 0) {
+        NSInputStream *stream = request.HTTPBodyStream;
+        NSMutableData *body = [NSMutableData data];
+        uint8_t buffer[4096];
+        [stream open];
+        NSInteger read;
+        while ((read = [stream read:buffer maxLength:sizeof(buffer)]) > 0) {
+            [body appendBytes:buffer length:(NSUInteger)read];
+        }
+        [stream close];
+        request.HTTPBodyStream = nil;
+        request.HTTPBody = body;
+    }
+    [NSURLProtocol setProperty:@YES forKey:kGHGitHubPostProtocolHandledKey inRequest:request];
+    self.connection = [NSURLConnection connectionWithRequest:request delegate:self];
+}
+
+- (void)stopLoading {
+    [self.connection cancel];
+    self.connection = nil;
+}
+
+- (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)response {
+    if (!response) return request;
+    NSMutableURLRequest *redirect = [request mutableCopy];
+    [NSURLProtocol removePropertyForKey:kGHGitHubPostProtocolHandledKey inRequest:redirect];
+    [self.client URLProtocol:self wasRedirectedToRequest:redirect redirectResponse:response];
+    [connection cancel];
+    [self.client URLProtocol:self didFailWithError:[NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil]];
+    return nil;
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data {
+    [self.client URLProtocol:self didLoadData:data];
+}
+
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection {
+    [self.client URLProtocolDidFinishLoading:self];
+}
+
+- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error {
+    [self.client URLProtocol:self didFailWithError:error];
+}
+
+@end
+
 static const NSInteger kGHWebLoginRowIconTag = 1001;
 static const NSInteger kGHWebLoginRowTitleTag = 1002;
 static const NSInteger kGHWebLoginRowSubtitleTag = 1003;
@@ -372,6 +453,7 @@ static UIView *GHWebLoginMakeCard(void) {
     [super viewDidLoad];
     if (self.title.length == 0) self.title = GHL(@"Вход в GitHub");
     if (self.prefersGoogle) [NSURLProtocol registerClass:[GHGoogleUserAgentProtocol class]];
+    if (GHWebLoginNeedsPostOriginFix()) [NSURLProtocol registerClass:[GHGitHubPostProtocol class]];
 
     self.webView = [[UIWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -1859,6 +1941,7 @@ static UIView *GHWebLoginMakeCard(void) {
         [self.googlePollTimer invalidate];
         self.googlePollTimer = nil;
         if (self.prefersGoogle) [NSURLProtocol unregisterClass:[GHGoogleUserAgentProtocol class]];
+        [NSURLProtocol unregisterClass:[GHGitHubPostProtocol class]];
     }
 }
 
@@ -1867,6 +1950,7 @@ static UIView *GHWebLoginMakeCard(void) {
     [self.pollTimer invalidate];
     [self.googlePollTimer invalidate];
     if (self.prefersGoogle) [NSURLProtocol unregisterClass:[GHGoogleUserAgentProtocol class]];
+    [NSURLProtocol unregisterClass:[GHGitHubPostProtocol class]];
     self.webView.delegate = nil;
     [self.webView stopLoading];
 }
