@@ -140,6 +140,10 @@ typedef void (^GHTextCompletionBlock)(NSString *text, NSError *error);
                           page:(NSInteger)page
                     completion:(GHJSONCompletionBlock)completion;
 
+- (void)latestPullRequestForOwner:(NSString *)owner
+                              repo:(NSString *)repo
+                        completion:(GHJSONCompletionBlock)completion;
+
 - (void)pullRequestForOwner:(NSString *)owner
                         repo:(NSString *)repo
                       number:(NSInteger)number

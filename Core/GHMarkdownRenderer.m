@@ -441,6 +441,18 @@ static const NSUInteger kStackTableColumnThreshold = 3;
         }];
     step(@"2-инлайн-код");
 
+    static NSRegularExpression *styleAttributeRegex = nil;
+    static dispatch_once_t styleOnceToken;
+    dispatch_once(&styleOnceToken, ^{
+        styleAttributeRegex = [NSRegularExpression regularExpressionWithPattern:@"(<[a-zA-Z][^<>]*?)\\s+style\\s*=\\s*(\"[^\"]*\"|'[^']*')"
+                                                                         options:NSRegularExpressionCaseInsensitive
+                                                                           error:nil];
+    });
+    text = [styleAttributeRegex stringByReplacingMatchesInString:text
+                                                         options:0
+                                                           range:NSMakeRange(0, text.length)
+                                                    withTemplate:@"$1"];
+
     NSMutableDictionary *linkDefinitions = [NSMutableDictionary dictionary];
     text = [self replaceMatchesInString:text
         pattern:@"^\\[([^\\]]+)\\]:\\s*(\\S+).*$"
@@ -871,8 +883,8 @@ static const NSUInteger kStackTableColumnThreshold = 3;
         }
 
         if (replacement.length == 0) continue;
-        [result replaceOccurrencesOfString:urlString
-                                 withString:replacement
+        [result replaceOccurrencesOfString:[NSString stringWithFormat:@"src=\"%@\"", urlString]
+                                 withString:[NSString stringWithFormat:@"src=\"%@\"", replacement]
                                     options:0
                                       range:NSMakeRange(0, result.length)];
     }
@@ -1088,6 +1100,49 @@ static const NSUInteger kStackTableColumnThreshold = 3;
                                    options:0
                                      range:NSMakeRange(0, result.length)];
     }
+    return result;
+}
+
++ (NSString *)downscaleRemoteImagesInHTML:(NSString *)html {
+    if (html.length == 0) return html ?: @"";
+
+    static NSRegularExpression *imgSrcRegex = nil;
+    static dispatch_once_t imgOnceToken;
+    dispatch_once(&imgOnceToken, ^{
+        imgSrcRegex = [NSRegularExpression regularExpressionWithPattern:@"(<img\\b[^>]*?\\bsrc=\")(https?://[^\"]+)(\")"
+                                                                 options:NSRegularExpressionCaseInsensitive
+                                                                   error:nil];
+    });
+    if (!imgSrcRegex) return html;
+
+    NSArray *skippedHosts = @[@"wsrv.nl", @"weserv.nl", @"avatars.githubusercontent.com", @"shields.io",
+                              @"badgen.net", @"deepwiki.com", @"starchart.cc", @"jsdelivr.com"];
+
+    NSMutableString *result = [NSMutableString stringWithCapacity:html.length];
+    __block NSUInteger lastLocation = 0;
+    [imgSrcRegex enumerateMatchesInString:html options:0 range:NSMakeRange(0, html.length)
+                               usingBlock:^(NSTextCheckingResult *match, NSMatchingFlags flags, BOOL *stop) {
+        NSString *urlString = [html substringWithRange:[match rangeAtIndex:2]];
+        NSString *decoded = [urlString stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
+        NSURL *url = [NSURL URLWithString:decoded];
+        NSString *host = url.host.lowercaseString ?: @"";
+        NSString *path = url.path.lowercaseString ?: @"";
+
+        BOOL skip = url == nil || [path hasSuffix:@".svg"];
+        for (NSString *skippedHost in skippedHosts) {
+            if ([host hasSuffix:skippedHost]) skip = YES;
+        }
+        if ([host isEqualToString:@"github.com"] && [path hasSuffix:@".png"] && [url.query rangeOfString:@"size="].location != NSNotFound) skip = YES;
+
+        NSString *proxied = skip ? nil : [self proxiedImageURLStringForURLString:decoded];
+        if (proxied.length == 0) return;
+
+        [result appendString:[html substringWithRange:NSMakeRange(lastLocation, [match rangeAtIndex:2].location - lastLocation)]];
+        [result appendString:[self escapeHTMLAttribute:proxied]];
+        lastLocation = NSMaxRange([match rangeAtIndex:2]);
+    }];
+    if (lastLocation == 0) return html;
+    [result appendString:[html substringFromIndex:lastLocation]];
     return result;
 }
 

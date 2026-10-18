@@ -195,7 +195,7 @@
     if (badge.length > 0) [html appendFormat:@"<br/><span class=\"gh-badge\">%@</span>", [self escape:badge]];
     [html appendString:@"</div></div><div class=\"gh-post-body\">"];
     if (body.length > 0) {
-        [html appendString:[GHMarkdownRenderer bodyHTMLFromMarkdown:body repoOwner:self.ownerLogin repoName:self.repoName]];
+        [html appendString:[GHMarkdownRenderer downscaleRemoteImagesInHTML:[GHMarkdownRenderer bodyHTMLFromMarkdown:body repoOwner:self.ownerLogin repoName:self.repoName]]];
     } else {
         [html appendFormat:@"<p class=\"gh-empty\">%@</p>", [self escape:GHL(@"Описание не добавлено.")]];
     }
@@ -373,7 +373,7 @@
             [self eventHTMLWithGlyph:glyph glyphColor:color glyphBackground:background actor:actor textHTML:text createdAt:submittedAt]];
         if (body.length > 0) {
             [html appendFormat:@"<div class=\"gh-review-body\">%@</div>",
-                [GHMarkdownRenderer bodyHTMLFromMarkdown:body repoOwner:self.ownerLogin repoName:self.repoName]];
+                [GHMarkdownRenderer downscaleRemoteImagesInHTML:[GHMarkdownRenderer bodyHTMLFromMarkdown:body repoOwner:self.ownerLogin repoName:self.repoName]]];
         }
         return html;
     }

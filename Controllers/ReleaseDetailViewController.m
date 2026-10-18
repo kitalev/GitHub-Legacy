@@ -346,7 +346,7 @@ static const CGFloat kNotesVerticalPadding = 10.0;
         NSString *previewMarkdown = needsClip
             ? [self safeMarkdownPrefixOfString:body maxLength:kNotesPreviewClipThreshold]
             : body;
-        NSString *previewBodyHTML = [GHMarkdownRenderer bodyHTMLFromMarkdown:previewMarkdown];
+        NSString *previewBodyHTML = [GHMarkdownRenderer downscaleRemoteImagesInHTML:[GHMarkdownRenderer bodyHTMLFromMarkdown:previewMarkdown]];
         if (needsClip) {
 
             previewBodyHTML = [GHMarkdownRenderer autoCloseUnclosedTagsInHTML:previewBodyHTML];
@@ -380,7 +380,7 @@ static const CGFloat kNotesVerticalPadding = 10.0;
 
         if (!needsClip) return;
 
-        NSString *fullBodyHTML = [GHMarkdownRenderer bodyHTMLFromMarkdown:body];
+        NSString *fullBodyHTML = [GHMarkdownRenderer downscaleRemoteImagesInHTML:[GHMarkdownRenderer bodyHTMLFromMarkdown:body]];
         NSString *fullHTML = [GHMarkdownRenderer htmlDocumentWrappingBody:fullBodyHTML];
 
         dispatch_async(dispatch_get_main_queue(), ^{

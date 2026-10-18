@@ -425,6 +425,11 @@ static NSDictionary *GHTranslations(void) {
             @"Сначала новые": @"Newest first",
 
             @"Папка пуста": @"This folder is empty",
+            @"Двоичный файл": @"Binary file",
+            @"Файл слишком большой для просмотра": @"File is too large to display",
+            @"Этот файл нельзя показать как текст.": @"This file can't be displayed as text.",
+            @"Открыть raw": @"View raw",
+            @"Б": @"B",
             @"🖼 Открыть изображение": @"🖼 Open Image",
 
             @"У репозитория пока нет форков": @"This repository doesn't have any forks yet",

@@ -326,6 +326,11 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     [self getJSONFromPath:path completion:completion];
 }
 
+- (void)latestPullRequestForOwner:(NSString *)owner repo:(NSString *)repo completion:(GHJSONCompletionBlock)completion {
+    NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/pulls?state=all&per_page=1", owner, repo];
+    [self getJSONFromPath:path completion:completion];
+}
+
 - (void)pullRequestForOwner:(NSString *)owner repo:(NSString *)repo number:(NSInteger)number completion:(GHJSONCompletionBlock)completion {
     NSString *path = [NSString stringWithFormat:@"/repos/%@/%@/pulls/%ld", owner, repo, (long)number];
     [self getJSONFromPath:path completion:completion];

@@ -92,11 +92,13 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
 
 @property (nonatomic, copy) NSString *readmeInlineBodyHTML;
 @property (nonatomic, assign) CGFloat readmeRenderedWidth;
+@property (nonatomic, assign) CGFloat readmeLayoutTableWidth;
 
 @property (nonatomic, assign) BOOL readmeWebViewUnloadedForBackground;
 
 @property (nonatomic, strong) GHRepoHeaderView *headerView;
 @property (nonatomic, strong) NSDictionary *latestRelease;
+@property (nonatomic, assign) BOOL repoHasNoPullRequests;
 @property (nonatomic, copy) NSString *readmeFileName;
 @end
 
@@ -208,6 +210,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     [self fetchReadme];
     [self fetchStarStatusIfNeeded];
     [self fetchLatestRelease];
+    [self fetchPullRequestPresence];
 
     if (GHPullToRefreshAvailable()) {
         self.refreshControl = [[UIRefreshControl alloc] init];
@@ -358,6 +361,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
         [strongSelf fetchReadme];
         [strongSelf fetchStarStatusIfNeeded];
         [strongSelf fetchLatestRelease];
+        [strongSelf fetchPullRequestPresence];
     }];
 }
 
@@ -585,6 +589,24 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:0 inSection:kSectionReadme]]
                            withRowAnimation:UITableViewRowAnimationNone];
     [self.tableView endUpdates];
+}
+
+- (void)rerenderInlineReadmeIfWidthChanged {
+    CGFloat tableWidth = self.tableView.bounds.size.width;
+    if (fabs(tableWidth - self.readmeLayoutTableWidth) < 0.5) return;
+    self.readmeLayoutTableWidth = tableWidth;
+    if (!self.readmeHTMLReady || !self.readmeWebView) return;
+    NSIndexPath *readmePath = [NSIndexPath indexPathForRow:0 inSection:kSectionReadme];
+    if (![[self.tableView indexPathsForVisibleRows] containsObject:readmePath]) return;
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        UITableViewCell *cell = [strongSelf.tableView cellForRowAtIndexPath:readmePath];
+        if (cell == nil) return;
+        [cell layoutIfNeeded];
+        [strongSelf tableView:strongSelf.tableView willDisplayCell:cell forRowAtIndexPath:readmePath];
+    });
 }
 
 - (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -1029,6 +1051,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    [self rerenderInlineReadmeIfWidthChanged];
     if (!self.headerView) return;
     if (self.tableView.tableHeaderView != self.headerView ||
         fabs(self.headerView.frame.size.width - self.tableView.bounds.size.width) > 0.5) {
@@ -1055,10 +1078,28 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     }];
 }
 
+- (void)fetchPullRequestPresence {
+    NSString *ownerLogin = [self ownerLogin];
+    NSString *repoName = [self repoName];
+    if (ownerLogin.length == 0 || repoName.length == 0) return;
+
+    __weak typeof(self) weakSelf = self;
+    [[GHAPIClient sharedClient] latestPullRequestForOwner:ownerLogin repo:repoName completion:^(id jsonObject, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || error || ![jsonObject isKindOfClass:[NSArray class]]) return;
+        BOOL hasNone = [(NSArray *)jsonObject count] == 0;
+        if (hasNone == strongSelf.repoHasNoPullRequests) return;
+        strongSelf.repoHasNoPullRequests = hasNone;
+        [strongSelf.tableView reloadData];
+    }];
+}
+
 #pragma mark - Rows
 
 - (NSArray *)actionRowKinds {
-    NSMutableArray *rows = [NSMutableArray arrayWithObjects:@(GHRepoRowKindIssues), @(GHRepoRowKindPullRequests), @(GHRepoRowKindReleases), nil];
+    NSMutableArray *rows = [NSMutableArray arrayWithObject:@(GHRepoRowKindIssues)];
+    if (!self.repoHasNoPullRequests) [rows addObject:@(GHRepoRowKindPullRequests)];
+    [rows addObject:@(GHRepoRowKindReleases)];
     if (self.latestRelease) [rows addObject:@(GHRepoRowKindLatestRelease)];
     [rows addObject:@(GHRepoRowKindMore)];
     if (self.sectionsExpanded) [rows addObjectsFromArray:[self expandedRowKinds]];

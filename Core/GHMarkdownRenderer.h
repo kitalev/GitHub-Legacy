@@ -35,6 +35,8 @@
                                      ownerLogin:(NSString *)ownerLogin
                                        repoName:(NSString *)repoName;
 
++ (NSString *)downscaleRemoteImagesInHTML:(NSString *)html;
+
 + (NSString *)htmlDocumentWrappingBody:(NSString *)bodyHTML pixelWidth:(CGFloat)pixelWidth;
 
 + (NSString *)autoCloseUnclosedTagsInHTML:(NSString *)html;

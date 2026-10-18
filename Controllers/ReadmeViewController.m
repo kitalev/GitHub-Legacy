@@ -88,6 +88,7 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
 
 @property (nonatomic, strong) NSMutableArray *pendingJavaScript;
 @property (nonatomic, assign) BOOL webViewDidFinishLoading;
+@property (nonatomic, assign) CGFloat viewportWidth;
 @end
 
 @implementation ReadmeViewController
@@ -233,6 +234,30 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
         self.findField.frame = CGRectMake(0, 0, bounds.size.width - navWidth - 6 - countWidth, 44);
     }
     self.webView.frame = CGRectMake(0, barHeight, bounds.size.width, bounds.size.height - barHeight);
+    [self updateViewportWidthIfNeeded];
+}
+
+- (void)updateViewportWidthIfNeeded {
+    if (self.webView == nil || !self.webViewDidFinishLoading) return;
+    CGFloat width = floor(self.webView.bounds.size.width);
+    if (width <= 0 || fabs(width - self.viewportWidth) < 0.5) return;
+    self.viewportWidth = width;
+
+    NSString *js = [NSString stringWithFormat:
+        @"(function(){var m=document.querySelector('meta[name=viewport]');"
+         "if(!m){m=document.createElement('meta');m.name='viewport';document.head.appendChild(m);}"
+         "m.setAttribute('content','width=%.0f, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');"
+         "document.body.style.display='none';document.body.offsetHeight;document.body.style.display='';})();",
+        width];
+    [self.webView stringByEvaluatingJavaScriptFromString:js];
+    UIScrollView *scrollView = self.webView.scrollView;
+    if ([scrollView respondsToSelector:@selector(setZoomScale:)] && scrollView.zoomScale != 1.0) {
+        scrollView.zoomScale = 1.0;
+    }
+    CGFloat maxOffsetX = MAX(0.0, scrollView.contentSize.width - scrollView.bounds.size.width);
+    if (scrollView.contentOffset.x > maxOffsetX) {
+        scrollView.contentOffset = CGPointMake(maxOffsetX, scrollView.contentOffset.y);
+    }
 }
 
 - (void)buildFindBar {
@@ -522,6 +547,8 @@ static const NSInteger kGHFindRevealAlertTag = 7101;
     [self.spinner stopAnimating];
 
     self.webViewDidFinishLoading = YES;
+    self.viewportWidth = 0;
+    [self updateViewportWidthIfNeeded];
     [self flushPendingJavaScript];
 
     self.webView.scrollView.scrollsToTop = YES;

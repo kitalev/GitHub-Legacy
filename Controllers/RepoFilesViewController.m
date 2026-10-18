@@ -188,20 +188,20 @@ static NSString * const kFileCellID = @"RepoFileCell";
         NSString *base64Content = [fileDict[@"content"] isKindOfClass:[NSString class]] ? fileDict[@"content"] : nil;
 
         if (base64Content.length == 0) {
-
-            [strongSelf openInSafari:downloadURLString];
+            [strongSelf openBinaryInfoForEntry:entry tooLarge:YES];
             return;
         }
 
         __weak typeof(strongSelf) weakSelf2 = strongSelf;
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSData *decodedData = [RepoFilesViewController dataFromBase64String:base64Content];
-            NSString *text = [[NSString alloc] initWithData:decodedData encoding:NSUTF8StringEncoding];
+            BOOL hasNullByte = decodedData.length > 0
+                && memchr(decodedData.bytes, 0, MIN(decodedData.length, (NSUInteger)8000)) != NULL;
+            NSString *text = hasNullByte ? nil : [[NSString alloc] initWithData:decodedData encoding:NSUTF8StringEncoding];
 
             if (text.length == 0) {
-
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [weakSelf2 openInSafari:downloadURLString];
+                    [weakSelf2 openBinaryInfoForEntry:entry tooLarge:NO];
                 });
                 return;
             }
@@ -243,6 +243,7 @@ static NSString * const kFileCellID = @"RepoFileCell";
         [lines removeLastObject];
     }
 
+    BOOL isDiff = [RepoFilesViewController isDiffFileName:title];
     NSInteger totalLines = lines.count;
     NSInteger totalChunks = MAX((totalLines + kCodeChunkSize - 1) / kCodeChunkSize, 1);
 
@@ -250,7 +251,8 @@ static NSString * const kFileCellID = @"RepoFileCell";
     NSString *firstChunkHTML = [RepoFilesViewController codeViewerShellHTMLForLines:lines
                                                                           chunkRange:firstChunkRange
                                                                           totalLines:totalLines
-                                                                         totalChunks:totalChunks];
+                                                                         totalChunks:totalChunks
+                                                                                diff:isDiff];
 
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -276,7 +278,8 @@ static NSString * const kFileCellID = @"RepoFileCell";
 
                 NSString *injectionJS = [RepoFilesViewController injectionJSForChunkIndex:chunkIndex
                                                                                       lines:lines
-                                                                                      range:NSMakeRange(start, length)];
+                                                                                      range:NSMakeRange(start, length)
+                                                                                       diff:isDiff];
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [viewerVC evaluateJavaScript:injectionJS];
                 });
@@ -296,34 +299,89 @@ static NSString * const kFileCellID = @"RepoFileCell";
     return viewerVC;
 }
 
-- (void)openInSafari:(NSString *)urlString {
-    if (urlString.length == 0) return;
-    NSURL *url = [NSURL URLWithString:urlString];
-    if (url) {
-        [[UIApplication sharedApplication] openURL:url];
++ (NSString *)formattedSize:(long long)bytes {
+    if (bytes < 1024) return [NSString stringWithFormat:@"%lld %@", bytes, GHL(@"Б")];
+    if (bytes < 1024 * 1024) return [NSString stringWithFormat:@"%.0f %@", bytes / 1024.0, GHL(@"КБ")];
+    return [NSString stringWithFormat:@"%.1f %@", bytes / (1024.0 * 1024.0), GHL(@"МБ")];
+}
+
+- (void)openBinaryInfoForEntry:(NSDictionary *)entry tooLarge:(BOOL)tooLarge {
+    NSString *name = [entry[@"name"] isKindOfClass:[NSString class]] ? entry[@"name"] : @"";
+    NSString *downloadURLString = [entry[@"download_url"] isKindOfClass:[NSString class]] ? entry[@"download_url"] : nil;
+    long long size = [entry[@"size"] respondsToSelector:@selector(longLongValue)] ? [entry[@"size"] longLongValue] : 0;
+
+    NSString *kind = tooLarge ? GHL(@"Файл слишком большой для просмотра") : GHL(@"Двоичный файл");
+    NSString *meta = size > 0 ? [NSString stringWithFormat:@"%@ · %@", kind, [RepoFilesViewController formattedSize:size]] : kind;
+
+    NSMutableString *body = [NSMutableString string];
+    [body appendFormat:@"<div class=\"binary-card\"><div class=\"binary-meta\">%@</div>", [GHMarkdownRenderer escapeHTML:meta]];
+    if (!tooLarge) {
+        [body appendFormat:@"<div class=\"binary-note\">%@</div>", [GHMarkdownRenderer escapeHTML:GHL(@"Этот файл нельзя показать как текст.")]];
     }
+    if (downloadURLString.length > 0) {
+        [body appendFormat:@"<a class=\"binary-raw\" href=\"%@\">%@</a>",
+            [GHMarkdownRenderer escapeHTMLAttribute:downloadURLString], [GHMarkdownRenderer escapeHTML:GHL(@"Открыть raw")]];
+    }
+    [body appendString:@"</div>"];
+    BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+    [body appendFormat:@"<style>"
+        ".binary-card{border:1px solid %@;border-radius:6px;padding:16px;margin:4px 0;text-align:center;}"
+        ".binary-meta{font-family:Menlo,monospace;font-size:13px;color:%@;}"
+        ".binary-note{font-size:14px;margin-top:8px;}"
+        ".binary-raw{display:inline-block;margin-top:14px;font-weight:bold;}"
+        "</style>",
+        dark ? @"#30363d" : @"#d0d7de", dark ? @"#8b949e" : @"#59636e"];
+
+    [self pushViewerWithHTML:[GHMarkdownRenderer htmlDocumentWrappingBody:body] baseURL:nil title:name];
 }
 
 #pragma mark - Просмотр обычного (не-markdown) текстового файла
 
 static const NSInteger kCodeChunkSize = 300;
 
++ (BOOL)isDiffFileName:(NSString *)name {
+    NSString *ext = name.pathExtension.lowercaseString;
+    return [ext isEqualToString:@"patch"] || [ext isEqualToString:@"diff"];
+}
+
++ (NSString *)diffClassForLine:(NSString *)line {
+    if ([line hasPrefix:@"+++"] || [line hasPrefix:@"---"]) return @"diff-file";
+    if ([line hasPrefix:@"@@"]) return @"diff-hunk";
+    if ([line hasPrefix:@"+"]) return @"diff-add";
+    if ([line hasPrefix:@"-"]) return @"diff-del";
+    if ([line hasPrefix:@"diff "] || [line hasPrefix:@"index "] || [line hasPrefix:@"From "]) return @"diff-meta";
+    return nil;
+}
+
 + (void)buildGutterHTML:(NSString **)outGutterHTML
                 codeHTML:(NSString **)outCodeHTML
                 forLines:(NSArray *)rawLines
-                   range:(NSRange)range {
+                   range:(NSRange)range
+                    diff:(BOOL)isDiff {
     NSArray *rangeLines = [rawLines subarrayWithRange:range];
-    NSString *chunkText = [rangeLines componentsJoinedByString:@"\n"];
-    NSString *highlighted = [self syntaxHighlightedHTMLForCode:chunkText];
-    NSArray *highlightedLines = [highlighted componentsSeparatedByString:@"\n"];
+    NSArray *highlightedLines = nil;
+    if (!isDiff) {
+        NSString *chunkText = [rangeLines componentsJoinedByString:@"\n"];
+        NSString *highlighted = [self syntaxHighlightedHTMLForCode:chunkText];
+        highlightedLines = [highlighted componentsSeparatedByString:@"\n"];
+    }
 
     NSMutableString *gutterHTML = [NSMutableString string];
     NSMutableString *codeHTML = [NSMutableString string];
     for (NSUInteger i = 0; i < range.length; i++) {
         NSInteger lineNumber = (NSInteger)(range.location + i + 1);
-        NSString *lineHTML = i < highlightedLines.count ? highlightedLines[i] : @"";
-        [gutterHTML appendFormat:@"<div class=\"ln-row\">%ld</div>", (long)lineNumber];
-        [codeHTML appendFormat:@"<tr><td class=\"code-cell\">%@</td></tr>", lineHTML.length > 0 ? lineHTML : @"&nbsp;"];
+        NSString *lineHTML;
+        NSString *diffClass = nil;
+        if (isDiff) {
+            NSString *rawLine = rangeLines[i];
+            diffClass = [self diffClassForLine:rawLine];
+            lineHTML = [GHMarkdownRenderer escapeHTML:rawLine];
+        } else {
+            lineHTML = i < highlightedLines.count ? highlightedLines[i] : @"";
+        }
+        NSString *rowClass = diffClass ? [NSString stringWithFormat:@" %@", diffClass] : @"";
+        [gutterHTML appendFormat:@"<div class=\"ln-row%@\">%ld</div>", rowClass, (long)lineNumber];
+        [codeHTML appendFormat:@"<tr class=\"code-row%@\"><td class=\"code-cell\">%@</td></tr>", rowClass, lineHTML.length > 0 ? lineHTML : @"&nbsp;"];
     }
     if (outGutterHTML) *outGutterHTML = gutterHTML;
     if (outCodeHTML) *outCodeHTML = codeHTML;
@@ -332,10 +390,11 @@ static const NSInteger kCodeChunkSize = 300;
 + (NSString *)codeViewerShellHTMLForLines:(NSArray *)rawLines
                                 chunkRange:(NSRange)chunkRange
                                 totalLines:(NSInteger)totalLines
-                               totalChunks:(NSInteger)totalChunks {
+                               totalChunks:(NSInteger)totalChunks
+                                      diff:(BOOL)isDiff {
     NSString *gutterHTML = nil;
     NSString *codeHTML = nil;
-    [self buildGutterHTML:&gutterHTML codeHTML:&codeHTML forLines:rawLines range:chunkRange];
+    [self buildGutterHTML:&gutterHTML codeHTML:&codeHTML forLines:rawLines range:chunkRange diff:isDiff];
 
     NSMutableString *body = [NSMutableString string];
     [body appendFormat:
@@ -365,10 +424,10 @@ static const NSInteger kCodeChunkSize = 300;
     return [self wrapCodeViewerBodyInDocument:body];
 }
 
-+ (NSString *)injectionJSForChunkIndex:(NSInteger)chunkIndex lines:(NSArray *)rawLines range:(NSRange)range {
++ (NSString *)injectionJSForChunkIndex:(NSInteger)chunkIndex lines:(NSArray *)rawLines range:(NSRange)range diff:(BOOL)isDiff {
     NSString *gutterPart = nil;
     NSString *codePart = nil;
-    [self buildGutterHTML:&gutterPart codeHTML:&codePart forLines:rawLines range:range];
+    [self buildGutterHTML:&gutterPart codeHTML:&codePart forLines:rawLines range:range diff:isDiff];
 
     NSString *gutterWrapped = [NSString stringWithFormat:
         @"<div class=\"more-rows\" id=\"gutter-chunk-%ld\" style=\"display:none;\">%@</div>", (long)chunkIndex, gutterPart];
@@ -422,6 +481,14 @@ static const NSInteger kCodeChunkSize = 300;
         ".tok-keyword{color:#d73a49;}"
         ".tok-preproc{color:#005cc5;}"
         ".tok-function{color:#6f42c1;}"
+        ".code-row.diff-add td{background:#e6ffec;}"
+        ".code-row.diff-del td{background:#ffebe9;}"
+        ".code-row.diff-hunk td{background:#ddf4ff;color:#59636e;}"
+        ".code-row.diff-file td{font-weight:bold;}"
+        ".code-row.diff-meta td{color:#59636e;}"
+        ".ln-row.diff-add{background:#ccffd8;}"
+        ".ln-row.diff-del{background:#ffd7d5;}"
+        ".ln-row.diff-hunk{background:#b6e3ff;}"
         ".show-more{padding:10px 12px;text-align:center;color:#0969da;font-size:13px;font-weight:bold;background:#f6f8fa;border-top:1px solid #d0d7de;cursor:pointer;}"
         ".show-more:active{background:#eaeef1;}";
 
@@ -436,6 +503,13 @@ static const NSInteger kCodeChunkSize = 300;
         ".tok-keyword{color:#ff7b72;}"
         ".tok-preproc{color:#79c0ff;}"
         ".tok-function{color:#d2a8ff;}"
+        ".code-row.diff-add td{background:rgba(46,160,67,0.15);}"
+        ".code-row.diff-del td{background:rgba(248,81,73,0.15);}"
+        ".code-row.diff-hunk td{background:rgba(56,139,253,0.15);color:#8b949e;}"
+        ".code-row.diff-meta td{color:#8b949e;}"
+        ".ln-row.diff-add{background:rgba(63,185,80,0.3);}"
+        ".ln-row.diff-del{background:rgba(248,81,73,0.3);}"
+        ".ln-row.diff-hunk{background:rgba(56,139,253,0.3);}"
         ".show-more{color:#58a6ff;background:#161b22;border-top-color:#30363d;}"
         ".show-more:active{background:#21262d;}";
 
