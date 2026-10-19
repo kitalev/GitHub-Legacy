@@ -220,6 +220,18 @@ static void GHLayoutSublayersOfLayer(UIView *self, SEL _cmd, CALayer *layer) {
 - (void)drawRect:(CGRect)rect {
 }
 
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    for (UIView *view = self.superview; view != nil; view = view.superview) {
+        if ([view isKindOfClass:[UINavigationBar class]]) {
+            UINavigationBar *bar = (UINavigationBar *)view;
+            self.barStyle = bar.barStyle;
+            self.tintColor = bar.tintColor;
+            break;
+        }
+    }
+}
+
 @end
 
 static char kGHRightItemsKey;
@@ -230,6 +242,9 @@ static UIBarButtonItem *GHCombinedBarItem(NSArray *items, UIBarStyle barStyle) {
     if (items.count == 1) return [items objectAtIndex:0];
     CGFloat width = 0;
     for (UIBarButtonItem *item in items) {
+        if (item.customView == nil && item.style == UIBarButtonItemStylePlain) {
+            item.style = UIBarButtonItemStyleBordered;
+        }
         if (item.customView != nil) {
             width += item.customView.bounds.size.width + 10;
         } else if (item.width > 0) {

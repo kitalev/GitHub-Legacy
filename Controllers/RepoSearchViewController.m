@@ -189,12 +189,28 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
     self.searchBar.backgroundImage = [self solidColorImage:GHBackgroundColor()];
 
+    if (![UISegmentedControl instancesRespondToSelector:@selector(setBackgroundImage:forState:barMetrics:)]) {
+        BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+        self.searchBar.tintColor = dark ? [UIColor colorWithWhite:0.15 alpha:1.0] : nil;
+        [self styleSegmentedControlsInView:self.searchBar];
+    }
+
     if (self.keyboardDismissToolbar) {
         self.keyboardDismissToolbar.tintColor = GHTintColor();
         [self applyToolbarBackground:self.keyboardDismissToolbar];
     }
 
     [self.tableView reloadData];
+}
+
+- (void)styleSegmentedControlsInView:(UIView *)view {
+    for (UIView *subview in view.subviews) {
+        if ([subview isKindOfClass:[UISegmentedControl class]]) {
+            GHStyleSegmentedControl((UISegmentedControl *)subview);
+        } else {
+            [self styleSegmentedControlsInView:subview];
+        }
+    }
 }
 
 - (UIImage *)solidColorImage:(UIColor *)color {

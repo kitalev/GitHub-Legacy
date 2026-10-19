@@ -356,9 +356,13 @@ static UIImage *GHSegmentDividerImage(void) {
 
 void GHStyleSegmentedControl(UISegmentedControl *control) {
     if (control == nil) return;
-    control.segmentedControlStyle = UISegmentedControlStylePlain;
-    if (![control respondsToSelector:@selector(setBackgroundImage:forState:barMetrics:)]) return;
     BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
+    if (![control respondsToSelector:@selector(setBackgroundImage:forState:barMetrics:)]) {
+        control.segmentedControlStyle = dark ? UISegmentedControlStyleBar : UISegmentedControlStylePlain;
+        control.tintColor = dark ? [UIColor colorWithWhite:0.22 alpha:1.0] : nil;
+        return;
+    }
+    control.segmentedControlStyle = UISegmentedControlStylePlain;
     UIImage *normal = dark ? GHDarkSegmentImage(NO) : nil;
     UIImage *selected = dark ? GHDarkSegmentImage(YES) : nil;
     UIImage *divider = dark ? GHSegmentDividerImage() : nil;

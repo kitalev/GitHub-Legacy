@@ -1086,8 +1086,10 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     __weak typeof(self) weakSelf = self;
     [[GHAPIClient sharedClient] latestPullRequestForOwner:ownerLogin repo:repoName completion:^(id jsonObject, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf || error || ![jsonObject isKindOfClass:[NSArray class]]) return;
-        BOOL hasNone = [(NSArray *)jsonObject count] == 0;
+        if (!strongSelf) return;
+        BOOL pullRequestsDisabled = [error.domain isEqualToString:@"GHAPIClient"] && error.code == 404;
+        if (!pullRequestsDisabled && (error || ![jsonObject isKindOfClass:[NSArray class]])) return;
+        BOOL hasNone = pullRequestsDisabled || [(NSArray *)jsonObject count] == 0;
         if (hasNone == strongSelf.repoHasNoPullRequests) return;
         strongSelf.repoHasNoPullRequests = hasNone;
         [strongSelf.tableView reloadData];
@@ -1101,13 +1103,17 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     if (!self.repoHasNoPullRequests) [rows addObject:@(GHRepoRowKindPullRequests)];
     [rows addObject:@(GHRepoRowKindReleases)];
     if (self.latestRelease) [rows addObject:@(GHRepoRowKindLatestRelease)];
-    [rows addObject:@(GHRepoRowKindMore)];
-    if (self.sectionsExpanded) [rows addObjectsFromArray:[self expandedRowKinds]];
+    NSArray *expandedRows = [self expandedRowKinds];
+    if (expandedRows.count > 0) {
+        [rows addObject:@(GHRepoRowKindMore)];
+        if (self.sectionsExpanded) [rows addObjectsFromArray:expandedRows];
+    }
     return rows;
 }
 
 - (NSArray *)expandedRowKinds {
-    NSMutableArray *rows = [NSMutableArray arrayWithObject:@(GHRepoRowKindForks)];
+    NSMutableArray *rows = [NSMutableArray array];
+    if ([[self safeNumberForKey:@"forks_count" inDict:self.repo] integerValue] > 0) [rows addObject:@(GHRepoRowKindForks)];
     if ([self licenseName]) [rows addObject:@(GHRepoRowKindLicense)];
     return rows;
 }
