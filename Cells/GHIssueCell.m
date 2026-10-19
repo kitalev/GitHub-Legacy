@@ -25,16 +25,7 @@ static NSString *GHSafeString(NSDictionary *dict, NSString *key) {
 static NSString *GHRelativeDateString(NSString *isoString) {
     if (isoString.length == 0) return @"";
 
-    static NSDateFormatter *isoFormatter = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        isoFormatter = [[NSDateFormatter alloc] init];
-        isoFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-        isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
-        isoFormatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    });
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);
@@ -66,7 +57,7 @@ static NSInteger GHCommentCount(NSDictionary *issue) {
     return [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : 0;
 }
 
-static UIImage *GHCommentPillImage(NSInteger count, UIColor *textColor, UIColor *backgroundColor) {
+static UIImage *GHDrawCommentPillImage(NSInteger count, UIColor *textColor, UIColor *backgroundColor) {
     UIFont *font = [UIFont systemFontOfSize:kBadgePointSize + 1];
     NSString *text = [NSString stringWithFormat:@"%ld", (long)count];
     CGSize textSize = [text sizeWithFont:font];
@@ -84,6 +75,17 @@ static UIImage *GHCommentPillImage(NSInteger count, UIColor *textColor, UIColor 
     UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     return result;
+}
+
+static UIImage *GHCommentPillImage(NSInteger count, UIColor *textColor, UIColor *backgroundColor) {
+    NSString *textKey = [GHIconRenderer cacheKeyForColor:textColor];
+    NSString *backgroundKey = [GHIconRenderer cacheKeyForColor:backgroundColor];
+    NSString *key = (textKey && backgroundKey)
+        ? [NSString stringWithFormat:@"issue-comment-pill|%ld|%@|%@", (long)count, textKey, backgroundKey]
+        : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return GHDrawCommentPillImage(count, textColor, backgroundColor);
+    }];
 }
 
 static UIImage *GHLabelBadgeImage(NSDictionary *label) {
@@ -117,7 +119,7 @@ static NSString *GHTitleText(NSDictionary *issue) {
 
 static CGFloat GHTitleHeight(NSString *text, CGFloat width) {
     UIFont *font = [UIFont systemFontOfSize:kTitleFontSize];
-    CGSize size = [text sizeWithFont:font constrainedToSize:CGSizeMake(width, CGFLOAT_MAX) lineBreakMode:NSLineBreakByWordWrapping];
+    CGSize size = GHCachedTextSize(text, font, CGSizeMake(width, CGFLOAT_MAX), NSLineBreakByWordWrapping);
     return MIN(ceil(size.height), ceil(font.lineHeight * kTitleMaxLines));
 }
 

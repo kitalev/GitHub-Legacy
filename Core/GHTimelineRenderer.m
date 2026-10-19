@@ -48,7 +48,7 @@
 
 - (NSString *)relativeTimeFromISOString:(NSString *)isoString {
     if (isoString.length == 0) return @"";
-    NSDate *date = [GHISODateFormatter() dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);

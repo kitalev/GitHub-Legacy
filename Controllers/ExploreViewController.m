@@ -283,9 +283,7 @@ static const NSUInteger kMaxConcurrentReleaseRequests = 4;
 - (NSString *)relativeDateStringFromISOString:(NSString *)isoString {
     if (isoString.length == 0) return @"";
 
-    NSDateFormatter *isoFormatter = GHISODateFormatter();
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = -[date timeIntervalSinceNow];

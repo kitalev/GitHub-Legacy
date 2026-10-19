@@ -380,14 +380,16 @@ static const CGFloat kNotesVerticalPadding = 10.0;
 
         if (!needsClip) return;
 
-        NSString *fullBodyHTML = [GHMarkdownRenderer downscaleRemoteImagesInHTML:[GHMarkdownRenderer bodyHTMLFromMarkdown:body]];
-        NSString *fullHTML = [GHMarkdownRenderer htmlDocumentWrappingBody:fullBodyHTML];
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+            NSString *fullBodyHTML = [GHMarkdownRenderer downscaleRemoteImagesInHTML:[GHMarkdownRenderer bodyHTMLFromMarkdown:body]];
+            NSString *fullHTML = [GHMarkdownRenderer htmlDocumentWrappingBody:fullBodyHTML];
 
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) strongSelf = weakSelf;
-            if (!strongSelf) return;
-            if (![strongSelf.releaseInfo[@"body"] isEqual:body]) return;
-            strongSelf.notesFullHTML = fullHTML;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+                if (!strongSelf) return;
+                if (![strongSelf.releaseInfo[@"body"] isEqual:body]) return;
+                strongSelf.notesFullHTML = fullHTML;
+            });
         });
     });
 }
@@ -953,16 +955,7 @@ static NSString *GHReleaseFormattedSize(long long bytes) {
 static NSString *GHReleaseDateString(NSString *isoString) {
     if (isoString.length == 0) return @"";
 
-    static NSDateFormatter *isoFormatter = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        isoFormatter = [[NSDateFormatter alloc] init];
-        isoFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-        isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
-        isoFormatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    });
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     BOOL russian = [[GHLocalization sharedManager].languageCode isEqualToString:@"ru"];
@@ -971,12 +964,18 @@ static NSString *GHReleaseDateString(NSString *isoString) {
     NSInteger currentYear = [[calendar components:NSYearCalendarUnit fromDate:[NSDate date]] year];
     BOOL sameYear = (year == currentYear);
 
-    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:russian ? @"ru_RU" : @"en_US"];
-    if (russian) {
-        formatter.dateFormat = sameYear ? @"d MMMM" : @"d MMMM yyyy";
-    } else {
-        formatter.dateFormat = sameYear ? @"MMM d" : @"MMM d, yyyy";
+    NSString *dateFormat = russian
+        ? (sameYear ? @"d MMMM" : @"d MMMM yyyy")
+        : (sameYear ? @"MMM d" : @"MMM d, yyyy");
+
+    static NSMutableDictionary *formatters = nil;
+    if (formatters == nil) formatters = [NSMutableDictionary dictionary];
+    NSDateFormatter *formatter = formatters[dateFormat];
+    if (formatter == nil) {
+        formatter = [[NSDateFormatter alloc] init];
+        formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:russian ? @"ru_RU" : @"en_US"];
+        formatter.dateFormat = dateFormat;
+        formatters[dateFormat] = formatter;
     }
     return [formatter stringFromDate:date];
 }

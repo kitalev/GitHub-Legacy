@@ -48,6 +48,95 @@ NSDateFormatter *GHMediumDateFormatter(void) {
     return formatter;
 }
 
+static BOOL GHParseDigits(const char *text, int count, int *value) {
+    int result = 0;
+    for (int i = 0; i < count; i++) {
+        if (text[i] < '0' || text[i] > '9') return NO;
+        result = result * 10 + (text[i] - '0');
+    }
+    *value = result;
+    return YES;
+}
+
+NSDate *GHDateFromISO8601String(NSString *isoString) {
+    if (![isoString isKindOfClass:[NSString class]] || isoString.length != 20) return nil;
+    char text[21];
+    if (![isoString getCString:text maxLength:sizeof(text) encoding:NSASCIIStringEncoding]) return nil;
+    if (text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':' || text[19] != 'Z') return nil;
+
+    int year, month, day, hour, minute, second;
+    if (!GHParseDigits(text, 4, &year) || !GHParseDigits(text + 5, 2, &month) || !GHParseDigits(text + 8, 2, &day) ||
+        !GHParseDigits(text + 11, 2, &hour) || !GHParseDigits(text + 14, 2, &minute) || !GHParseDigits(text + 17, 2, &second)) {
+        return nil;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return nil;
+
+    struct tm components;
+    memset(&components, 0, sizeof(components));
+    components.tm_year = year - 1900;
+    components.tm_mon = month - 1;
+    components.tm_mday = day;
+    components.tm_hour = hour;
+    components.tm_min = minute;
+    components.tm_sec = second;
+    return [NSDate dateWithTimeIntervalSince1970:(NSTimeInterval)timegm(&components)];
+}
+
+CGSize GHCachedTextSize(NSString *text, UIFont *font, CGSize constraint, NSLineBreakMode lineBreakMode) {
+    if (text == nil || font == nil) return CGSizeZero;
+
+    static NSCache *cache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cache = [[NSCache alloc] init];
+        cache.countLimit = 1500;
+    });
+
+    NSString *key = [NSString stringWithFormat:@"%@|%.1f|%.1f|%.1f|%ld|%@",
+                     font.fontName, font.pointSize, constraint.width, constraint.height, (long)lineBreakMode, text];
+    NSValue *cached = [cache objectForKey:key];
+    if (cached) return [cached CGSizeValue];
+
+    CGSize size = [text sizeWithFont:font constrainedToSize:constraint lineBreakMode:lineBreakMode];
+    [cache setObject:[NSValue valueWithCGSize:size] forKey:key];
+    return size;
+}
+
+UIImage *GHDecodedImageWithData(NSData *data) {
+    if (data.length == 0) return nil;
+    UIImage *image = [UIImage imageWithData:data];
+    CGImageRef cgImage = image.CGImage;
+    if (cgImage == NULL) return image;
+
+    size_t width = CGImageGetWidth(cgImage);
+    size_t height = CGImageGetHeight(cgImage);
+    if (width == 0 || height == 0 || width * height > 2048 * 2048) return image;
+
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, 0, colorSpace,
+                                                 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    CGColorSpaceRelease(colorSpace);
+    if (context == NULL) return image;
+
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
+    CGImageRef decoded = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    if (decoded == NULL) return image;
+
+    UIImage *result = [UIImage imageWithCGImage:decoded scale:image.scale orientation:image.imageOrientation];
+    CGImageRelease(decoded);
+    return result;
+}
+
+void GHDecodeImageDataAsync(NSData *data, void (^completion)(UIImage *image)) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        UIImage *image = GHDecodedImageWithData(data);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) completion(image);
+        });
+    });
+}
+
 static NSString *GHStringConstant(const char *symbolName) {
     NSString * const *ref = (NSString * const *)dlsym(RTLD_DEFAULT, symbolName);
     return ref ? *ref : nil;

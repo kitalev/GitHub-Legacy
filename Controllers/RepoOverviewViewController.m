@@ -48,15 +48,7 @@ typedef NS_ENUM(NSInteger, GHRepoRowKind) {
 
 static NSString *GHRepoRelativeDate(NSString *isoString) {
     if (isoString.length == 0) return @"";
-    static NSDateFormatter *formatter = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        formatter = [[NSDateFormatter alloc] init];
-        formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-        formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
-        formatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    });
-    NSDate *date = [formatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);
@@ -995,9 +987,7 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
 - (NSString *)displayDateFromISOString:(NSString *)isoString {
     if (isoString.length == 0) return nil;
 
-    NSDateFormatter *isoFormatter = GHISODateFormatter();
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return nil;
 
     NSDateFormatter *displayFormatter = GHMediumDateFormatter();

@@ -18,6 +18,7 @@
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 
 @property (nonatomic, copy) NSString *lastLoadedHTML;
+@property (nonatomic, assign) NSUInteger renderGeneration;
 @end
 
 @implementation PullRequestDetailViewController
@@ -396,8 +397,18 @@
 }
 
 - (void)renderWithTimeline:(NSArray *)timeline checkRuns:(NSDictionary *)checkRuns loadError:(NSString *)loadError {
-    self.lastLoadedHTML = [self buildHTMLWithTimeline:timeline checkRuns:checkRuns loadError:loadError];
-    [self.webView loadHTMLString:self.lastLoadedHTML baseURL:[self contentBaseURL]];
+    NSUInteger generation = ++self.renderGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSString *html = [strongSelf buildHTMLWithTimeline:timeline checkRuns:checkRuns loadError:loadError];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (strongSelf.renderGeneration != generation) return;
+            strongSelf.lastLoadedHTML = html;
+            [strongSelf.webView loadHTMLString:html baseURL:[strongSelf contentBaseURL]];
+        });
+    });
 }
 
 - (void)loadDetailsThenRender {

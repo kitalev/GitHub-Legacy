@@ -316,13 +316,16 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (![strongSelf.statusEmojiURL isEqualToString:key]) return;
         NSInteger status = [response isKindOfClass:[NSHTTPURLResponse class]] ? [(NSHTTPURLResponse *)response statusCode] : 200;
-        UIImage *image = status < 400 && data.length > 0 ? [UIImage imageWithData:data] : nil;
-        if (image == nil) {
-            [strongSelf loadStatusEmojiFromURLs:urls index:index + 1 key:key fallback:fallback];
-            return;
-        }
-        [[GHProfileHeaderView statusEmojiCache] setObject:image forKey:key];
-        strongSelf.statusEmojiView.image = image;
+        GHDecodeImageDataAsync(status < 400 ? data : nil, ^(UIImage *image) {
+            __strong typeof(weakSelf) innerSelf = weakSelf;
+            if (![innerSelf.statusEmojiURL isEqualToString:key]) return;
+            if (image == nil) {
+                [innerSelf loadStatusEmojiFromURLs:urls index:index + 1 key:key fallback:fallback];
+                return;
+            }
+            [[GHProfileHeaderView statusEmojiCache] setObject:image forKey:key];
+            innerSelf.statusEmojiView.image = image;
+        });
     }];
 }
 
@@ -462,8 +465,11 @@ typedef NS_ENUM(NSInteger, GHProfileInfoIcon) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf || error || data.length == 0) return;
         if (![strongSelf.requestedAvatarURL isEqualToString:avatar]) return;
-        UIImage *image = [UIImage imageWithData:data];
-        if (image) strongSelf.avatarView.image = image;
+        GHDecodeImageDataAsync(data, ^(UIImage *image) {
+            __strong typeof(weakSelf) innerSelf = weakSelf;
+            if (image == nil || ![innerSelf.requestedAvatarURL isEqualToString:avatar]) return;
+            innerSelf.avatarView.image = image;
+        });
     }];
 }
 

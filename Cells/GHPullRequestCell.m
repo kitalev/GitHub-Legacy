@@ -25,16 +25,7 @@ static NSString *GHSafeString(NSDictionary *dict, NSString *key) {
 static NSString *GHRelativeDateString(NSString *isoString) {
     if (isoString.length == 0) return @"";
 
-    static NSDateFormatter *isoFormatter = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        isoFormatter = [[NSDateFormatter alloc] init];
-        isoFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-        isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
-        isoFormatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    });
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);
@@ -66,7 +57,7 @@ static NSInteger GHCommentCount(NSDictionary *pullRequest) {
     return [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : 0;
 }
 
-static UIImage *GHCommentPillImage(NSInteger count, UIColor *textColor, UIColor *backgroundColor) {
+static UIImage *GHDrawCommentPillImage(NSInteger count, UIColor *textColor, UIColor *backgroundColor) {
     UIFont *font = [UIFont systemFontOfSize:kBadgePointSize + 1];
     NSString *text = [NSString stringWithFormat:@"%ld", (long)count];
     CGSize textSize = [text sizeWithFont:font];
@@ -84,6 +75,17 @@ static UIImage *GHCommentPillImage(NSInteger count, UIColor *textColor, UIColor 
     UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     return result;
+}
+
+static UIImage *GHCommentPillImage(NSInteger count, UIColor *textColor, UIColor *backgroundColor) {
+    NSString *textKey = [GHIconRenderer cacheKeyForColor:textColor];
+    NSString *backgroundKey = [GHIconRenderer cacheKeyForColor:backgroundColor];
+    NSString *key = (textKey && backgroundKey)
+        ? [NSString stringWithFormat:@"pr-comment-pill|%ld|%@|%@", (long)count, textKey, backgroundKey]
+        : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return GHDrawCommentPillImage(count, textColor, backgroundColor);
+    }];
 }
 
 static UIImage *GHLabelBadgeImage(NSDictionary *label) {
@@ -122,9 +124,22 @@ static UIImage *GHStateIconForPullRequest(NSDictionary *pullRequest, BOOL merged
     return [GHIconRenderer pullRequestIconWithColor:[UIColor colorWithRed:0.16 green:0.65 blue:0.27 alpha:1.0] size:kIconSize];
 }
 
+static UIImage *GHDrawDraftPillImage(NSString *text, UIColor *textColor, UIColor *backgroundColor);
+
 static UIImage *GHDraftPillImage(UIColor *textColor, UIColor *backgroundColor) {
-    UIFont *font = [UIFont systemFontOfSize:kBadgePointSize + 1];
     NSString *text = GHL(@"Черновик");
+    NSString *textKey = [GHIconRenderer cacheKeyForColor:textColor];
+    NSString *backgroundKey = [GHIconRenderer cacheKeyForColor:backgroundColor];
+    NSString *key = (textKey && backgroundKey)
+        ? [NSString stringWithFormat:@"pr-draft-pill|%@|%@|%@", text, textKey, backgroundKey]
+        : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return GHDrawDraftPillImage(text, textColor, backgroundColor);
+    }];
+}
+
+static UIImage *GHDrawDraftPillImage(NSString *text, UIColor *textColor, UIColor *backgroundColor) {
+    UIFont *font = [UIFont systemFontOfSize:kBadgePointSize + 1];
     CGSize textSize = [text sizeWithFont:font];
     CGFloat height = ceil(MAX(textSize.height, 13) + 6);
     CGFloat width = ceil(textSize.width + 18);
@@ -150,7 +165,7 @@ static NSString *GHTitleText(NSDictionary *pullRequest) {
 
 static CGFloat GHTitleHeight(NSString *text, CGFloat width) {
     UIFont *font = [UIFont systemFontOfSize:kTitleFontSize];
-    CGSize size = [text sizeWithFont:font constrainedToSize:CGSizeMake(width, CGFLOAT_MAX) lineBreakMode:NSLineBreakByWordWrapping];
+    CGSize size = GHCachedTextSize(text, font, CGSizeMake(width, CGFLOAT_MAX), NSLineBreakByWordWrapping);
     return MIN(ceil(size.height), ceil(font.lineHeight * kTitleMaxLines));
 }
 

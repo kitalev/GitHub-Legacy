@@ -1,5 +1,6 @@
 #import "GHIconRenderer.h"
 #import <math.h>
+#import <objc/runtime.h>
 
 @implementation GHIconRenderer
 
@@ -1175,5 +1176,137 @@ static void GHStrokeSegment(CGPoint from, CGPoint to, CGFloat line) {
     return result;
 }
 
+#pragma mark - Cache
+
++ (NSString *)cacheKeyForColor:(UIColor *)color {
+    if (color == nil) return @"nil";
+    CGColorRef cgColor = color.CGColor;
+    if (cgColor == NULL || CGColorGetPattern(cgColor) != NULL) return nil;
+
+    size_t count = CGColorGetNumberOfComponents(cgColor);
+    const CGFloat *components = CGColorGetComponents(cgColor);
+    NSMutableString *key = [NSMutableString stringWithFormat:@"%d", (int)CGColorSpaceGetModel(CGColorGetColorSpace(cgColor))];
+    for (size_t i = 0; i < count; i++) [key appendFormat:@",%.4f", components[i]];
+    return key;
+}
+
++ (UIImage *)cachedImageForKey:(NSString *)key drawing:(UIImage *(^)(void))drawing {
+    if (key == nil) return drawing ? drawing() : nil;
+
+    static NSCache *cache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cache = [[NSCache alloc] init];
+        cache.countLimit = 600;
+    });
+
+    UIImage *image = [cache objectForKey:key];
+    if (image == nil && drawing) {
+        image = drawing();
+        if (image) [cache setObject:image forKey:key];
+    }
+    return image;
+}
+
+typedef UIImage *(*GHIconColorSizeIMP)(id, SEL, UIColor *, CGFloat);
+typedef UIImage *(*GHIconColorRectSizeIMP)(id, SEL, UIColor *, CGSize);
+typedef UIImage *(*GHIconStarIMP)(id, SEL, UIColor *, CGFloat, BOOL);
+typedef UIImage *(*GHIconSizeIMP)(id, SEL, CGFloat);
+typedef UIImage *(*GHIconBadgeIMP)(id, SEL, NSString *, UIColor *, UIColor *, CGFloat);
+
+static CFMutableDictionaryRef GHIconOriginalImplementations = NULL;
+
+static IMP GHIconOriginalIMP(SEL selector) {
+    return (IMP)CFDictionaryGetValue(GHIconOriginalImplementations, (const void *)selector);
+}
+
+static UIImage *GHCachedColorSizeIcon(id self, SEL _cmd, UIColor *color, CGFloat size) {
+    GHIconColorSizeIMP original = (GHIconColorSizeIMP)GHIconOriginalIMP(_cmd);
+    NSString *colorKey = [GHIconRenderer cacheKeyForColor:color];
+    NSString *key = colorKey ? [NSString stringWithFormat:@"%s|%@|%.2f", sel_getName(_cmd), colorKey, size] : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return original(self, _cmd, color, size);
+    }];
+}
+
+static UIImage *GHCachedColorRectSizeIcon(id self, SEL _cmd, UIColor *color, CGSize size) {
+    GHIconColorRectSizeIMP original = (GHIconColorRectSizeIMP)GHIconOriginalIMP(_cmd);
+    NSString *colorKey = [GHIconRenderer cacheKeyForColor:color];
+    NSString *key = colorKey ? [NSString stringWithFormat:@"%s|%@|%.2fx%.2f", sel_getName(_cmd), colorKey, size.width, size.height] : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return original(self, _cmd, color, size);
+    }];
+}
+
+static UIImage *GHCachedStarIcon(id self, SEL _cmd, UIColor *color, CGFloat size, BOOL filled) {
+    GHIconStarIMP original = (GHIconStarIMP)GHIconOriginalIMP(_cmd);
+    NSString *colorKey = [GHIconRenderer cacheKeyForColor:color];
+    NSString *key = colorKey ? [NSString stringWithFormat:@"%s|%@|%.2f|%d", sel_getName(_cmd), colorKey, size, filled ? 1 : 0] : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return original(self, _cmd, color, size, filled);
+    }];
+}
+
+static UIImage *GHCachedSizeIcon(id self, SEL _cmd, CGFloat size) {
+    GHIconSizeIMP original = (GHIconSizeIMP)GHIconOriginalIMP(_cmd);
+    NSString *key = [NSString stringWithFormat:@"%s|%.2f", sel_getName(_cmd), size];
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return original(self, _cmd, size);
+    }];
+}
+
+static UIImage *GHCachedLabelBadge(id self, SEL _cmd, NSString *text, UIColor *backgroundColor, UIColor *textColor, CGFloat pointSize) {
+    GHIconBadgeIMP original = (GHIconBadgeIMP)GHIconOriginalIMP(_cmd);
+    NSString *backgroundKey = [GHIconRenderer cacheKeyForColor:backgroundColor];
+    NSString *textKey = [GHIconRenderer cacheKeyForColor:textColor];
+    NSString *key = (backgroundKey && textKey && text)
+        ? [NSString stringWithFormat:@"%s|%@|%@|%.2f|%@", sel_getName(_cmd), backgroundKey, textKey, pointSize, text]
+        : nil;
+    return [GHIconRenderer cachedImageForKey:key drawing:^UIImage *{
+        return original(self, _cmd, text, backgroundColor, textColor, pointSize);
+    }];
+}
+
+static BOOL GHIconArgumentIs(Method method, unsigned int index, const char *encoding) {
+    char *type = method_copyArgumentType(method, index);
+    BOOL matches = type != NULL && strcmp(type, encoding) == 0;
+    free(type);
+    return matches;
+}
+
+static IMP GHIconCachingIMPForMethod(Method method) {
+    char *returnType = method_copyReturnType(method);
+    BOOL returnsObject = returnType != NULL && returnType[0] == '@';
+    free(returnType);
+    if (!returnsObject) return NULL;
+
+    SEL selector = method_getName(method);
+    if (selector == @selector(starIconWithColor:size:filled:)) return (IMP)GHCachedStarIcon;
+    if (selector == @selector(disclosureChevronWithColor:size:)) return (IMP)GHCachedColorRectSizeIcon;
+    if (selector == @selector(busyStatusIconWithSize:)) return (IMP)GHCachedSizeIcon;
+    if (selector == @selector(issueLabelBadgeWithText:backgroundColor:textColor:pointSize:)) return (IMP)GHCachedLabelBadge;
+
+    const char *name = sel_getName(selector);
+    const char *suffix = "WithColor:size:";
+    size_t nameLength = strlen(name), suffixLength = strlen(suffix);
+    if (nameLength <= suffixLength || strcmp(name + nameLength - suffixLength, suffix) != 0) return NULL;
+    if (method_getNumberOfArguments(method) != 4) return NULL;
+    if (!GHIconArgumentIs(method, 2, @encode(id)) || !GHIconArgumentIs(method, 3, @encode(CGFloat))) return NULL;
+    return (IMP)GHCachedColorSizeIcon;
+}
+
++ (void)load {
+    CFMutableDictionaryRef originals = CFDictionaryCreateMutable(NULL, 0, NULL, NULL);
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(object_getClass(self), &count);
+    for (unsigned int i = 0; i < count; i++) {
+        IMP replacement = GHIconCachingIMPForMethod(methods[i]);
+        if (replacement == NULL) continue;
+        CFDictionarySetValue(originals, (const void *)method_getName(methods[i]), (const void *)method_getImplementation(methods[i]));
+        method_setImplementation(methods[i], replacement);
+    }
+    free(methods);
+    GHIconOriginalImplementations = originals;
+}
 
 @end

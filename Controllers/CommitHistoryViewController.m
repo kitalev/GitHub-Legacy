@@ -31,7 +31,7 @@ static const CGFloat kCommitMetaHeight = 20;
 
 + (CGFloat)titleHeight:(NSString *)title width:(CGFloat)width {
     UIFont *font = [self titleFont];
-    CGSize size = [(title ?: @"") sizeWithFont:font constrainedToSize:CGSizeMake(width, CGFLOAT_MAX) lineBreakMode:NSLineBreakByTruncatingTail];
+    CGSize size = GHCachedTextSize(title ?: @"", font, CGSizeMake(width, CGFLOAT_MAX), NSLineBreakByTruncatingTail);
     return MAX(ceil(font.lineHeight), MIN(ceil(size.height), ceil(font.lineHeight) * 2));
 }
 
@@ -252,9 +252,7 @@ static const NSInteger kCommitsPerPage = 30;
 - (NSString *)relativeDateStringFromISOString:(NSString *)isoString {
     if (isoString.length == 0) return @"";
 
-    NSDateFormatter *isoFormatter = GHISODateFormatter();
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = -[date timeIntervalSinceNow];

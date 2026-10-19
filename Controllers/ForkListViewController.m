@@ -59,7 +59,7 @@ static NSString *GHForkL(NSString *ru, NSString *en) {
 + (CGFloat)descriptionHeight:(NSString *)text width:(CGFloat)width {
     if (text.length == 0) return 0;
     UIFont *font = [UIFont systemFontOfSize:15];
-    CGSize size = [text sizeWithFont:font constrainedToSize:CGSizeMake(width, CGFLOAT_MAX) lineBreakMode:NSLineBreakByTruncatingTail];
+    CGSize size = GHCachedTextSize(text, font, CGSizeMake(width, CGFLOAT_MAX), NSLineBreakByTruncatingTail);
     return MIN(ceil(size.height), ceil(font.lineHeight) * 3);
 }
 
@@ -463,8 +463,7 @@ static const NSInteger kSortActionSheetTag = 2;
     NSString *createdAt = [fork[@"created_at"] isKindOfClass:[NSString class]] ? fork[@"created_at"] : nil;
     if (createdAt.length == 0) return YES;
 
-    NSDateFormatter *isoFormatter = GHISODateFormatter();
-    NSDate *date = [isoFormatter dateFromString:createdAt];
+    NSDate *date = GHDateFromISO8601String(createdAt);
     if (!date) return YES;
 
     NSTimeInterval secondsInPeriod = self.selectedPeriodYears * 365.25 * 24 * 60 * 60;

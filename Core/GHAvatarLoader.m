@@ -8,6 +8,9 @@ static CGFloat const kGHAvatarDiameter = 30.0;
 
 @interface GHAvatarLoader ()
 @property (nonatomic, strong) NSCache *imageCache;
+@property (nonatomic, strong) NSMutableDictionary *pendingRequests;
+@property (nonatomic, strong) NSOperationQueue *responseQueue;
+@property (nonatomic, assign) CGFloat renderScale;
 @end
 
 @implementation GHAvatarLoader
@@ -26,6 +29,10 @@ static CGFloat const kGHAvatarDiameter = 30.0;
     if (self) {
         _imageCache = [[NSCache alloc] init];
         _imageCache.countLimit = 300;
+        _pendingRequests = [NSMutableDictionary dictionary];
+        _responseQueue = [[NSOperationQueue alloc] init];
+        _responseQueue.maxConcurrentOperationCount = 1;
+        _renderScale = [UIScreen mainScreen].scale * 2.0;
     }
     return self;
 }
@@ -33,7 +40,7 @@ static CGFloat const kGHAvatarDiameter = 30.0;
 - (UIImage *)circularAvatarFromImage:(UIImage *)sourceImage {
     CGRect rect = CGRectMake(0, 0, kGHAvatarDiameter, kGHAvatarDiameter);
 
-    UIGraphicsBeginImageContextWithOptions(rect.size, NO, [UIScreen mainScreen].scale * 2.0);
+    UIGraphicsBeginImageContextWithOptions(rect.size, NO, self.renderScale);
     CGContextRef context = UIGraphicsGetCurrentContext();
     CGContextAddEllipseInRect(context, rect);
     CGContextClip(context);
@@ -98,30 +105,44 @@ static CGFloat const kGHAvatarDiameter = 30.0;
     NSURL *url = [NSURL URLWithString:urlString];
     if (!url) return;
 
+    __weak UIImageView *weakImageView = imageView;
+    void (^waiter)(UIImage *) = ^(UIImage *circularImage) {
+        UIImageView *strongImageView = weakImageView;
+        NSString *currentURL = strongImageView ? objc_getAssociatedObject(strongImageView, kGHAvatarURLAssociationKey) : nil;
+        if (circularImage && [currentURL isEqualToString:urlString]) {
+            strongImageView.image = circularImage;
+            [self nudgeLayoutForImageView:strongImageView];
+        }
+        if (circularImage && completion) completion();
+    };
+
+    NSMutableArray *waiters = self.pendingRequests[urlString];
+    if (waiters) {
+        [waiters addObject:[waiter copy]];
+        return;
+    }
+    self.pendingRequests[urlString] = [NSMutableArray arrayWithObject:[waiter copy]];
+
     NSURLRequest *request = [NSURLRequest requestWithURL:url];
     __weak typeof(self) weakSelf = self;
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:self.responseQueue
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf || connectionError || data.length == 0) return;
+        if (!strongSelf) return;
 
-        UIImage *rawImage = [UIImage imageWithData:data];
-        if (!rawImage) return;
-
-        UIImage *circularImage = [strongSelf circularAvatarFromImage:rawImage];
-        if (!circularImage) return;
-
-        [strongSelf.imageCache setObject:circularImage forKey:urlString];
-
-        NSString *currentURL = objc_getAssociatedObject(imageView, kGHAvatarURLAssociationKey);
-        if ([currentURL isEqualToString:urlString]) {
-
-            imageView.image = circularImage;
-            [strongSelf nudgeLayoutForImageView:imageView];
+        UIImage *circularImage = nil;
+        if (!connectionError && data.length > 0) {
+            UIImage *rawImage = [UIImage imageWithData:data];
+            if (rawImage) circularImage = [strongSelf circularAvatarFromImage:rawImage];
         }
 
-        if (completion) completion();
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (circularImage) [strongSelf.imageCache setObject:circularImage forKey:urlString];
+            NSArray *pending = strongSelf.pendingRequests[urlString];
+            [strongSelf.pendingRequests removeObjectForKey:urlString];
+            for (void (^pendingWaiter)(UIImage *) in pending) pendingWaiter(circularImage);
+        });
     }];
 }
 
@@ -133,7 +154,6 @@ static CGFloat const kGHAvatarDiameter = 30.0;
     if (!ancestor) return;
 
     [ancestor setNeedsLayout];
-    [ancestor layoutIfNeeded];
 }
 
 @end

@@ -5,6 +5,43 @@
 
 static NSString * const kGHBaseURL = @"https://api.github.com";
 
+static NSOperationQueue *GHAPIResponseQueue(void) {
+    static NSOperationQueue *queue = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = [[NSOperationQueue alloc] init];
+        queue.maxConcurrentOperationCount = 2;
+    });
+    return queue;
+}
+
+static GHJSONCompletionBlock GHJSONCompletionOnMain(GHJSONCompletionBlock completion) {
+    if (completion == nil) return nil;
+    return ^(id jsonObject, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(jsonObject, error);
+        });
+    };
+}
+
+static GHTextCompletionBlock GHTextCompletionOnMain(GHTextCompletionBlock completion) {
+    if (completion == nil) return nil;
+    return ^(NSString *text, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(text, error);
+        });
+    };
+}
+
+static GHStatusCompletionBlock GHStatusCompletionOnMain(GHStatusCompletionBlock completion) {
+    if (completion == nil) return nil;
+    return ^(NSInteger statusCode, NSString *message, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(statusCode, message, error);
+        });
+    };
+}
+
 @implementation GHAPIClient
 
 + (instancetype)sharedClient {
@@ -35,11 +72,12 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
     }
 
+    GHJSONCompletionBlock mainCompletion = GHJSONCompletionOnMain(completion);
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:GHAPIResponseQueue()
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         if (connectionError) {
-            if (completion) completion(nil, connectionError);
+            if (mainCompletion) mainCompletion(nil, connectionError);
             return;
         }
 
@@ -64,14 +102,14 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
             NSError *httpError = [NSError errorWithDomain:@"GHAPIClient"
                                                        code:httpResponse.statusCode
                                                    userInfo:userInfo];
-            if (completion) completion(nil, httpError);
+            if (mainCompletion) mainCompletion(nil, httpError);
             return;
         }
 
         NSError *jsonError = nil;
         id jsonObject = [GHJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
 
-        if (completion) completion(jsonObject, jsonError);
+        if (mainCompletion) mainCompletion(jsonObject, jsonError);
     }];
 }
 
@@ -212,21 +250,22 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     NSString *apiPath = [self contentsAPIPathForOwner:owner repo:repo path:path];
     NSMutableURLRequest *request = [self requestWithMethod:@"GET" path:apiPath accept:@"application/vnd.github.raw"];
 
+    GHTextCompletionBlock mainCompletion = GHTextCompletionOnMain(completion);
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:GHAPIResponseQueue()
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         if (connectionError) {
-            if (completion) completion(nil, connectionError);
+            if (mainCompletion) mainCompletion(nil, connectionError);
             return;
         }
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         if (httpResponse.statusCode >= 400) {
-            if (completion) completion(nil, [self errorForHTTPResponse:httpResponse data:data]);
+            if (mainCompletion) mainCompletion(nil, [self errorForHTTPResponse:httpResponse data:data]);
             return;
         }
         NSString *text = [[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding];
         if (text == nil) text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
-        if (completion) completion(text ?: @"", nil);
+        if (mainCompletion) mainCompletion(text ?: @"", nil);
     }];
 }
 
@@ -252,21 +291,22 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     }
     request.HTTPBody = bodyData;
 
+    GHJSONCompletionBlock mainCompletion = GHJSONCompletionOnMain(completion);
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:GHAPIResponseQueue()
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         if (connectionError) {
-            if (completion) completion(nil, connectionError);
+            if (mainCompletion) mainCompletion(nil, connectionError);
             return;
         }
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         if (httpResponse.statusCode >= 400) {
-            if (completion) completion(nil, [self errorForHTTPResponse:httpResponse data:data]);
+            if (mainCompletion) mainCompletion(nil, [self errorForHTTPResponse:httpResponse data:data]);
             return;
         }
         NSError *jsonError = nil;
         id jsonObject = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
-        if (completion) completion(jsonObject, jsonError);
+        if (mainCompletion) mainCompletion(jsonObject, jsonError);
     }];
 }
 
@@ -401,11 +441,12 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
         [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
     }
 
+    GHStatusCompletionBlock mainCompletion = GHStatusCompletionOnMain(completion);
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:GHAPIResponseQueue()
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         if (connectionError) {
-            if (completion) completion(0, nil, connectionError);
+            if (mainCompletion) mainCompletion(0, nil, connectionError);
             return;
         }
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
@@ -419,7 +460,7 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
             }
         }
 
-        if (completion) completion(httpResponse.statusCode, message, nil);
+        if (mainCompletion) mainCompletion(httpResponse.statusCode, message, nil);
     }];
 }
 
@@ -465,11 +506,12 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     }
     request.HTTPBody = bodyData;
 
+    GHJSONCompletionBlock mainCompletion = GHJSONCompletionOnMain(completion);
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:GHAPIResponseQueue()
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         if (connectionError) {
-            if (completion) completion(nil, connectionError);
+            if (mainCompletion) mainCompletion(nil, connectionError);
             return;
         }
 
@@ -486,11 +528,11 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
             NSError *gqlError = [NSError errorWithDomain:@"GHAPIClient"
                                                        code:422
                                                    userInfo:@{NSLocalizedDescriptionKey: message}];
-            if (completion) completion(nil, gqlError);
+            if (mainCompletion) mainCompletion(nil, gqlError);
             return;
         }
 
-        if (completion) completion(jsonObject, jsonError);
+        if (mainCompletion) mainCompletion(jsonObject, jsonError);
     }];
 }
 
@@ -531,11 +573,12 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
     NSData *bodyData = [GHJSONSerialization dataWithJSONObject:@{@"content": content ?: @""} options:0 error:nil];
     request.HTTPBody = bodyData;
 
+    GHJSONCompletionBlock mainCompletion = GHJSONCompletionOnMain(completion);
     [NSURLConnection sendAsynchronousRequest:request
-                                        queue:[NSOperationQueue mainQueue]
+                                        queue:GHAPIResponseQueue()
                             completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
         if (connectionError) {
-            if (completion) completion(nil, connectionError);
+            if (mainCompletion) mainCompletion(nil, connectionError);
             return;
         }
 
@@ -554,12 +597,12 @@ static NSString * const kGHBaseURL = @"https://api.github.com";
             NSError *httpError = [NSError errorWithDomain:@"GHAPIClient"
                                                        code:httpResponse.statusCode
                                                    userInfo:@{NSLocalizedDescriptionKey: description}];
-            if (completion) completion(nil, httpError);
+            if (mainCompletion) mainCompletion(nil, httpError);
             return;
         }
 
         id jsonObject = data.length > 0 ? [GHJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-        if (completion) completion(jsonObject, nil);
+        if (mainCompletion) mainCompletion(jsonObject, nil);
     }];
 }
 

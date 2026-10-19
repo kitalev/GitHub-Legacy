@@ -19,6 +19,7 @@
 
 @property (nonatomic, copy) NSString *lastLoadedHTML;
 @property (nonatomic, strong) NSDictionary *lastCommitJSON;
+@property (nonatomic, assign) NSUInteger renderGeneration;
 
 @property (nonatomic, strong) UIView *stickyHeaderView;
 @property (nonatomic, assign) BOOL stickyChevronOpen;
@@ -128,11 +129,24 @@
             return;
         }
 
-        NSString *html = [strongSelf htmlForCommit:jsonObject];
-        strongSelf.lastLoadedHTML = html;
         strongSelf.lastCommitJSON = jsonObject;
-        [strongSelf.webView loadHTMLString:html baseURL:nil];
+        [strongSelf renderCommitJSON:jsonObject];
     }];
+}
+
+- (void)renderCommitJSON:(NSDictionary *)commitJSON {
+    NSUInteger generation = ++self.renderGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSString *html = [strongSelf htmlForCommit:commitJSON];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (strongSelf.renderGeneration != generation) return;
+            strongSelf.lastLoadedHTML = html;
+            [strongSelf.webView loadHTMLString:html baseURL:nil];
+        });
+    });
 }
 
 - (void)installWebView {
@@ -548,9 +562,7 @@
     self.fileSectionMetrics = nil;
     [self installStickyHeaderIfNeeded];
 
-    NSString *html = [self htmlForCommit:self.lastCommitJSON];
-    self.lastLoadedHTML = html;
-    [self.webView loadHTMLString:html baseURL:nil];
+    [self renderCommitJSON:self.lastCommitJSON];
 }
 
 - (void)dealloc {
@@ -825,12 +837,16 @@ static NSString *GHCommitL(NSString *ru, NSString *en) {
         formatter.usesGroupingSeparator = YES;
         formatter.groupingSize = 3;
     });
-    return [formatter stringFromNumber:@(value)] ?: [NSString stringWithFormat:@"%ld", (long)value];
+    NSString *text = nil;
+    @synchronized (formatter) {
+        text = [formatter stringFromNumber:@(value)];
+    }
+    return text ?: [NSString stringWithFormat:@"%ld", (long)value];
 }
 
 - (NSString *)relativeDateFromISOString:(NSString *)isoString {
     if (isoString.length == 0) return @"";
-    NSDate *date = [GHISODateFormatter() dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
     NSTimeInterval seconds = MAX(-[date timeIntervalSinceNow], 0);
     NSInteger minutes = (NSInteger)(seconds / 60);

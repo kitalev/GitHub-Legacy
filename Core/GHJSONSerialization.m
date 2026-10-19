@@ -1,9 +1,19 @@
 #import "GHJSONSerialization.h"
 
+#define GH_JSON_KEY_SLOT_COUNT 256
+#define GH_JSON_KEY_MAX_CACHED_LENGTH 48
+
+typedef struct {
+    const uint8_t *bytes;
+    NSUInteger length;
+    CFStringRef string;
+} GHJSONKeySlot;
+
 typedef struct {
     const uint8_t *cursor;
     const uint8_t *end;
     const uint8_t *start;
+    GHJSONKeySlot *keySlots;
 } GHJSONReader;
 
 static Class GHNativeJSONClass(void) {
@@ -168,6 +178,33 @@ static NSString *GHJSONParseString(GHJSONReader *reader, NSString **message) {
     return nil;
 }
 
+static NSString *GHJSONParseKey(GHJSONReader *reader, NSString **message) {
+    const uint8_t *runStart = reader->cursor + 1;
+    const uint8_t *scan = runStart;
+    const uint8_t *limit = MIN(reader->end, runStart + GH_JSON_KEY_MAX_CACHED_LENGTH);
+    uint32_t hash = 2166136261u;
+    while (scan < limit && *scan != '"' && *scan != '\\' && *scan >= 0x20) {
+        hash = (hash ^ *scan) * 16777619u;
+        scan++;
+    }
+    if (reader->keySlots == NULL || scan >= limit || *scan != '"') return GHJSONParseString(reader, message);
+
+    NSUInteger length = (NSUInteger)(scan - runStart);
+    GHJSONKeySlot *slot = &reader->keySlots[hash & (GH_JSON_KEY_SLOT_COUNT - 1)];
+    if (slot->string != NULL && slot->length == length && memcmp(slot->bytes, runStart, length) == 0) {
+        reader->cursor = scan + 1;
+        return (__bridge NSString *)slot->string;
+    }
+
+    NSString *key = GHJSONParseString(reader, message);
+    if (key == nil) return nil;
+    if (slot->string != NULL) CFRelease(slot->string);
+    slot->bytes = runStart;
+    slot->length = length;
+    slot->string = (CFStringRef)CFBridgingRetain(key);
+    return key;
+}
+
 static NSNumber *GHJSONParseNumber(GHJSONReader *reader, NSString **message) {
     const uint8_t *start = reader->cursor;
     BOOL isFloat = NO;
@@ -236,7 +273,7 @@ static BOOL GHJSONMatchLiteral(GHJSONReader *reader, const char *literal) {
 
 static id GHJSONParseArray(GHJSONReader *reader, NSUInteger depth, NSString **message) {
     reader->cursor++;
-    NSMutableArray *array = [NSMutableArray array];
+    NSMutableArray *array = [[NSMutableArray alloc] init];
     GHJSONSkipWhitespace(reader);
     if (reader->cursor < reader->end && *reader->cursor == ']') {
         reader->cursor++;
@@ -261,7 +298,7 @@ static id GHJSONParseArray(GHJSONReader *reader, NSUInteger depth, NSString **me
 
 static id GHJSONParseObject(GHJSONReader *reader, NSUInteger depth, NSString **message) {
     reader->cursor++;
-    NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+    NSMutableDictionary *dictionary = [[NSMutableDictionary alloc] init];
     GHJSONSkipWhitespace(reader);
     if (reader->cursor < reader->end && *reader->cursor == '}') {
         reader->cursor++;
@@ -273,7 +310,7 @@ static id GHJSONParseObject(GHJSONReader *reader, NSUInteger depth, NSString **m
             *message = @"Expected string key in object";
             return nil;
         }
-        NSString *key = GHJSONParseString(reader, message);
+        NSString *key = GHJSONParseKey(reader, message);
         if (key == nil) return nil;
         GHJSONSkipWhitespace(reader);
         if (reader->cursor >= reader->end || *reader->cursor != ':') {
@@ -455,6 +492,7 @@ static BOOL GHJSONWriteValue(NSMutableData *output, id value, BOOL pretty, NSUIn
     reader.start = data.bytes;
     reader.cursor = reader.start;
     reader.end = reader.start + data.length;
+    reader.keySlots = NULL;
     if (data.length >= 3 && reader.cursor[0] == 0xEF && reader.cursor[1] == 0xBB && reader.cursor[2] == 0xBF) {
         reader.cursor += 3;
     }
@@ -467,6 +505,7 @@ static BOOL GHJSONWriteValue(NSMutableData *output, id value, BOOL pretty, NSUIn
         return nil;
     }
 
+    reader.keySlots = calloc(GH_JSON_KEY_SLOT_COUNT, sizeof(GHJSONKeySlot));
     id result = GHJSONParseValue(&reader, 0, &message);
     if (result != nil) {
         GHJSONSkipWhitespace(&reader);
@@ -477,6 +516,12 @@ static BOOL GHJSONWriteValue(NSMutableData *output, id value, BOOL pretty, NSUIn
     }
     if (result == nil && error) {
         *error = GHJSONError(message ?: @"Invalid JSON", (NSUInteger)(reader.cursor - reader.start));
+    }
+    if (reader.keySlots != NULL) {
+        for (NSUInteger i = 0; i < GH_JSON_KEY_SLOT_COUNT; i++) {
+            if (reader.keySlots[i].string != NULL) CFRelease(reader.keySlots[i].string);
+        }
+        free(reader.keySlots);
     }
     return result;
 }

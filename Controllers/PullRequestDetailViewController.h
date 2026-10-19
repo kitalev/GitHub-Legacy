@@ -2,7 +2,7 @@
 
 @interface PullRequestDetailViewController : UIViewController <UIWebViewDelegate>
 
-@property (nonatomic, strong) NSDictionary *pullRequest;
+@property (atomic, strong) NSDictionary *pullRequest;
 @property (nonatomic, copy) NSString *ownerLogin;
 @property (nonatomic, copy) NSString *repoName;
 

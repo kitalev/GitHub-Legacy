@@ -2,6 +2,7 @@
 #import "GHAvatarLoader.h"
 #import "GHThemeManager.h"
 #import "GHLocalization.h"
+#import "GHCompat.h"
 #import <QuartzCore/QuartzCore.h>
 
 static const CGFloat kMargin = 16;
@@ -107,9 +108,8 @@ UIColor *GHColorForLanguage(NSString *language) {
     NSString *description = [repo[@"description"] isKindOfClass:[NSString class]] ? repo[@"description"] : nil;
     CGFloat descriptionHeight = 0;
     if (description.length > 0) {
-        CGSize size = [description sizeWithFont:[UIFont systemFontOfSize:14]
-                               constrainedToSize:CGSizeMake(contentWidth, CGFLOAT_MAX)
-                                   lineBreakMode:NSLineBreakByTruncatingTail];
+        CGSize size = GHCachedTextSize(description, [UIFont systemFontOfSize:14],
+                                       CGSizeMake(contentWidth, CGFLOAT_MAX), NSLineBreakByTruncatingTail);
 
         descriptionHeight = MIN(size.height, 14 * 1.3 * 3);
     }
@@ -186,9 +186,8 @@ UIColor *GHColorForLanguage(NSString *language) {
     CGFloat descriptionHeight = 0;
     if (!self.descriptionLabel.hidden) {
         descriptionY += kRowSpacing;
-        CGSize size = [self.descriptionLabel.text sizeWithFont:self.descriptionLabel.font
-                                               constrainedToSize:CGSizeMake(contentWidth, CGFLOAT_MAX)
-                                                   lineBreakMode:NSLineBreakByTruncatingTail];
+        CGSize size = GHCachedTextSize(self.descriptionLabel.text, self.descriptionLabel.font,
+                                       CGSizeMake(contentWidth, CGFLOAT_MAX), NSLineBreakByTruncatingTail);
         descriptionHeight = MIN(size.height, self.descriptionLabel.font.lineHeight * 1.3 * 3);
         self.descriptionLabel.frame = CGRectMake(kMargin, descriptionY, contentWidth, descriptionHeight);
     } else {

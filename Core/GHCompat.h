@@ -8,6 +8,12 @@ FOUNDATION_EXTERN NSDateFormatter *GHISODateFormatter(void);
 FOUNDATION_EXTERN NSDateFormatter *GHMediumShortDateFormatter(void);
 FOUNDATION_EXTERN NSDateFormatter *GHMediumDateFormatter(void);
 
+FOUNDATION_EXTERN NSDate *GHDateFromISO8601String(NSString *isoString);
+FOUNDATION_EXTERN CGSize GHCachedTextSize(NSString *text, UIFont *font, CGSize constraint, NSLineBreakMode lineBreakMode);
+
+FOUNDATION_EXTERN UIImage *GHDecodedImageWithData(NSData *data);
+FOUNDATION_EXTERN void GHDecodeImageDataAsync(NSData *data, void (^completion)(UIImage *image));
+
 FOUNDATION_EXTERN NSString *GHFontAttributeName(void);
 FOUNDATION_EXTERN NSString *GHForegroundColorAttributeName(void);
 

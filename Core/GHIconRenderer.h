@@ -61,4 +61,7 @@
 
 + (UIColor *)readableTextColorOverColor:(UIColor *)backgroundColor;
 
++ (NSString *)cacheKeyForColor:(UIColor *)color;
++ (UIImage *)cachedImageForKey:(NSString *)key drawing:(UIImage *(^)(void))drawing;
+
 @end

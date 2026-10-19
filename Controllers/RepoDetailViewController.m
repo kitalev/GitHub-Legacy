@@ -20,16 +20,7 @@ static BOOL GHReleaseBool(NSDictionary *dict, NSString *key) {
 static NSString *GHReleaseShortAge(NSString *isoString) {
     if (isoString.length == 0) return @"";
 
-    static NSDateFormatter *isoFormatter = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        isoFormatter = [[NSDateFormatter alloc] init];
-        isoFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-        isoFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
-        isoFormatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    });
-
-    NSDate *date = [isoFormatter dateFromString:isoString];
+    NSDate *date = GHDateFromISO8601String(isoString);
     if (!date) return @"";
 
     NSTimeInterval seconds = MAX(0, -[date timeIntervalSinceNow]);
@@ -166,6 +157,7 @@ static const CGFloat kGHReleaseListSidePadding = 16.0;
 @interface RepoDetailViewController ()
 @property (nonatomic, strong) NSMutableArray *releases;
 @property (nonatomic, assign) BOOL loaded;
+@property (nonatomic, assign) NSInteger cachedLatestReleaseIndex;
 @end
 
 @interface RepoDetailViewController (GHReleaseRouting)
@@ -205,6 +197,7 @@ static const CGFloat kGHReleaseListSidePadding = 16.0;
     self = [super initWithStyle:UITableViewStylePlain];
     if (self) {
         _releases = [NSMutableArray array];
+        _cachedLatestReleaseIndex = NSNotFound;
 
         self.title = GHL(@"Релизы");
     }
@@ -283,6 +276,7 @@ static const CGFloat kGHReleaseListSidePadding = 16.0;
                 if ([release isKindOfClass:[NSDictionary class]]) [strongSelf.releases addObject:release];
             }
         }
+        strongSelf.cachedLatestReleaseIndex = [strongSelf latestReleaseIndex];
         strongSelf.loaded = YES;
         [strongSelf.tableView reloadData];
     }];
@@ -351,7 +345,7 @@ static const CGFloat kGHReleaseListSidePadding = 16.0;
         cell = [[GHReleaseListCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"GHReleaseListCell"];
     }
     NSDictionary *release = self.releases[indexPath.row];
-    [cell configureWithRelease:release isLatest:(indexPath.row == [self latestReleaseIndex])];
+    [cell configureWithRelease:release isLatest:(indexPath.row == self.cachedLatestReleaseIndex)];
     return cell;
 }
 

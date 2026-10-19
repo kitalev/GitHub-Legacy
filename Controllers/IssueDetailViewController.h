@@ -2,7 +2,7 @@
 
 @interface IssueDetailViewController : UIViewController <UIWebViewDelegate>
 
-@property (nonatomic, strong) NSDictionary *issue;
+@property (atomic, strong) NSDictionary *issue;
 @property (nonatomic, copy) NSString *ownerLogin;
 @property (nonatomic, copy) NSString *repoName;
 
