@@ -115,7 +115,7 @@ static const CGFloat kGHReleaseListSidePadding = 16.0;
     self.dotLabel.textColor = GHSecondaryTextColor();
 
     NSString *status = nil;
-    UIColor *statusColor = nil;
+    UIColor *statusColor = GHSecondaryTextColor();
     if (GHReleaseBool(release, @"draft")) {
         status = GHL(@"Черновик");
         statusColor = GHSecondaryTextColor();
