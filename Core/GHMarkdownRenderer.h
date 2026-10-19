@@ -45,4 +45,6 @@
 
 + (NSString *)themeToggleScriptForDarkModeEnabled:(BOOL)darkModeEnabled;
 
++ (NSString *)legacyOverflowScrollScript;
+
 @end

@@ -1,6 +1,6 @@
 Package: com.githublegacy.app
 Name: GitHub Legacy
-Version: 1.1.2
+Version: 1.1.3
 Architecture: iphoneos-arm
 Description: A lightweight GitHub client for iOS 4+ devices - browse repositories, read READMEs, and download releases.
 Maintainer: kitalev

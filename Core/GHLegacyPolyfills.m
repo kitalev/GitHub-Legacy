@@ -204,10 +204,35 @@ static void GHLayoutSublayersOfLayer(UIView *self, SEL _cmd, CALayer *layer) {
 
 #pragma mark - UINavigationItem multiple items
 
-@interface GHLegacyBarItemsToolbar : UIToolbar
+@interface GHLegacyBarItemsToolbar : UIToolbar {
+    BOOL _alignsRight;
+}
+@property (nonatomic, assign) BOOL alignsRight;
 @end
 
 @implementation GHLegacyBarItemsToolbar
+
+@synthesize alignsRight = _alignsRight;
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+
+    CGFloat minX = CGFLOAT_MAX;
+    CGFloat maxX = -CGFLOAT_MAX;
+    for (UIView *view in self.subviews) {
+        if (view.frame.size.width >= self.bounds.size.width) continue;
+        minX = MIN(minX, CGRectGetMinX(view.frame));
+        maxX = MAX(maxX, CGRectGetMaxX(view.frame));
+    }
+    if (minX > maxX) return;
+
+    CGFloat offset = _alignsRight ? floorf(self.bounds.size.width - maxX) : -floorf(minX);
+    if (offset == 0) return;
+    for (UIView *view in self.subviews) {
+        if (view.frame.size.width >= self.bounds.size.width) continue;
+        view.frame = CGRectOffset(view.frame, offset, 0);
+    }
+}
 
 - (id)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
@@ -237,9 +262,10 @@ static void GHLayoutSublayersOfLayer(UIView *self, SEL _cmd, CALayer *layer) {
 static char kGHRightItemsKey;
 static char kGHLeftItemsKey;
 
-static UIBarButtonItem *GHCombinedBarItem(NSArray *items, UIBarStyle barStyle) {
+static UIBarButtonItem *GHCombinedBarItem(NSArray *items, UIBarStyle barStyle, BOOL alignsRight) {
     if (items.count == 0) return nil;
     if (items.count == 1) return [items objectAtIndex:0];
+    if (alignsRight) items = [[items reverseObjectEnumerator] allObjects];
     CGFloat width = 0;
     for (UIBarButtonItem *item in items) {
         if (item.customView == nil && item.style == UIBarButtonItemStylePlain) {
@@ -257,6 +283,7 @@ static UIBarButtonItem *GHCombinedBarItem(NSArray *items, UIBarStyle barStyle) {
     }
     GHLegacyBarItemsToolbar *toolbar = [[GHLegacyBarItemsToolbar alloc] initWithFrame:CGRectMake(0, 0, width, 44)];
     toolbar.barStyle = barStyle;
+    toolbar.alignsRight = alignsRight;
     toolbar.items = items;
     UIBarButtonItem *container = [[UIBarButtonItem alloc] initWithCustomView:toolbar];
     [toolbar release];
@@ -265,7 +292,7 @@ static UIBarButtonItem *GHCombinedBarItem(NSArray *items, UIBarStyle barStyle) {
 
 static void GHSetRightItemsAnimated(UINavigationItem *self, SEL _cmd, NSArray *items, BOOL animated) {
     objc_setAssociatedObject(self, &kGHRightItemsKey, items, OBJC_ASSOCIATION_COPY_NONATOMIC);
-    [self setRightBarButtonItem:GHCombinedBarItem(items, UIBarStyleDefault) animated:animated];
+    [self setRightBarButtonItem:GHCombinedBarItem(items, UIBarStyleDefault, YES) animated:animated];
 }
 
 static void GHSetRightItems(UINavigationItem *self, SEL _cmd, NSArray *items) {
@@ -280,7 +307,7 @@ static NSArray *GHRightItems(UINavigationItem *self, SEL _cmd) {
 
 static void GHSetLeftItemsAnimated(UINavigationItem *self, SEL _cmd, NSArray *items, BOOL animated) {
     objc_setAssociatedObject(self, &kGHLeftItemsKey, items, OBJC_ASSOCIATION_COPY_NONATOMIC);
-    [self setLeftBarButtonItem:GHCombinedBarItem(items, UIBarStyleDefault) animated:animated];
+    [self setLeftBarButtonItem:GHCombinedBarItem(items, UIBarStyleDefault, NO) animated:animated];
 }
 
 static void GHSetLeftItems(UINavigationItem *self, SEL _cmd, NSArray *items) {

@@ -1089,7 +1089,8 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
 #pragma mark - Rows
 
 - (NSArray *)actionRowKinds {
-    NSMutableArray *rows = [NSMutableArray arrayWithObject:@(GHRepoRowKindIssues)];
+    NSMutableArray *rows = [NSMutableArray array];
+    if ([self repoHasIssues]) [rows addObject:@(GHRepoRowKindIssues)];
     if (!self.repoHasNoPullRequests) [rows addObject:@(GHRepoRowKindPullRequests)];
     [rows addObject:@(GHRepoRowKindReleases)];
     if (self.latestRelease) [rows addObject:@(GHRepoRowKindLatestRelease)];
@@ -1380,12 +1381,8 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
     switch (kind) {
         case GHRepoRowKindIssues: {
             cell.textLabel.text = GHL(@"Задачи");
-            if ([self repoHasIssues]) {
-                NSNumber *openIssuesCount = [self safeNumberForKey:@"open_issues_count" inDict:self.repo];
-                cell.detailTextLabel.text = [openIssuesCount stringValue];
-            } else {
-                cell.detailTextLabel.text = GHL(@"скрыты");
-            }
+            NSNumber *openIssuesCount = [self safeNumberForKey:@"open_issues_count" inDict:self.repo];
+            cell.detailTextLabel.text = [openIssuesCount stringValue];
             GHApplyDisclosureIndicator(cell);
             break;
         }
@@ -1467,15 +1464,6 @@ static NSString *GHRepoRelativeDate(NSString *isoString) {
 
     switch ([self rowKindAtIndexPath:indexPath]) {
         case GHRepoRowKindIssues: {
-            if (![self repoHasIssues]) {
-                UIAlertView *alert = [[UIAlertView alloc] initWithTitle:GHL(@"Issues скрыты")
-                                                                 message:GHL(@"Владелец репозитория отключил раздел Issues — GitHub не отдаёт по нему ни одной issue, поэтому список всегда будет пустым.")
-                                                                delegate:nil
-                                                       cancelButtonTitle:@"OK"
-                                                       otherButtonTitles:nil];
-                [alert show];
-                return;
-            }
             IssueListViewController *issuesVC = [[IssueListViewController alloc] init];
             issuesVC.ownerLogin = [self ownerLogin];
             issuesVC.repoName = [self repoName];

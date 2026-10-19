@@ -8,6 +8,7 @@
 #import "RepoDetailViewController.h"
 #import "RepoOverviewViewController.h"
 #import "GHCompat.h"
+#import "GHMarkdownRenderer.h"
 #import "GHLegacyRefreshControl.h"
 #import "PublicProfileViewController.h"
 
@@ -1267,7 +1268,7 @@ static NSString *GHCommitL(NSString *ru, NSString *en) {
         "<style>%@</style>"
         "<script>%@</script>"
         "</head><body>%@</body></html>",
-        css, js, body];
+        css, [js stringByAppendingString:[GHMarkdownRenderer legacyOverflowScrollScript]], body];
 }
 
 @end

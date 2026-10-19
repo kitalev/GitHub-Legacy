@@ -1316,7 +1316,7 @@ static const NSUInteger kStackTableColumnThreshold = 3;
          "}"
          "});";
 
-    NSString *js = [initialThemeJS stringByAppendingString:imageFallbackJS];
+    NSString *js = [[initialThemeJS stringByAppendingString:imageFallbackJS] stringByAppendingString:[self legacyOverflowScrollScript]];
 
     return [NSString stringWithFormat:
         @"<!DOCTYPE html><html><head>"
@@ -1335,6 +1335,57 @@ static const NSUInteger kStackTableColumnThreshold = 3;
         darkModeEnabled ? @"all" : @"print",
         darkModeEnabled ? @"false" : @"true",
         darkModeEnabled ? @"false" : @"true"];
+}
+
++ (NSString *)legacyOverflowScrollScript {
+    return
+        @"(function(){"
+        "var st=document.documentElement.style;"
+        "if('webkitOverflowScrolling' in st||'WebkitOverflowScrolling' in st)return;"
+        "function scroller(el){"
+        "if(el&&el.nodeType===3)el=el.parentNode;"
+        "while(el&&el.nodeType===1){"
+        "var ox=window.getComputedStyle(el).overflowX;"
+        "if((ox==='auto'||ox==='scroll')&&el.scrollWidth>el.clientWidth)return el;"
+        "el=el.parentNode;"
+        "}"
+        "return null;"
+        "}"
+        "var target=null,sx=0,sy=0,sl=0,mode=0,lx=0,lt=0,vel=0,glide=0;"
+        "document.addEventListener('touchstart',function(e){"
+        "glide++;"
+        "if(e.touches.length!==1){target=null;return;}"
+        "var t=e.touches[0];"
+        "target=scroller(e.target);"
+        "if(!target)return;"
+        "sx=lx=t.pageX;sy=t.pageY;sl=target.scrollLeft;mode=0;lt=new Date().getTime();vel=0;"
+        "},false);"
+        "document.addEventListener('touchmove',function(e){"
+        "if(!target||e.touches.length!==1)return;"
+        "var t=e.touches[0],dx=t.pageX-sx,dy=t.pageY-sy;"
+        "if(mode===0){"
+        "if(Math.abs(dx)<6&&Math.abs(dy)<6)return;"
+        "mode=Math.abs(dx)>Math.abs(dy)?1:2;"
+        "}"
+        "if(mode!==1)return;"
+        "e.preventDefault();"
+        "target.scrollLeft=sl-dx;"
+        "var now=new Date().getTime();"
+        "if(now>lt)vel=(t.pageX-lx)/(now-lt);"
+        "lx=t.pageX;lt=now;"
+        "},false);"
+        "document.addEventListener('touchend',function(){"
+        "var el=target,v=vel*16,id=glide;"
+        "target=null;"
+        "if(!el||mode!==1)return;"
+        "if(new Date().getTime()-lt>80)return;"
+        "(function step(){"
+        "if(id!==glide||Math.abs(v)<0.5)return;"
+        "el.scrollLeft-=v;v*=0.92;"
+        "setTimeout(step,16);"
+        "})();"
+        "},false);"
+        "})();";
 }
 
 + (NSString *)plainTextHTMLDocument:(NSString *)text {

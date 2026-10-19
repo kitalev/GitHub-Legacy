@@ -563,7 +563,7 @@ static const NSInteger kCodeChunkSize = 300;
         "<script>%@</script>"
         "<script>%@</script>"
         "</head><body>%@</body></html>",
-        css, darkCss, initialThemeJS, js, body];
+        css, darkCss, initialThemeJS, [js stringByAppendingString:[GHMarkdownRenderer legacyOverflowScrollScript]], body];
 }
 
 + (NSString *)linesWordForCount:(NSInteger)count {
