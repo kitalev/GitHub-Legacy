@@ -12,6 +12,7 @@
 #import "PublicProfileViewController.h"
 #import "GHLocalization.h"
 #import "GHRecentRepos.h"
+#import "GHLegacyScopeBar.h"
 
 static const NSInteger kClearHistoryAlertTag = 3;
 
@@ -26,6 +27,7 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
 @interface RepoSearchViewController ()
 @property (nonatomic, strong) UISearchBar *searchBar;
+@property (nonatomic, strong) GHLegacyScopeBar *legacyScopeBar;
 @property (nonatomic, strong) NSMutableArray *results;
 @property (nonatomic, assign) GHSearchScope resultsScope;
 @property (nonatomic, strong) NSMutableArray *searchHistory;
@@ -113,9 +115,24 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
     self.searchBar.delegate = self;
 
     self.searchBar.scopeButtonTitles = [self localizedScopeButtonTitles];
-    self.searchBar.showsScopeBar = YES;
+    BOOL legacyScopeBar = ![UISegmentedControl instancesRespondToSelector:@selector(setBackgroundImage:forState:barMetrics:)];
+    self.searchBar.showsScopeBar = !legacyScopeBar;
     [self.searchBar sizeToFit];
-    self.tableView.tableHeaderView = self.searchBar;
+    if (legacyScopeBar) {
+        CGFloat width = self.view.bounds.size.width;
+        CGFloat searchHeight = self.searchBar.bounds.size.height;
+        UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, searchHeight + 44)];
+        self.searchBar.frame = CGRectMake(0, 0, width, searchHeight);
+        self.searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [header addSubview:self.searchBar];
+        self.legacyScopeBar = [[GHLegacyScopeBar alloc] initWithFrame:CGRectMake(0, searchHeight, width, 44)];
+        self.legacyScopeBar.titles = [self localizedScopeButtonTitles];
+        [self.legacyScopeBar addTarget:self action:@selector(legacyScopeBarChanged) forControlEvents:UIControlEventValueChanged];
+        [header addSubview:self.legacyScopeBar];
+        self.tableView.tableHeaderView = header;
+    } else {
+        self.tableView.tableHeaderView = self.searchBar;
+    }
 
     UITapGestureRecognizer *dismissKeyboardTap = [[UITapGestureRecognizer alloc] initWithTarget:self
                                                                                            action:@selector(dismissSearchKeyboard)];
@@ -170,7 +187,8 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
     self.title = GHL(@"Поиск");
     self.searchBar.scopeButtonTitles = [self localizedScopeButtonTitles];
-    [self updateSearchPlaceholderForScope:(GHSearchScope)self.searchBar.selectedScopeButtonIndex];
+    self.legacyScopeBar.titles = [self localizedScopeButtonTitles];
+    [self updateSearchPlaceholderForScope:[self selectedScope]];
     [self.tableView reloadData];
 }
 
@@ -192,8 +210,9 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
     if (![UISegmentedControl instancesRespondToSelector:@selector(setBackgroundImage:forState:barMetrics:)]) {
         BOOL dark = [GHThemeManager sharedManager].darkModeEnabled;
         self.searchBar.tintColor = dark ? [UIColor colorWithWhite:0.15 alpha:1.0] : nil;
-        [self styleSegmentedControlsInView:self.searchBar];
     }
+    self.legacyScopeBar.backgroundColor = GHBackgroundColor();
+    self.legacyScopeBar.dark = [GHThemeManager sharedManager].darkModeEnabled;
 
     if (self.keyboardDismissToolbar) {
         self.keyboardDismissToolbar.tintColor = GHTintColor();
@@ -203,14 +222,13 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
     [self.tableView reloadData];
 }
 
-- (void)styleSegmentedControlsInView:(UIView *)view {
-    for (UIView *subview in view.subviews) {
-        if ([subview isKindOfClass:[UISegmentedControl class]]) {
-            GHStyleSegmentedControl((UISegmentedControl *)subview);
-        } else {
-            [self styleSegmentedControlsInView:subview];
-        }
-    }
+- (GHSearchScope)selectedScope {
+    if (self.legacyScopeBar) return (GHSearchScope)self.legacyScopeBar.selectedIndex;
+    return (GHSearchScope)self.searchBar.selectedScopeButtonIndex;
+}
+
+- (void)legacyScopeBarChanged {
+    [self searchBar:self.searchBar selectedScopeButtonIndexDidChange:self.legacyScopeBar.selectedIndex];
 }
 
 - (UIImage *)solidColorImage:(UIColor *)color {
@@ -343,7 +361,7 @@ typedef NS_ENUM(NSInteger, GHSearchScope) {
 
     self.tableView.allowsSelection = NO;
 
-    GHSearchScope scope = (GHSearchScope)self.searchBar.selectedScopeButtonIndex;
+    GHSearchScope scope = [self selectedScope];
 
     __weak typeof(self) weakSelf = self;
     GHJSONCompletionBlock completion = ^(id jsonObject, NSError *error) {

@@ -75,6 +75,7 @@ GitHubLegacy_FILES = main.m AppDelegate.m Core/GHLegacyStart.m \
 	Core/GHIconRenderer.m \
 	Core/GHCompat.m \
 	Core/GHLegacyRefreshControl.m \
+	Core/GHLegacyScopeBar.m \
 	Core/GHFoundationCompat.m \
 	Core/GHARCLite.m \
 	Core/GHLegacyPolyfills.m \
