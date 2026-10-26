@@ -281,7 +281,7 @@ static const NSInteger kUpdateAlertTag = 2;
 }
 
 - (NSString *)descriptionText {
-    return GHL(@"Лёгкий нативный клиент GitHub для iOS 4–10: репозитории, README на нескольких языках, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на этих версиях уже не запустить.\n\nmade by kitalev");
+    return GHL(@"Лёгкий нативный клиент GitHub для iOS 4 и новее: репозитории, README на нескольких языках, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на старых версиях уже не запустить.\n\nmade by kitalev");
 }
 
 - (CGFloat)heightForText:(NSString *)text width:(CGFloat)width {
