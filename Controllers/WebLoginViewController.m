@@ -98,7 +98,20 @@ static NSString * const kGHWebLoginGoogleAnalyzeScript =
      "if(!t||t.length>60)continue;window.__ghBtns.push(b);r.buttons.push({index:window.__ghBtns.length-1,text:t});}"
      "window.__ghForm=null;var fs=document.forms;"
      "for(var i=0;i<fs.length;i++){var a=fs[i].getAttribute('action')||'';if(!a)continue;if(!window.__ghForm||a.indexOf('challenge')>=0)window.__ghForm=fs[i];}"
-     "r.form=!!window.__ghForm;r.formText=window.__ghForm?txt(window.__ghForm).substring(0,300):'';"
+     "function ftext(root){var lines=[],cur='';"
+     "function flush(){cur=cur.replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(cur)lines.push(cur);cur='';}"
+     "var skip=/^(A|BUTTON|INPUT|SELECT|TEXTAREA|LABEL|SCRIPT|STYLE|NOSCRIPT|H1)$/;"
+     "var block=/^(DIV|P|LI|UL|OL|TABLE|TBODY|TR|TD|FORM|SECTION|HEADER|FOOTER|H2|H3|H4|H5|H6|BR|FIELDSET)$/;"
+     "function rest(e){var c=e.cloneNode(true),xs=c.querySelectorAll('a,label,input,button,select,[role=button]');"
+     "for(var i=0;i<xs.length;i++)if(xs[i].parentNode)xs[i].parentNode.removeChild(xs[i]);return txt(c);}"
+     "function walk(n){for(var c=n.firstChild;c;c=c.nextSibling){"
+     "if(c.nodeType==3){cur+=c.nodeValue;continue;}if(c.nodeType!=1)continue;var t=c.tagName.toUpperCase();"
+     "if(skip.test(t)||c.getAttribute('role')=='button'||(t!='BR'&&!shown(c)))continue;"
+     "if(!block.test(t)){walk(c);continue;}flush();"
+     "if(t!='BR'){var box=c.querySelector('input[type=checkbox],input[type=radio]');"
+     "if((box||c.querySelector('a'))&&rest(c).length<(box?40:25))continue;walk(c);flush();}}}"
+     "walk(root);flush();return lines.join('\\n');}"
+     "r.form=!!window.__ghForm;r.formText=window.__ghForm?ftext(window.__ghForm).substring(0,400):'';"
      "return JSON.stringify(r);"
      "})()";
 
@@ -121,6 +134,15 @@ static NSString * const kGHWebLoginGoogleUserAgent =
     @"Opera/9.80 (J2ME/MIDP; Opera Mini/9.80 (S60; SymbOS; Opera Mobi/23.348; U; en) Presto/2.5.25 Version/10.54";
 
 static NSString * const kGHGoogleProtocolHandledKey = @"GHGoogleUserAgentHandled";
+
+static void GHWebLoginStoreSetCookies(NSURLResponse *response);
+
+// Google otherwise follows the device language, not the one chosen in the app.
+static NSString *GHWebLoginAcceptLanguage(void) {
+    NSString *code = [GHLocalization sharedManager].languageCode;
+    if ([code isEqualToString:@"ru"]) return @"ru-RU,ru;q=0.9";
+    return @"en-US,en;q=0.9";
+}
 
 static BOOL GHWebLoginIsGoogleHost(NSString *host) {
     host = [host lowercaseString];
@@ -150,6 +172,7 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 - (void)startLoading {
     NSMutableURLRequest *request = [self.request mutableCopy];
     [request setValue:kGHWebLoginGoogleUserAgent forHTTPHeaderField:@"User-Agent"];
+    [request setValue:GHWebLoginAcceptLanguage() forHTTPHeaderField:@"Accept-Language"];
     [NSURLProtocol setProperty:@YES forKey:kGHGoogleProtocolHandledKey inRequest:request];
     self.connection = [NSURLConnection connectionWithRequest:request delegate:self];
 }
@@ -161,6 +184,7 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 
 - (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)response {
     if (!response) return request;
+    GHWebLoginStoreSetCookies(response);
     NSMutableURLRequest *redirect = [request mutableCopy];
     [NSURLProtocol removePropertyForKey:kGHGoogleProtocolHandledKey inRequest:redirect];
     [self.client URLProtocol:self wasRedirectedToRequest:redirect redirectResponse:response];
@@ -170,6 +194,7 @@ static BOOL GHWebLoginIsGoogleHost(NSString *host) {
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
+    GHWebLoginStoreSetCookies(response);
     if ([response isKindOfClass:[NSHTTPURLResponse class]] && [[response.MIMEType lowercaseString] isEqualToString:@"text/html"]) {
         self.htmlResponse = (NSHTTPURLResponse *)response;
         self.htmlData = [NSMutableData data];
@@ -282,8 +307,9 @@ static void GHWebLoginStoreSetCookies(NSURLResponse *response) {
 
 @implementation GHGitHubPostProtocol
 
+// iOS 4 drops cookies set on redirects, which loses GitHub's OAuth state during
+// Google sign-in, so every github.com request goes through here to store them.
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
-    if (![[request.HTTPMethod uppercaseString] isEqualToString:@"POST"]) return NO;
     if (![[request.URL.scheme lowercaseString] isEqualToString:@"https"]) return NO;
     if ([NSURLProtocol propertyForKey:kGHGitHubPostProtocolHandledKey inRequest:request]) return NO;
     NSString *host = [request.URL.host lowercaseString];
@@ -296,10 +322,12 @@ static void GHWebLoginStoreSetCookies(NSURLResponse *response) {
 
 - (void)startLoading {
     NSMutableURLRequest *request = [self.request mutableCopy];
-    [request setValue:@"https://github.com" forHTTPHeaderField:@"Origin"];
-    NSString *referer = [request valueForHTTPHeaderField:@"Referer"];
-    if (referer.length == 0 || ![[[NSURL URLWithString:referer].host lowercaseString] isEqualToString:@"github.com"]) {
-        [request setValue:@"https://github.com/login" forHTTPHeaderField:@"Referer"];
+    if ([[request.HTTPMethod uppercaseString] isEqualToString:@"POST"]) {
+        [request setValue:@"https://github.com" forHTTPHeaderField:@"Origin"];
+        NSString *referer = [request valueForHTTPHeaderField:@"Referer"];
+        if (referer.length == 0 || ![[[NSURL URLWithString:referer].host lowercaseString] isEqualToString:@"github.com"]) {
+            [request setValue:@"https://github.com/login" forHTTPHeaderField:@"Referer"];
+        }
     }
     if (request.HTTPBody == nil && request.HTTPBodyStream != nil) {
         NSInputStream *stream = request.HTTPBodyStream;
