@@ -44,8 +44,6 @@ Which package to install:
 | `GitHubLegacy_*_rootless_iOS15+.deb` | rootless (Dopamine, palera1n rootless) | 15.0 and newer | `arm64`, Safari tweak also `arm64e` |
 | `GitHubLegacy_*.ipa` | none (TrollStore, AltStore, Sideloadly, Plume Impactor) | any supported version | `armv6` + `armv7` + `arm64`, no Safari tweak |
 
-Developed on an **iPhone 4S running iOS 5.1.1**, and also tested on iOS 4 and on an iPhone 7 with iOS 13.7. Newer iOS versions should work but haven't been fully tested yet. The Safari redirect tweak's `arm64e` slice uses the new arm64e ABI, so on iPhone XS and newer it loads on iOS 14+; on iOS 12–13 on those devices the app works, but the redirect from Safari doesn't.
-
 ## Install
 
 ### From the repository (recommended)
@@ -76,7 +74,7 @@ dpkg -i GitHubLegacy_2.0_rootless_iOS15+.deb    # rootless
 
 ### From the latest release (.ipa)
 
-Download the `.ipa` from the [latest release](https://github.com/kitalev/GitHub-Legacy/releases/latest) and install it with TrollStore, AltStore, Sideloadly, Plume Impactor, or Filza with AppSync Unified. No jailbreak required for sideloading tools.
+Download the `.ipa` from the [latest release](https://github.com/kitalev/GitHub-Legacy/releases/latest) and install it with TrollStore, AltStore, Sideloadly, Plume Impactor, or Filza / iFile with AppSync Unified. No jailbreak required for sideloading tools.
 
 - On iOS 16 and newer, sideloaded apps need Developer Mode: Settings → Privacy & Security → Developer Mode.
 - The `.ipa` uses its own bundle ID (`com.githublegacy.ipa`), so it can be installed next to the `.deb` version. Each keeps its own sign-in.

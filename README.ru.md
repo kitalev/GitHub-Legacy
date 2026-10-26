@@ -44,8 +44,6 @@
 | `GitHubLegacy_*_rootless_iOS15+.deb` | rootless (Dopamine, palera1n rootless) | 15.0 и новее | `arm64`, твик Safari ещё и `arm64e` |
 | `GitHubLegacy_*.ipa` | без джейлбрейка (TrollStore, AltStore, Sideloadly, Plume Impactor) | любая поддерживаемая | `armv6` + `armv7` + `arm64`, без твика Safari |
 
-Разрабатывалось на **iPhone 4S с iOS 5.1.1**, также проверялось на iOS 4 и на iPhone 7 с iOS 13.7. Более новые версии iOS должны работать, но полностью пока не проверялись. Часть твика Safari для `arm64e` собрана под новый ABI, поэтому на iPhone XS и новее он загружается на iOS 14+. На iOS 12–13 на этих устройствах приложение работает, но переход из Safari — нет.
-
 ## Установка
 
 ### Из репозитория (рекомендуется)
@@ -76,7 +74,7 @@ dpkg -i GitHubLegacy_2.0_rootless_iOS15+.deb    # rootless
 
 ### Из последнего релиза (.ipa)
 
-Скачайте `.ipa` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest) и установите через TrollStore, AltStore, Sideloadly, Plume Impactor или Filza с AppSync Unified. Для инструментов сайдлоада джейлбрейк не нужен.
+Скачайте `.ipa` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest) и установите через TrollStore, AltStore, Sideloadly, Plume Impactor или Filza / iFile с AppSync Unified. Для инструментов сайдлоада джейлбрейк не нужен.
 
 - На iOS 16 и новее для таких приложений нужен режим разработчика: Настройки → Конфиденциальность и безопасность → Режим разработчика.
 - У `.ipa` свой идентификатор (`com.githublegacy.ipa`), поэтому её можно поставить рядом с `.deb`-версией. Вход в аккаунт у каждой свой.
