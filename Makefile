@@ -129,6 +129,15 @@ after-stage::
 	@find "$(THEOS_STAGING_DIR)" \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' \) -delete 2>/dev/null || true
 	@chmod -R go-w "$(STAGED_APP)"
 
+ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+# Rootless jailbreaks start at iOS 15 and install under /var/jb.
+before-package:: $(THEOS_STAGING_DIR)/DEBIAN/control
+	@sed -i -e 's/firmware (>= [0-9.]*)/firmware (>= 15.0)/' \
+		-e 's|^Icon: file:///Applications/|Icon: file:///var/jb/Applications/|' \
+		-e 's/for iOS 4+ devices/for iOS 15+ rootless jailbreaks/' \
+		"$(THEOS_STAGING_DIR)/DEBIAN/control"
+endif
+
 ipa: package
 	@rm -rf .theos/ipa && mkdir -p .theos/ipa/Payload
 	@cp -a "$(STAGED_APP)" .theos/ipa/Payload/

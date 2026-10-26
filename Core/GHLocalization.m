@@ -191,8 +191,8 @@ static NSDictionary *GHTranslations(void) {
             @"Не удалось войти — проверьте правильность токена и его срок действия.":
                 @"Couldn't sign in — check that the token is correct and hasn't expired.",
             @"GitHub Legacy": @"GitHub Legacy",
-            @"Лёгкий нативный клиент GitHub для iOS 5–10: репозитории, README на нескольких языках, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на этих версиях уже не запустить.\n\nmade by kitalev":
-                @"A lightweight native GitHub client for iOS 5–10: repositories, README in multiple languages, issues, pull requests, commits, and releases — without Safari, and without the official app, which no longer runs on these versions.\n\nmade by kitalev",
+            @"Лёгкий нативный клиент GitHub для iOS 4–10: репозитории, README на нескольких языках, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на этих версиях уже не запустить.\n\nmade by kitalev":
+                @"A lightweight native GitHub client for iOS 4–10: repositories, README in multiple languages, issues, pull requests, commits, and releases — without Safari, and without the official app, which no longer runs on these versions.\n\nmade by kitalev",
 
             @"GitHub Search": @"GitHub Search",
             @"Search": @"Search",
