@@ -2,62 +2,84 @@
 
 # GitHub Legacy
 
-![Platform](https://img.shields.io/badge/platform-iOS%205%2B-lightgrey)
-![Arch](https://img.shields.io/badge/arch-armv7%20%7C%20arm64-lightgrey)
+![Platform](https://img.shields.io/badge/platform-iOS%204%2B-lightgrey)
+![Arch](https://img.shields.io/badge/arch-armv6%20%7C%20armv7%20%7C%20arm64-lightgrey)
 ![Language](https://img.shields.io/badge/language-Objective--C-blue)
 ![Build](https://img.shields.io/badge/build-Theos-orange)
-[![Release](https://img.shields.io/github/v/release/kitalev/GitHub-Legacy?label=release)](https://github.com/kitalev/GitHub-Legacy/releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.0-blue)](https://github.com/kitalev/GitHub-Legacy/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE.ru.md)
+[![Telegram](https://img.shields.io/badge/Telegram-kitalev-26A5E4?logo=telegram&logoColor=white)](https://t.me/kitalev)
 
 [English](README.md) · **Русский**
 
 ---
 
-Лёгкий нативный клиент GitHub для iOS 5 и новее: репозитории, README, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на этих версиях уже не запустить.
+Лёгкий нативный клиент GitHub для iOS 4 и новее: репозитории, README, issues, pull request'ы, коммиты и релизы — без Safari и без официального приложения, которое на старых версиях уже не запустить.
 
 ## Возможности
 
 - Просмотр репозиториев, популярных проектов и поиск по названию, теме или пользователю
 - Отрисованные README, issues, pull request'ы и полная история коммитов
+- Создание задач с прикреплёнными фото и файлами
+- Поиск по файлу с кодом
+- Недавно открытые репозитории на экране поиска
 - Скачивание файлов релизов прямо на устройство (`.deb`, `.ipa`, исходники и т.д.)
 - Избранные репозитории и подписки на пользователей, отдельная вкладка с новостями релизов из избранного
+- Вход по логину и паролю, через аккаунт Google, GitHub device login или токен
 - Светлая и тёмная темы, переключение языка приложения прямо в настройках
 
 ## Поддерживаемые устройства
 
 | Архитектура | iOS | Устройства |
 |---|---|---|
-| `armv7` (32 бита) | 5.0–10.x | iPhone 3GS, 4, 4S, 5, 5c · iPod touch 4-го и 5-го поколения · iPad 2, 3, 4, iPad mini |
+| `armv6` (32 бита) | 4.0–4.2.1 | iPhone 3G · iPod touch 2-го поколения |
+| `armv7` (32 бита) | 4.0–10.x | iPhone 3GS, 4, 4S, 5, 5c · iPod touch 3-го, 4-го и 5-го поколения · iPad 1, 2, 3, 4, iPad mini |
 | `arm64` (64 бита) | 7.0 и новее | iPhone 5s и все более новые iPhone · iPod touch 6-го и 7-го поколения · iPad Air и новее, iPad mini 2 и новее, все iPad Pro |
 
 Какой пакет ставить:
 
 | Пакет | Тип джейлбрейка | Обычно iOS | Внутри |
 |---|---|---|---|
-| `com.githublegacy.app_*_iphoneos-arm.deb` | rootful (Cydia, unc0ver, checkra1n, Taurine, palera1n rootful) | 5.0–14.x, также rootful 15–16 | `armv7` + `arm64`, твик Safari ещё и `arm64e` |
-| `com.githublegacy.app_*_iphoneos-arm64.deb` | rootless (Dopamine, palera1n rootless) | 15.0 и новее | `arm64`, твик Safari ещё и `arm64e` |
-| `.ipa` | без джейлбрейка (AltStore, Sideloadly, TrollStore) | любая поддерживаемая | `armv7` + `arm64` |
+| `GitHubLegacy_*_rootful_iOS4-14.deb` | rootful (Cydia, unc0ver, checkra1n, Taurine, palera1n rootful) | 4.0–14.x (до iPhone 12), также rootful 15–16 на A8–A11 | `armv6` + `armv7` + `arm64`, твик Safari ещё и `arm64e` |
+| `GitHubLegacy_*_rootless_iOS15+.deb` | rootless (Dopamine, palera1n rootless) | 15.0 и новее | `arm64`, твик Safari ещё и `arm64e` |
+| `GitHubLegacy_*.ipa` | без джейлбрейка (TrollStore, AltStore, Sideloadly, Plume Impactor) | любая поддерживаемая | `armv6` + `armv7` + `arm64`, без твика Safari |
 
-Разрабатывалось и проверялось на **iPhone 4S с iOS 5.1.1**. 64-битные сборки собираются из того же кода, но на устройстве пока не проверялись. Часть твика Safari для `arm64e` собрана под новый ABI, поэтому на iPhone XS и новее он загружается на iOS 14+. На iOS 12–13 на этих устройствах приложение работает, но переход из Safari — нет.
+Разрабатывалось на **iPhone 4S с iOS 5.1.1**, также проверялось на iOS 4 и на iPhone 7 с iOS 13.7. Более новые версии iOS должны работать, но полностью пока не проверялись. Часть твика Safari для `arm64e` собрана под новый ABI, поэтому на iPhone XS и новее он загружается на iOS 14+. На iOS 12–13 на этих устройствах приложение работает, но переход из Safari — нет.
 
 ## Установка
 
+### Из репозитория (рекомендуется)
+
+Добавьте репозиторий в Cydia, Sileo, Zebra или Installer:
+
+```
+https://kitalev.github.io/repo/
+```
+
+- **Cydia:** Источники → Изменить → Добавить
+- **Sileo / Zebra:** Источники → `+`
+
+Затем найдите **GitHub Legacy** и установите. Обновления будут приходить через менеджер пакетов, как у любого другого пакета.
+
 ### Из последнего релиза (.deb)
 
-1. Скачайте `.deb` под свой тип джейлбрейка со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest): `iphoneos-arm` для rootful, `iphoneos-arm64` для rootless (см. таблицу выше).
+1. Скачайте `.deb` под свой тип джейлбрейка со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest): `rootful` или `rootless` (см. таблицу выше).
 2. Поместите файл `.deb` на устройство (например, в `/var/mobile/`).
 3. В iFile или Filza найдите `.deb`, нажмите на него и выберите `Install`.
 
 Либо через терминал:
 
 ```bash
-dpkg -i com.githublegacy.app_1.1_iphoneos-arm.deb      # rootful
-dpkg -i com.githublegacy.app_1.1_iphoneos-arm64.deb    # rootless
+dpkg -i GitHubLegacy_2.0_rootful_iOS4-14.deb    # rootful
+dpkg -i GitHubLegacy_2.0_rootless_iOS15+.deb    # rootless
 ```
 
 ### Из последнего релиза (.ipa)
 
-Скачайте `.ipa` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest) и установите любым инструментом сайдлоада (AltStore, Sideloadly и т.д.). Джейлбрейк не требуется.
+Скачайте `.ipa` со страницы [последнего релиза](https://github.com/kitalev/GitHub-Legacy/releases/latest) и установите через TrollStore, AltStore, Sideloadly, Plume Impactor или Filza с AppSync Unified. Для инструментов сайдлоада джейлбрейк не нужен.
+
+- На iOS 16 и новее для таких приложений нужен режим разработчика: Настройки → Конфиденциальность и безопасность → Режим разработчика.
+- У `.ipa` свой идентификатор (`com.githublegacy.ipa`), поэтому её можно поставить рядом с `.deb`-версией. Вход в аккаунт у каждой свой.
 
 > **Примечание:** на некоторых устройствах с iOS 10.x Filza может крашиться при установке `.ipa`. В этом случае поставьте `.deb` (см. выше), либо используйте для `.ipa` другой инструмент сайдлоада.
 
@@ -69,10 +91,16 @@ dpkg -i com.githublegacy.app_1.1_iphoneos-arm64.deb    # rootless
 export THEOS=/opt/theos
 ```
 
-Также понадобится Clang-toolchain с таргетингом на iOS (например, `$THEOS/toolchain/linux/iphone/bin`) и iOS SDK ≥ 5.0 в `$THEOS/sdks/`. Подойдёт любой SDK начиная с 5.0, так как `MinimumOSVersion` в `Info.plist` уже ограничивает приложение устройствами с iOS 5+ во время выполнения.
+Также понадобятся:
+
+- Clang-toolchain с таргетингом на iOS (например, `$THEOS/toolchain/linux/iphone/bin`);
+- `iPhoneOS9.3.sdk` в `$THEOS/sdks/` — Makefile собирает с ним и сам делает из него копию с поддержкой `armv6`;
+- `plistutil` (`sudo apt install libplist-utils`) — для перевода `Info.plist` в бинарный формат и смены идентификатора `.ipa`.
+
+`MinimumOSVersion` в `Info.plist` ограничивает приложение устройствами с iOS 4+ во время выполнения.
 
 ```bash
-# rootful .deb (iphoneos-arm: armv7 + arm64)
+# rootful .deb (iphoneos-arm: armv6 + armv7 + arm64)
 make clean
 make package FINALPACKAGE=1
 
@@ -80,16 +108,16 @@ make package FINALPACKAGE=1
 make clean
 make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 
-# .ipa (обычное сандбоксное приложение, для сайдлоада)
+# .ipa (обычное приложение для сайдлоада) — появится как GitHubLegacy.ipa в корне проекта
 make clean
-make package FINALPACKAGE=1 PACKAGE_FORMAT=ipa
+make ipa FINALPACKAGE=1 PACKAGE_FORMAT=ipa
 ```
 
-Готовые пакеты появятся в `packages/`.
+Готовые `.deb` появятся в `packages/`.
 
 ## Удаление
 
-### Через Cydia
+### Через Cydia, Sileo или Zebra
 
 Удаляется как обычный пакет.
 
