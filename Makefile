@@ -138,9 +138,18 @@ before-package:: $(THEOS_STAGING_DIR)/DEBIAN/control
 		"$(THEOS_STAGING_DIR)/DEBIAN/control"
 endif
 
+IPA_APP = .theos/ipa/Payload/$(APPLICATION_NAME).app
+IPA_BUNDLE_ID = com.githublegacy.ipa
+
 ipa: package
 	@rm -rf .theos/ipa && mkdir -p .theos/ipa/Payload
 	@cp -a "$(STAGED_APP)" .theos/ipa/Payload/
+# Separate bundle ID: installd refuses an IPA that shares its ID with the deb's
+# /Applications copy ("system app upgrade is missing upgrade entitlement").
+	@plistutil -i "$(IPA_APP)/Info.plist" -o "$(IPA_APP)/Info.xml" -f xml
+	@sed -i 's|<string>com.githublegacy.app</string>|<string>$(IPA_BUNDLE_ID)</string>|' "$(IPA_APP)/Info.xml"
+	@plistutil -i "$(IPA_APP)/Info.xml" -o "$(IPA_APP)/Info.plist" -f bin && rm -f "$(IPA_APP)/Info.xml"
+	@$(TARGET_CODESIGN) -S "$(IPA_APP)/$(APPLICATION_NAME)"
 	@rm -f "$(CURDIR)/$(APPLICATION_NAME).ipa"
 	@cd .theos/ipa && zip -qr9 -X "$(CURDIR)/$(APPLICATION_NAME).ipa" Payload -x "*.DS_Store" "*__MACOSX*"
 	@echo "[*] IPA: $(CURDIR)/$(APPLICATION_NAME).ipa"
